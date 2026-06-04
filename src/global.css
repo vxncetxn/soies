@@ -1,2 +1,24 @@
 @import "tailwindcss";
 @import "uniwind";
+
+@layer theme {
+  :root {
+    @variant light {
+      --color-background: #eeeeee;
+      --color-paper: #ffffff;
+      --color-controls: #ffffff;
+      --color-primary: #0c0a09;
+      --color-secondary: #57534d;
+      --color-icon: #79716b;
+    }
+
+    @variant dark {
+      --color-background: #44403b;
+      --color-paper: #e7e5e4;
+      --color-controls: #57534d;
+      --color-primary: #f5f5f5;
+      --color-secondary: #d6d3d1;
+      --color-icon: #beb9b6;
+    }
+  }
+}
