@@ -6,10 +6,7 @@
     "web": {
       "output": "static"
     },
-    "plugins": [
-      "expo-router",
-      "expo-status-bar"
-    ],
+    "plugins": ["expo-router", "expo-status-bar"],
     "name": "soies",
     "slug": "soies"
   }
