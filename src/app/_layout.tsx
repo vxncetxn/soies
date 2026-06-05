@@ -18,7 +18,7 @@ export default function Layout() {
       <WUSafeAreaView className="flex-1 bg-background">
         <Tabs>
           <TabSlot />
-          <TabList className="mx-auto h-[44px] w-[136px] flex-row rounded-[32px] border border-[#D6D3D1] bg-controls p-1 opacity-50">
+          <TabList className="mx-auto h-[44px] w-[136px] flex-row rounded-[32px] border border-controls-border bg-controls-background p-1">
             <TabTrigger name="home" href="/" asChild>
               <Pressable>
                 <View className="flex h-[36px] w-[64px] items-center justify-center rounded-[28px]">
