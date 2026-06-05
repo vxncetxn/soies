@@ -1,7 +1,7 @@
 import "../global.css";
 import { Tabs, TabList, TabTrigger, TabSlot } from "expo-router/ui";
 import { StatusBar } from "expo-status-bar";
-import { View, Text, Pressable } from "react-native";
+import { View, Pressable } from "react-native";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { withUniwind } from "uniwind";
@@ -9,7 +9,6 @@ import { withUniwind } from "uniwind";
 const WUSafeAreaView = withUniwind(SafeAreaView);
 const WUSvg = withUniwind(Svg);
 const WUPath = withUniwind(Path);
-const WUView = withUniwind(View);
 
 export default function Layout() {
   return (
