@@ -22,8 +22,8 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-native": "0.85.3",
+    "react-native-nano-icons": "^0.1.8",
     "react-native-safe-area-context": "^5.8.0",
-    "react-native-svg": "15.15.4",
     "tailwindcss": "~4.1.16",
     "uniwind": "~1.0.0"
   },

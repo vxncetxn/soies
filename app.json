@@ -19,12 +19,25 @@
             "./assets/fonts/GeistMono-Regular.otf"
           ]
         }
+      ],
+      [
+        "react-native-nano-icons",
+        {
+          "iconSets": [
+            {
+              "inputDir": "./assets/icons"
+            }
+          ]
+        }
       ]
     ],
     "name": "soies",
     "slug": "soies",
     "ios": {
-      "bundleIdentifier": "com.anonymous.soies"
+      "bundleIdentifier": "com.anonymous.soies",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "extra": {
       "router": {},

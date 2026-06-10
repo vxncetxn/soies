@@ -1,9 +1,11 @@
 import { TabList, Tabs, TabSlot, TabTrigger } from "expo-router/ui";
+import { createNanoIconSet } from "react-native-nano-icons";
 
-import IconFrame from "../../components/icons/IconFrame";
-import IconHome from "../../components/icons/IconHome";
+import glyphMap from "../../../assets/nanoicons/icons.glyphmap.json";
 import StyledTabList from "../../components/tabs/StyledTabList";
 import StyledTabTrigger from "../../components/tabs/StyledTabTrigger";
+
+const Icon = createNanoIconSet(glyphMap);
 
 export default function Layout() {
   return (
@@ -13,12 +15,12 @@ export default function Layout() {
         <StyledTabList>
           <TabTrigger name="home" href="/" asChild>
             <StyledTabTrigger>
-              <IconHome />
+              <Icon name="home" size={24} color="#79716B" />
             </StyledTabTrigger>
           </TabTrigger>
           <TabTrigger name="gallery" href="/gallery" asChild>
             <StyledTabTrigger>
-              <IconFrame />
+              <Icon name="frame" size={24} color="#79716B" />
             </StyledTabTrigger>
           </TabTrigger>
         </StyledTabList>

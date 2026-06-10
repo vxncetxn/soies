@@ -11,6 +11,9 @@ expo-env.d.ts
 ios/
 android/
 
+# Other build artefacts
+assets/nanoicons/
+
 # Native
 *.orig.*
 *.jks
