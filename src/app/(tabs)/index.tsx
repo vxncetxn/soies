@@ -1,16 +1,29 @@
 import { Text, View } from "react-native";
 
+import Paper from "../../components/Paper";
+
 export default function App() {
   return (
-    <View className="flex-1 items-center justify-center bg-background px-8">
-      <Text className="mb-3 text-4xl font-extrabold tracking-tight text-primary">🚀 Welcome</Text>
-      <Text className="mb-8 text-center text-xl leading-relaxed text-secondary">
-        Build beautiful apps with{" "}
-        <Text className="font-semibold text-blue-500">Expo (Router) + Uniwind 🔥</Text>
-      </Text>
-      <Text className="max-w-sm text-center text-base text-primary">
-        Start customizing your app by editing <Text className="font-semibold">app/index.tsx</Text>
-      </Text>
+    <View className="flex-1 items-center justify-center bg-background px-5">
+      <View className="flex h-full w-full items-center justify-center p-5">
+        <View className="grid gap-4">
+          <View className="flex flex-row justify-between">
+            <Text>Tab 1</Text>
+            <Text>Tab 2</Text>
+          </View>
+          <Paper>
+            Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum
+            has been the industry's standard dummy text ever since the early years, when an unknown
+            printer took a galley of type and scrambled it to make a type specimen book. It has
+            survived not only five centuries, but also the leap into electronic typesetting,
+            remaining essentially unchanged.
+          </Paper>
+          <View className="flex flex-row justify-between">
+            <Text>Prev</Text>
+            <Text>Next</Text>
+          </View>
+        </View>
+      </View>
     </View>
   );
 }

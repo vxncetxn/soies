@@ -1,6 +1,18 @@
 @import "tailwindcss";
 @import "uniwind";
 
+@theme {
+  --aspect-a4: 210/297;
+  --aspect-a4-landscape: 297/210;
+  --aspect-print: 53/86;
+
+  /* Font families */
+  --font-sans: "Geist-Regular";
+  --font-sans-medium: "Geist-Medium";
+  --font-mono: "GeistMono-Regular";
+  --font-paper: "ABCStefan-Simple-Trial";
+}
+
 @layer theme {
   :root {
     @variant light {
@@ -18,7 +30,7 @@
       --color-paper: oklch(92.32% 0.003 48.72);
       --color-controls-background: oklch(44.41% 0.011 78.21 / 0.5);
       --color-controls-border: oklch(44.41% 0.011 78.21 / 0.5);
-      --color-primary: oklch(97.02% 0 0);
+      --color-primary: oklch(14.69% 0.004 49.25);
       --color-secondary: oklch(86.87% 0.004 56.37);
       --color-icon: oklch(78.9% 0.007 53.42);
     }

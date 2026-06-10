@@ -6,8 +6,31 @@
     "web": {
       "output": "static"
     },
-    "plugins": ["expo-router", "expo-status-bar"],
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/ABCStefan-Simple-Trial.otf",
+            "./assets/fonts/Geist-Medium.otf",
+            "./assets/fonts/Geist-Regular.otf",
+            "./assets/fonts/GeistMono-Regular.otf"
+          ]
+        }
+      ]
+    ],
     "name": "soies",
-    "slug": "soies"
+    "slug": "soies",
+    "ios": {
+      "bundleIdentifier": "com.anonymous.soies"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bb5ae819-ea64-467e-ad0a-7d2994693e16"
+      }
+    }
   }
 }

@@ -14,8 +14,7 @@
   },
   "sortTailwindcss": {
     "stylesheet": "./src/global.css",
-    "functions": [],
-    "preserveWhitespace": true
+    "functions": []
   },
   "sortPackageJson": {
     "sortScripts": true
