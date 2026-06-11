@@ -14,16 +14,18 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "^56.0.4",
+    "expo": "^56.0.9",
+    "expo-constants": "~56.0.17",
     "expo-dev-client": "~56.0.19",
     "expo-font": "^56.0.5",
-    "expo-router": "~56.2.6",
+    "expo-linking": "~56.0.13",
+    "expo-router": "~56.2.9",
     "expo-status-bar": "~56.0.4",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.85.3",
     "react-native-nano-icons": "^0.1.8",
-    "react-native-safe-area-context": "^5.8.0",
+    "react-native-safe-area-context": "^5.7.0",
     "tailwindcss": "~4.1.16",
     "uniwind": "~1.0.0"
   },
