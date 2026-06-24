@@ -1,5 +1,6 @@
 import { Text, View } from "react-native";
 
+import Artefact from "../../components/Artefact";
 import Paper from "../../components/Paper";
 
 export default function App() {
@@ -11,13 +12,9 @@ export default function App() {
             <Text>Tab 1</Text>
             <Text>Tab 2</Text>
           </View>
-          <Paper>
-            Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum
-            has been the industry's standard dummy text ever since the early years, when an unknown
-            printer took a galley of type and scrambled it to make a type specimen book. It has
-            survived not only five centuries, but also the leap into electronic typesetting,
-            remaining essentially unchanged.
-          </Paper>
+          <Artefact>
+            <Paper>Lorem</Paper>
+          </Artefact>
           <View className="flex flex-row justify-between">
             <Text>Prev</Text>
             <Text>Next</Text>
