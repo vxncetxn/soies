@@ -9,11 +9,11 @@ const Icon = createNanoIconSet(glyphMap);
 
 export default function Layout() {
   return (
-    <Tabs>
+    <Tabs className="relative">
       <TabSlot />
       <TabList asChild>
         <StyledTabList>
-          <TabTrigger name="home" href="/" asChild>
+          <TabTrigger name="home" href="/" resetOnFocus={false} asChild>
             <StyledTabTrigger>
               <Icon name="home" size={24} color="#79716B" />
             </StyledTabTrigger>

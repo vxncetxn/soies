@@ -136,11 +136,7 @@ const Stack = ({ cards }) => {
   return (
     <>
       {!isExpanded && (
-        <Animated.View
-          className="relative aspect-print max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]"
-          entering={FadeIn.duration(250)}
-          exiting={FadeOut.duration(250)}
-        >
+        <Animated.View className="relative aspect-print max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]">
           {wrappedCards}
         </Animated.View>
       )}
