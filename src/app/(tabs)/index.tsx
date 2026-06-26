@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
 
-import Artefact from "../../components/Artefact";
+import Stack from "../../components/Stack";
 import Paper from "../../components/Paper";
 
 export default function App() {
@@ -12,9 +12,9 @@ export default function App() {
             <Text>Tab 1</Text>
             <Text>Tab 2</Text>
           </View>
-          <Artefact>
+          <Stack>
             <Paper>Lorem</Paper>
-          </Artefact>
+          </Stack>
           <View className="flex flex-row justify-between">
             <Text>Prev</Text>
             <Text>Next</Text>

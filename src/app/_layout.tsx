@@ -2,6 +2,7 @@ import "../global.css";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { PortalHost, PortalProvider } from "react-native-teleport";
 import { withUniwind } from "uniwind";
@@ -18,24 +19,26 @@ export default function Layout() {
   });
 
   return (
-    <PortalProvider>
-      <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <StyledSafeAreaView className="flex-1 bg-background">
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="expanded"
-              options={{
-                presentation: "modal",
-                headerShown: true,
-                title: "Paper Details",
-              }}
-            />
-          </Stack>
-          <StyledPortalHost name="overlay" className="absolute inset-0" />
-        </StyledSafeAreaView>
-      </SafeAreaProvider>
-    </PortalProvider>
+    <GestureHandlerRootView>
+      <PortalProvider>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <StyledSafeAreaView className="flex-1 bg-background">
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="expanded"
+                options={{
+                  presentation: "modal",
+                  headerShown: true,
+                  title: "Paper Details",
+                }}
+              />
+            </Stack>
+            <StyledPortalHost name="overlay" className="absolute inset-0" />
+          </StyledSafeAreaView>
+        </SafeAreaProvider>
+      </PortalProvider>
+    </GestureHandlerRootView>
   );
 }
