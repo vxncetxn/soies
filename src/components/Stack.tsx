@@ -1,32 +1,52 @@
-import { useState, PropsWithChildren } from "react";
-import { Dimensions, Pressable, Text } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-// import { Portal } from "react-native-teleport";
-// import { withUniwind } from "uniwind";
+import { useState, ReactNode } from "react";
+import { Dimensions, Pressable, ScrollView, Text, View } from "react-native";
 import Animated, {
-  clamp,
   FadeIn,
   FadeOut,
   interpolate,
+  SharedValue,
+  useAnimatedRef,
   useAnimatedStyle,
   useDerivedValue,
+  useScrollOffset,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { Portal } from "react-native-teleport";
+import { withUniwind } from "uniwind";
 
-// const StyledPortal = withUniwind(Portal);
+const StyledPortal = withUniwind(Portal);
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const CARD_WIDTH = SCREEN_WIDTH - 80;
 const END_WIDTH = SCREEN_WIDTH - 20;
 const STACK_OFFSET = 8;
+const CARD_GAP = 48;
+const PAGE_WIDTH = END_WIDTH + CARD_GAP;
 
-const Card = ({ index, progress, currentPage, activeIndex, children }) => {
+const SPRING_CONFIG = {
+  stiffness: 900,
+  damping: 110,
+  mass: 4,
+  overshootClamping: true,
+  energyThreshold: 6e-9,
+  velocity: 0,
+} as const;
+
+type CardProps = {
+  index: number;
+  progress: SharedValue<number>;
+  currentPage: SharedValue<number>;
+  activeIndex: SharedValue<number>;
+  children: ReactNode;
+};
+
+const Card = ({ index, progress, currentPage, activeIndex, children }: CardProps) => {
   const animatedStyle = useAnimatedStyle(() => {
     const active = activeIndex.value;
 
-    const expandedX = (index - currentPage.value) * END_WIDTH;
+    const expandedX = (index - currentPage.value) * PAGE_WIDTH;
     let collapsedX = 0;
 
     if (index !== active) {
@@ -39,128 +59,126 @@ const Card = ({ index, progress, currentPage, activeIndex, children }) => {
 
     const scale = interpolate(progress.value, [0, 1], [1, END_WIDTH / CARD_WIDTH]);
 
-    // const rotate = interpolate(
-    //   progress.value,
-    //   [0, 1],
-    //   [index === active ? 0 : distanceRotation(index, active), 0],
-    // );
-
     return {
-      transform: [
-        { translateX },
-        { scale },
-        // {
-        //   rotateZ: `${rotate}deg`,
-        // },
-      ],
-
-      zIndex: index === active ? 100 : -Math.abs(index - active),
+      transform: [{ translateX }, { scale }],
+      zIndex: index === active ? 100 : 100 - Math.abs(index - active),
     };
   });
 
   return (
-    <Animated.View style={[animatedStyle]} className="absolute">
+    <Animated.View style={[animatedStyle]} className="absolute" pointerEvents="none">
       {children}
     </Animated.View>
   );
 };
 
-const Stack = ({ children }: PropsWithChildren) => {
+const Stack = ({ cards }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  // const [activeIndex, setActiveIndex] = useState(3);
+  const [activePage, setActivePage] = useState(0);
 
-  const currentPage = useSharedValue(0);
-  const gestureStartPage = useSharedValue(0);
+  const scrollRef = useAnimatedRef<ScrollView>();
+  const scrollOffset = useScrollOffset(scrollRef);
   const progress = useSharedValue(0);
+
+  const currentPage = useDerivedValue(() => {
+    return scrollOffset.value / PAGE_WIDTH;
+  });
 
   const activeIndex = useDerivedValue(() => {
     return Math.round(currentPage.value);
   });
 
-  const pan = Gesture.Pan()
-    .enabled(isExpanded)
-    .onBegin(() => {
-      gestureStartPage.value = currentPage.value;
-    })
-    .onUpdate((event) => {
-      const deltaPages = event.translationX / CARD_WIDTH;
+  const wrappedCards = cards.map((card, index) => (
+    <Card
+      key={index}
+      index={index}
+      progress={progress}
+      currentPage={currentPage}
+      activeIndex={activeIndex}
+    >
+      {card}
+    </Card>
+  ));
 
-      const nextPage = gestureStartPage.value - deltaPages;
+  const persistPage = () => {
+    const page = Math.max(
+      0,
+      Math.min(cards.length - 1, Math.round(scrollOffset.value / PAGE_WIDTH)),
+    );
 
-      currentPage.value = clamp(nextPage, 0, 5 - 1);
-    })
-    .onEnd(() => {
-      currentPage.value = withSpring(Math.round(currentPage.value), {
-        stiffness: 900,
-        damping: 110,
-        mass: 4,
-        overshootClamping: true,
-        energyThreshold: 6e-9,
-        velocity: 0,
-      });
-    });
+    setActivePage(page);
+  };
+
+  const toggleExpanded = () => {
+    const next = !isExpanded;
+
+    if (!next) {
+      persistPage();
+    }
+
+    setIsExpanded(next);
+
+    progress.value = withSpring(next ? 1 : 0, SPRING_CONFIG);
+  };
+
+  const collapse = () => {
+    persistPage();
+
+    setIsExpanded(false);
+
+    progress.value = withSpring(0, SPRING_CONFIG);
+  };
+
+  const restoreScroll = () => {
+    scrollRef.current?.scrollTo({ x: activePage * PAGE_WIDTH, y: 0, animated: false });
+  };
 
   return (
     <>
-      <GestureDetector gesture={pan}>
+      {!isExpanded && (
         <Animated.View
           className="relative aspect-print max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]"
           entering={FadeIn.duration(250)}
           exiting={FadeOut.duration(250)}
         >
-          {/*<View className="absolute top-0 left-0 translate-x-6 transform">{children}</View>*/}
-          {/*<View className="absolute top-0 left-0 translate-x-4 transform">{children}</View>*/}
-          {/*<View className="absolute top-0 left-0 translate-x-2 transform">{children}</View>*/}
-          {/*<View className="absolute top-0 left-0 translate-x-0 transform">{children}</View>*/}
-          <Card index={0} progress={progress} currentPage={currentPage} activeIndex={activeIndex}>
-            {children}
-          </Card>
-          <Card index={1} progress={progress} currentPage={currentPage} activeIndex={activeIndex}>
-            {children}
-          </Card>
-          <Card index={2} progress={progress} currentPage={currentPage} activeIndex={activeIndex}>
-            {children}
-          </Card>
-          <Card index={3} progress={progress} currentPage={currentPage} activeIndex={activeIndex}>
-            {children}
-          </Card>
-          <Card index={4} progress={progress} currentPage={currentPage} activeIndex={activeIndex}>
-            {children}
-          </Card>
+          {wrappedCards}
         </Animated.View>
-      </GestureDetector>
-      <Pressable
-        onPress={() => {
-          const next = !isExpanded;
+      )}
 
-          setIsExpanded(next);
-
-          progress.value = withSpring(next ? 1 : 0, {
-            stiffness: 900,
-            damping: 110,
-            mass: 4,
-            overshootClamping: true,
-            energyThreshold: 6e-9,
-            velocity: 0,
-          });
-        }}
-      >
-        <Text>Expand</Text>
+      <Pressable onPress={toggleExpanded}>
+        <Text>{isExpanded ? "Collapse" : "Expand"}</Text>
       </Pressable>
-      {/*<Pressable className="absolute right-0 bottom-0 left-0 h-16" />*/}
-      {/*{isExpanded && (*/}
-      {/*  <StyledPortal hostName={"overlay"} className="items-center justify-center">*/}
-      {/*    <Pressable onPress={() => setIsExpanded(false)}>*/}
-      {/*      <Animated.View*/}
-      {/*        className="aspect-print max-h-[calc((100vw-20px)/210*297)] w-[calc(100vw-20px)]"*/}
-      {/*        entering={FadeIn.duration(250)}*/}
-      {/*        exiting={FadeOut.duration(250)}*/}
-      {/*      >*/}
-      {/*        {children}*/}
-      {/*      </Animated.View>*/}
-      {/*    </Pressable>*/}
-      {/*  </StyledPortal>*/}
-      {/*)}*/}
+
+      {isExpanded && (
+        <StyledPortal hostName="overlay" className="items-center justify-center">
+          <Animated.View
+            entering={FadeIn.duration(250)}
+            exiting={FadeOut.duration(250)}
+            className="absolute inset-0 items-center justify-center"
+          >
+            <Pressable className="absolute inset-0 bg-black/30" onPress={collapse} />
+
+            <View
+              className="relative aspect-print max-h-[calc((100vw-20px)/210*297)] w-[calc(100vw-20px)]"
+              pointerEvents="box-none"
+            >
+              <Animated.ScrollView
+                ref={scrollRef}
+                horizontal
+                snapToInterval={PAGE_WIDTH}
+                decelerationRate="fast"
+                showsHorizontalScrollIndicator={false}
+                onLayout={restoreScroll}
+                // style={StyleSheet.absoluteFillObject}
+              >
+                <View style={{ width: (cards.length - 1) * PAGE_WIDTH + END_WIDTH }} />
+              </Animated.ScrollView>
+
+              {wrappedCards}
+            </View>
+          </Animated.View>
+        </StyledPortal>
+      )}
     </>
   );
 };

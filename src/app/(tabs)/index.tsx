@@ -1,7 +1,7 @@
 import { Text, View } from "react-native";
 
-import Stack from "../../components/Stack";
 import Paper from "../../components/Paper";
+import Stack from "../../components/Stack";
 
 export default function App() {
   return (
@@ -12,9 +12,11 @@ export default function App() {
             <Text>Tab 1</Text>
             <Text>Tab 2</Text>
           </View>
-          <Stack>
-            <Paper>Lorem</Paper>
-          </Stack>
+          <Stack
+            cards={Array.from({ length: 5 }).map((_, index) => (
+              <Paper key={index}>Lorem {index}</Paper>
+            ))}
+          ></Stack>
           <View className="flex flex-row justify-between">
             <Text>Prev</Text>
             <Text>Next</Text>
