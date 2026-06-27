@@ -1,11 +1,8 @@
-import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Pressable,
   ScrollView,
-  Text,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -13,7 +10,7 @@ import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Entry } from "../data/entries";
-import { todayISO, toISODate } from "../utils/date";
+
 import Stack from "./Stack";
 
 type DayPagerProps = {
@@ -25,7 +22,6 @@ type DayPagerProps = {
 let cachedPagerHeight = 0;
 
 const DayPager = ({ entries }: DayPagerProps) => {
-  const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
@@ -37,15 +33,6 @@ const DayPager = ({ entries }: DayPagerProps) => {
   const [pagerHeight, setPagerHeight] = useState(cachedPagerHeight || computedHeight);
   const [activeEntryIndex, setActiveEntryIndex] = useState(0);
 
-  const scrollToEntry = (index: number) => {
-    if (pagerHeight === 0) {
-      return;
-    }
-
-    scrollRef.current?.scrollTo({ y: index * pagerHeight, animated: true });
-    setActiveEntryIndex(index);
-  };
-
   const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (pagerHeight === 0) {
       return;
@@ -55,9 +42,6 @@ const DayPager = ({ entries }: DayPagerProps) => {
 
     setActiveEntryIndex(Math.max(0, Math.min(entries.length - 1, index)));
   };
-
-  const canGoPrev = activeEntryIndex > 0;
-  const canGoNext = activeEntryIndex < entries.length - 1;
 
   return (
     <View className="relative flex-1">
@@ -93,24 +77,6 @@ const DayPager = ({ entries }: DayPagerProps) => {
             ))}
           </Animated.ScrollView>
         )}
-      </View>
-
-      <View
-        className="absolute right-5 bottom-20 left-5 z-10 flex flex-row justify-between"
-        pointerEvents="box-none"
-      >
-        <Pressable disabled={!canGoPrev} onPress={() => scrollToEntry(activeEntryIndex - 1)}>
-          <Text className={canGoPrev ? "text-primary" : "text-primary/40"}>Prev</Text>
-        </Pressable>
-        <Pressable onPress={() => router.setParams({ date: todayISO() })}>
-          <Text className="text-primary">Today</Text>
-        </Pressable>
-        <Pressable onPress={() => router.setParams({ date: toISODate(new Date(2026, 5, 28)) })}>
-          <Text className="text-primary">Tomorrow</Text>
-        </Pressable>
-        <Pressable disabled={!canGoNext} onPress={() => scrollToEntry(activeEntryIndex + 1)}>
-          <Text className={canGoNext ? "text-primary" : "text-primary/40"}>Next</Text>
-        </Pressable>
       </View>
     </View>
   );

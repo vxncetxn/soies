@@ -26,7 +26,6 @@ export const addDaysISO = (iso: string, days: number): string => {
 
 export const formatDisplayDate = (iso: string): string => {
   return parseISO(iso).toLocaleDateString(undefined, {
-    weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
