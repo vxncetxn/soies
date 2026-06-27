@@ -13,9 +13,7 @@ import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Entry } from "../data/entries";
-
 import { todayISO, toISODate } from "../utils/date";
-import Paper from "./Paper";
 import Stack from "./Stack";
 
 type DayPagerProps = {
@@ -84,17 +82,13 @@ const DayPager = ({ entries }: DayPagerProps) => {
             onMomentumScrollEnd={onMomentumScrollEnd}
             style={{ height: pagerHeight }}
           >
-            {entries.map((entry) => (
+            {entries.map((entry, index) => (
               <View
-                key={entry.id}
+                key={index}
                 style={{ height: pagerHeight }}
                 className="items-center justify-center px-5"
               >
-                <Stack
-                  cards={Array.from({ length: entry.count }, (_, index) => (
-                    <Paper key={index}>{entry.id}</Paper>
-                  ))}
-                />
+                <Stack entry={entry} />
               </View>
             ))}
           </Animated.ScrollView>
@@ -102,7 +96,7 @@ const DayPager = ({ entries }: DayPagerProps) => {
       </View>
 
       <View
-        className="absolute bottom-20 left-5 right-5 z-10 flex flex-row justify-between"
+        className="absolute right-5 bottom-20 left-5 z-10 flex flex-row justify-between"
         pointerEvents="box-none"
       >
         <Pressable disabled={!canGoPrev} onPress={() => scrollToEntry(activeEntryIndex - 1)}>

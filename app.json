@@ -29,7 +29,8 @@
             }
           ]
         }
-      ]
+      ],
+      "expo-image"
     ],
     "name": "soies",
     "slug": "soies",

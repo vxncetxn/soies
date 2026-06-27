@@ -5,6 +5,8 @@
   --aspect-a4: 210/297;
   --aspect-a4-landscape: 297/210;
   --aspect-print: 53/86;
+  /*--aspect-print-image: 46/62;*/
+  --aspect-print-image: 244/367;
 
   /* Font families */
   --font-sans: "Geist-Regular";

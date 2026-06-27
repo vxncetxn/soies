@@ -26,14 +26,6 @@ export default function Layout() {
           <StyledSafeAreaView className="flex-1 bg-background">
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen
-                name="expanded"
-                options={{
-                  presentation: "modal",
-                  headerShown: true,
-                  title: "Paper Details",
-                }}
-              />
             </Stack>
             <StyledPortalHost name="overlay" className="absolute inset-0" />
           </StyledSafeAreaView>
