@@ -88,3 +88,5 @@ export const getEntriesByDate = (date: string): Entry[] => {
   // Return the entries if found, otherwise an empty array
   return day ? day.entries : [];
 };
+
+export const getEntryDates = (): Set<string> => new Set(MOCK_DATA.map((d) => d.date));

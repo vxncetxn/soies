@@ -19,7 +19,7 @@ export default function Layout() {
   });
 
   return (
-    <GestureHandlerRootView>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <PortalProvider>
         <SafeAreaProvider>
           <StatusBar style="auto" />
@@ -29,6 +29,7 @@ export default function Layout() {
             </Stack>
             <StyledPortalHost name="overlay" className="absolute inset-0" />
           </StyledSafeAreaView>
+          <StyledPortalHost name="morph" className="absolute inset-0" />
         </SafeAreaProvider>
       </PortalProvider>
     </GestureHandlerRootView>
