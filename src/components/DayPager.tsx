@@ -1,16 +1,16 @@
-import { useRef, useState } from "react";
-import {
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  ScrollView,
-  View,
-  useWindowDimensions,
-} from "react-native";
-import Animated from "react-native-reanimated";
+import { useCallback, useState } from "react";
+import { ScrollView, View, useWindowDimensions } from "react-native";
+import Animated, {
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useDerivedValue,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Entry } from "../data/entries";
 
+import { EntryPreview, ScrollIndicator } from "./ScrollIndicator";
 import Stack from "./Stack";
 
 type DayPagerProps = {
@@ -22,7 +22,7 @@ type DayPagerProps = {
 let cachedPagerHeight = 0;
 
 const DayPager = ({ entries }: DayPagerProps) => {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useAnimatedRef<ScrollView>();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
   // Safe-area insets are known from the first render but applied to the native
@@ -31,17 +31,31 @@ const DayPager = ({ entries }: DayPagerProps) => {
   // and clamp the measurement to it to avoid the reflow.
   const computedHeight = Math.max(0, window.height - insets.top - insets.bottom);
   const [pagerHeight, setPagerHeight] = useState(cachedPagerHeight || computedHeight);
-  const [, setActiveEntryIndex] = useState(0);
+  const scrollOffset = useSharedValue(0);
 
-  const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollOffset.value = event.contentOffset.y;
+  });
+
+  const currentPage = useDerivedValue(() => {
     if (pagerHeight === 0) {
-      return;
+      return 0;
     }
 
-    const index = Math.round(event.nativeEvent.contentOffset.y / pagerHeight);
+    return scrollOffset.value / pagerHeight;
+  }, [pagerHeight]);
 
-    setActiveEntryIndex(Math.max(0, Math.min(entries.length - 1, index)));
-  };
+  const jumpToEntry = useCallback(
+    (index: number) => {
+      if (pagerHeight === 0) {
+        return;
+      }
+
+      scrollRef.current?.scrollTo({ x: 0, y: index * pagerHeight, animated: false });
+      scrollOffset.value = index * pagerHeight;
+    },
+    [pagerHeight, scrollOffset, scrollRef],
+  );
 
   return (
     <View className="relative flex-1">
@@ -63,7 +77,7 @@ const DayPager = ({ entries }: DayPagerProps) => {
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
             removeClippedSubviews
-            onMomentumScrollEnd={onMomentumScrollEnd}
+            onScroll={onScroll}
             style={{ height: pagerHeight }}
           >
             {entries.map((entry, index) => (
@@ -78,6 +92,17 @@ const DayPager = ({ entries }: DayPagerProps) => {
           </Animated.ScrollView>
         )}
       </View>
+      {pagerHeight > 0 && (
+        <ScrollIndicator
+          orientation="vertical"
+          count={entries.length}
+          currentPage={currentPage}
+          maxVisible={5}
+          onJumpToIndex={jumpToEntry}
+          renderPreview={(index) => <EntryPreview entry={entries[index]} />}
+          className="absolute top-1/2 right-3 z-40 -translate-y-1/2"
+        />
+      )}
     </View>
   );
 };

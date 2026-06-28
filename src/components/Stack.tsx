@@ -1,9 +1,9 @@
-import { useState, ReactNode } from "react";
+import { useCallback, useState, ReactNode } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import Animated, {
   useAnimatedRef,
+  useAnimatedScrollHandler,
   useDerivedValue,
-  useScrollOffset,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
@@ -17,6 +17,7 @@ import { LAYOUT } from "../constants/layout";
 import ArtefactWrapper from "./ArtefactWrapper";
 import Paper from "./Paper";
 import Print from "./Print";
+import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
 
 const StyledPortal = withUniwind(Portal);
 
@@ -33,8 +34,12 @@ const Stack = ({ entry }: StackProps) => {
   const [activePage, setActivePage] = useState(0);
 
   const scrollRef = useAnimatedRef<ScrollView>();
-  const scrollOffset = useScrollOffset(scrollRef);
+  const scrollOffset = useSharedValue(0);
   const progress = useSharedValue(0);
+
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollOffset.value = event.contentOffset.x;
+  });
 
   const currentPage = useDerivedValue(() => {
     return scrollOffset.value / PAGE_WIDTH;
@@ -96,7 +101,17 @@ const Stack = ({ entry }: StackProps) => {
 
   const restoreScroll = () => {
     scrollRef.current?.scrollTo({ x: activePage * PAGE_WIDTH, y: 0, animated: false });
+    scrollOffset.value = activePage * PAGE_WIDTH;
   };
+
+  const jumpToArtefact = useCallback(
+    (index: number) => {
+      scrollRef.current?.scrollTo({ x: index * PAGE_WIDTH, y: 0, animated: false });
+      scrollOffset.value = index * PAGE_WIDTH;
+      setActivePage(index);
+    },
+    [PAGE_WIDTH, scrollOffset, scrollRef],
+  );
 
   return (
     <>
@@ -124,6 +139,8 @@ const Stack = ({ entry }: StackProps) => {
                 snapToInterval={PAGE_WIDTH}
                 decelerationRate="fast"
                 showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                onScroll={onScroll}
                 onLayout={restoreScroll}
               >
                 <View
@@ -132,6 +149,20 @@ const Stack = ({ entry }: StackProps) => {
               </Animated.ScrollView>
 
               {wrappedArtefacts}
+            </View>
+            <View
+              style={{ zIndex: 200 }}
+              className="absolute bottom-24 left-1/2 -translate-x-1/2"
+              pointerEvents="box-none"
+            >
+              <ScrollIndicator
+                orientation="horizontal"
+                count={entry.artefacts.length}
+                currentPage={currentPage}
+                maxVisible={5}
+                onJumpToIndex={jumpToArtefact}
+                renderPreview={(index) => <ArtefactPreview entry={entry} index={index} />}
+              />
             </View>
           </View>
         </StyledPortal>
