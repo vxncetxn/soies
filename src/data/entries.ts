@@ -14,11 +14,13 @@ export type PrintArtefact = {
 export type Artefact = PaperArtefact | PrintArtefact;
 
 export type PaperEntry = {
+  title: string;
   type: "paper";
   artefacts: PaperArtefact[];
 };
 
 export type PrintEntry = {
+  title: string;
   type: "print";
   artefacts: PrintArtefact[];
 };
@@ -35,6 +37,7 @@ const MOCK_DATA: DayEntries[] = [
     date: todayISO(),
     entries: [
       {
+        title: "An example entry",
         type: "paper",
         artefacts: [
           {
@@ -46,13 +49,18 @@ const MOCK_DATA: DayEntries[] = [
           { text: "Paper 5" },
         ],
       },
-      { type: "print", artefacts: [{ text: "Print 1", img: require("./mock-image.png") }] },
+      {
+        title: "kiyomizudera",
+        type: "print",
+        artefacts: [{ text: "Print 1", img: require("./mock-image.png") }],
+      },
     ],
   },
   {
     date: addDaysISO(todayISO(), -1),
     entries: [
       {
+        title: "day in retro",
         type: "paper",
         artefacts: [{ text: "Paper 1" }, { text: "Paper 2" }],
       },
