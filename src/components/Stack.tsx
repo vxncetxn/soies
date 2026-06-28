@@ -1,8 +1,10 @@
 import { useCallback, useState, ReactNode } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import Animated, {
+  interpolate,
   useAnimatedRef,
   useAnimatedScrollHandler,
+  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
   withSpring,
@@ -15,6 +17,8 @@ import type { Entry } from "../data/entries";
 import { SPRING_CONFIG } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import ArtefactWrapper from "./ArtefactWrapper";
+import { useExpandContext } from "./ExpandContext";
+import { Icon } from "./Icon";
 import Paper from "./Paper";
 import Print from "./Print";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
@@ -26,6 +30,7 @@ type StackProps = {
 };
 
 const Stack = ({ entry }: StackProps) => {
+  const { chromeProgress } = useExpandContext();
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const EXPANDED_WIDTH = SCREEN_WIDTH - 20;
   const PAGE_WIDTH = EXPANDED_WIDTH + LAYOUT.EXPANDED_STACK_GAP;
@@ -48,6 +53,11 @@ const Stack = ({ entry }: StackProps) => {
   const activeIndex = useDerivedValue(() => {
     return Math.round(currentPage.value);
   });
+
+  const closeBtnStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.2, 1], [0, 1]),
+    transform: [{ translateY: interpolate(progress.value, [0.2, 1], [40, 0]) }],
+  }));
 
   const wrapArtefact = (index: number, artefact: ReactNode) => (
     <ArtefactWrapper
@@ -89,6 +99,7 @@ const Stack = ({ entry }: StackProps) => {
     setIsExpanded(true);
 
     progress.value = withSpring(1, SPRING_CONFIG);
+    chromeProgress.value = withSpring(1, SPRING_CONFIG);
   };
 
   const collapse = () => {
@@ -97,6 +108,7 @@ const Stack = ({ entry }: StackProps) => {
     setIsExpanded(false);
 
     progress.value = withSpring(0, SPRING_CONFIG);
+    chromeProgress.value = withSpring(0, SPRING_CONFIG);
   };
 
   const restoreScroll = () => {
@@ -163,6 +175,22 @@ const Stack = ({ entry }: StackProps) => {
                 onJumpToIndex={jumpToArtefact}
                 renderPreview={(index) => <ArtefactPreview entry={entry} index={index} />}
               />
+            </View>
+            <View
+              style={{ zIndex: 210 }}
+              className="absolute bottom-10 left-1/2 -translate-x-1/2"
+              pointerEvents="box-none"
+            >
+              <Animated.View style={closeBtnStyle}>
+                <Pressable
+                  onPress={collapse}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close entry"
+                  className="rounded-full border border-controls-border bg-controls-background p-3"
+                >
+                  <Icon name="x-mark" size={22} color="#79716B" />
+                </Pressable>
+              </Animated.View>
             </View>
           </View>
         </StyledPortal>

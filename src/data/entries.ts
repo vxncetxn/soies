@@ -37,7 +37,7 @@ const MOCK_DATA: DayEntries[] = [
     date: todayISO(),
     entries: [
       {
-        title: "An example entry",
+        title: "An example entry that is very long",
         type: "paper",
         artefacts: [
           {

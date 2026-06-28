@@ -1,30 +1,82 @@
 import { useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Text, View } from "react-native";
-import { createNanoIconSet } from "react-native-nano-icons";
 import Animated, {
   interpolate,
+  SharedValue,
   useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
 
-import glyphMap from "../../assets/nanoicons/icons.glyphmap.json";
+import { CHROME_FADE_END, TITLE_TRAVEL } from "../constants/animation";
 import { formatDisplayDate } from "../utils/date";
 import Button from "./Button";
 import CalendarOverlay from "./CalendarOverlay";
+import { useExpandContext } from "./ExpandContext";
+import { Icon } from "./Icon";
 import MorphOverlay from "./MorphOverlay";
 
-const Icon = createNanoIconSet(glyphMap);
+type AnimatedTitleProps = {
+  titles: string[];
+  currentPage: SharedValue<number>;
+};
+
+const TitleLayer = ({
+  title,
+  index,
+  currentPage,
+}: {
+  title: string;
+  index: number;
+  currentPage: SharedValue<number>;
+}) => {
+  const style = useAnimatedStyle(() => {
+    const distance = index - currentPage.value;
+    const base = 1 - Math.min(1, Math.abs(currentPage.value - index));
+
+    return {
+      opacity: base * base,
+      transform: [{ translateY: distance * TITLE_TRAVEL }],
+    };
+  });
+
+  return (
+    <Animated.Text
+      style={style}
+      numberOfLines={1}
+      className="absolute inset-x-0 top-0 font-sans-medium text-xl leading-7 text-primary"
+    >
+      {title}
+    </Animated.Text>
+  );
+};
+
+const AnimatedTitle = ({ titles, currentPage }: AnimatedTitleProps) => {
+  if (titles.length === 0) {
+    return null;
+  }
+
+  return (
+    <View className="relative h-7 overflow-hidden">
+      {titles.map((title, index) => (
+        <TitleLayer key={index} title={title} index={index} currentPage={currentPage} />
+      ))}
+    </View>
+  );
+};
 
 type HomeHeaderProps = {
   date: string;
+  titles: string[];
+  currentPage: SharedValue<number>;
 };
 
-const HomeHeader = ({ date }: HomeHeaderProps) => {
+const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
   const router = useRouter();
+  const { chromeProgress } = useExpandContext();
   const triggerRef = useAnimatedRef<Animated.View>();
-  const progress = useSharedValue(0);
+  const calendarProgress = useSharedValue(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
   // Drives the calendar's active-date highlight, decoupled from the route param
   // so navigation no longer re-renders the calendar. Synced post-close below.
@@ -56,14 +108,16 @@ const HomeHeader = ({ date }: HomeHeaderProps) => {
     setCalendarOpen(false);
   }, []);
 
-  // Button content + border + bg cross-fade out as the panel blooms in.
+  // Button content cross-fades out for calendar morph and entry expand chrome hide.
   const triggerStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 0.2], [1, 0]),
+    opacity:
+      interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0]) *
+      interpolate(calendarProgress.value, [0, 0.2], [1, 0]),
   }));
 
   return (
     <View className="absolute z-50 w-full px-5 py-2">
-      <Animated.View ref={triggerRef} collapsable={false} className="self-start">
+      <Animated.View ref={triggerRef} collapsable={false} className="">
         <Animated.View style={triggerStyle}>
           <Button
             onPress={() => {
@@ -71,8 +125,8 @@ const HomeHeader = ({ date }: HomeHeaderProps) => {
             }}
             accessibilityRole="button"
           >
-            <View className="flex gap-1 px-6 py-2">
-              <Text className="font-sans-medium text-xl text-primary">kiyomizudera</Text>
+            <View className="flex gap-1 w-full px-6 py-2">
+              <AnimatedTitle titles={titles} currentPage={currentPage} />
               <View className="flex flex-row items-center gap-2">
                 <Text className="font-mono text-base text-secondary">
                   {formatDisplayDate(date)}
@@ -87,7 +141,7 @@ const HomeHeader = ({ date }: HomeHeaderProps) => {
       <MorphOverlay
         triggerRef={triggerRef}
         open={calendarOpen}
-        progress={progress}
+        progress={calendarProgress}
         onRequestClose={handleRequestClose}
         onClose={handleClosed}
         variant="fullscreen"

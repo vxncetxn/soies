@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { useWindowDimensions } from "react-native";
 import Animated, { interpolate, SharedValue, useAnimatedStyle } from "react-native-reanimated";
 
+import { SHADOW_SM, SHADOW_XL } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 
 type ArtefactWrapperProps = {
@@ -45,6 +46,14 @@ const ArtefactWrapper = ({
     return {
       transform: [{ translateX }, { scale }],
       zIndex: index === active ? 100 : 100 - Math.abs(index - active),
+      shadowColor: "#000",
+      shadowOffset: {
+        width: 0,
+        height: interpolate(progress.value, [0, 1], [SHADOW_SM.offsetY, SHADOW_XL.offsetY]),
+      },
+      shadowOpacity: interpolate(progress.value, [0, 1], [SHADOW_SM.opacity, SHADOW_XL.opacity]),
+      shadowRadius: interpolate(progress.value, [0, 1], [SHADOW_SM.radius, SHADOW_XL.radius]),
+      elevation: interpolate(progress.value, [0, 1], [SHADOW_SM.elevation, SHADOW_XL.elevation]),
     };
   });
 
