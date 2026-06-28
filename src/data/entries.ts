@@ -50,32 +50,11 @@ const MOCK_DATA: DayEntries[] = [
     ],
   },
   {
-    date: addDaysISO(todayISO(), 1),
-    entries: [
-      {
-        type: "paper",
-        artefacts: [{ text: "Paper 1" }, { text: "Paper 2" }],
-      },
-      {
-        type: "print",
-        artefacts: [
-          { text: "Print 1", img: require("./mock-image.png") },
-          { text: "Print 2", img: require("./mock-image.png") },
-        ],
-      },
-    ],
-  },
-  {
     date: addDaysISO(todayISO(), -1),
     entries: [
       {
         type: "paper",
-        artefacts: [
-          { text: "Paper 1" },
-          { text: "Paper 2" },
-          { text: "Paper 3" },
-          { text: "Paper 4" },
-        ],
+        artefacts: [{ text: "Paper 1" }, { text: "Paper 2" }],
       },
     ],
   },

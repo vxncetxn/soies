@@ -22,7 +22,7 @@ export default function Index() {
           <Text className="text-center text-primary">No entries for this day.</Text>
         </View>
       ) : (
-        <DayPager entries={entries} />
+        <DayPager key={effectiveDate} entries={entries} />
       )}
     </View>
   );

@@ -4,14 +4,13 @@ import Animated, {
   AnimatedRef,
   interpolate,
   measure,
-  runOnJS,
-  runOnUI,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   type SharedValue,
 } from "react-native-reanimated";
 import { Portal } from "react-native-teleport";
+import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 const BUTTON_BORDER_RADIUS = 32;
 // Slower spring so the shape morph is perceivable (~400ms).
@@ -65,7 +64,7 @@ const MorphOverlay = ({
   }, [onClose]);
 
   const animateOpen = useCallback(() => {
-    runOnUI(() => {
+    scheduleOnUI(() => {
       "worklet";
       const layout = measure(triggerRef);
 
@@ -79,18 +78,18 @@ const MorphOverlay = ({
       }
 
       progress.value = withSpring(1, MORPH_SPRING);
-    })();
+    });
   }, [origin, progress, triggerRef]);
 
   const animateClose = useCallback(() => {
-    runOnUI(() => {
+    scheduleOnUI(() => {
       "worklet";
       progress.value = withSpring(0, MORPH_SPRING, (finished) => {
         if (finished) {
-          runOnJS(finishClose)();
+          scheduleOnRN(finishClose);
         }
       });
-    })();
+    });
   }, [finishClose, progress]);
 
   // Always mounted (preloaded). Only animate on `open` changes, not on mount.
@@ -163,7 +162,11 @@ const MorphOverlay = ({
         )}
 
         <Animated.View
-          style={[styles.panel, { width: panelWidth, height: panelHeight, backgroundColor }, panelStyle]}
+          style={[
+            styles.panel,
+            { width: panelWidth, height: panelHeight, backgroundColor },
+            panelStyle,
+          ]}
           pointerEvents="auto"
         >
           {/* Children are always mounted (preloaded) so opening never re-renders them. */}

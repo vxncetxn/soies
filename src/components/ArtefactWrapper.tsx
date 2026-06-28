@@ -1,10 +1,6 @@
 import { ReactNode } from "react";
 import { useWindowDimensions } from "react-native";
-import Animated, {
-  interpolate,
-  SharedValue,
-  useAnimatedStyle,
-} from "react-native-reanimated";
+import Animated, { interpolate, SharedValue, useAnimatedStyle } from "react-native-reanimated";
 
 import { LAYOUT } from "../constants/layout";
 

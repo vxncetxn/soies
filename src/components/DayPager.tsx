@@ -31,7 +31,7 @@ const DayPager = ({ entries }: DayPagerProps) => {
   // and clamp the measurement to it to avoid the reflow.
   const computedHeight = Math.max(0, window.height - insets.top - insets.bottom);
   const [pagerHeight, setPagerHeight] = useState(cachedPagerHeight || computedHeight);
-  const [activeEntryIndex, setActiveEntryIndex] = useState(0);
+  const [, setActiveEntryIndex] = useState(0);
 
   const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (pagerHeight === 0) {

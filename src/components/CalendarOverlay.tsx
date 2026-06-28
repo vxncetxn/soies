@@ -13,6 +13,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getEntryDates } from "../data/entries";
+import { todayISO } from "../utils/date";
 
 const CALENDAR_INSTANCE_ID = "home-calendar-picker";
 const CALENDAR_SPACING = 20;
@@ -133,6 +134,7 @@ const DayCell = memo(function DayCell({ day, entryDates, onPress }: DayCellProps
 
   const hasEntry = entryDates.has(day.id);
   const isActive = day.state === "active";
+  const isDisabled = day.state === "disabled";
 
   const containerStyle =
     day.state === "idle"
@@ -152,7 +154,7 @@ const DayCell = memo(function DayCell({ day, entryDates, onPress }: DayCellProps
 
   return (
     <View style={day.isStartOfWeek ? styles.cellStart : styles.cell}>
-      <Pressable onPress={() => onPress(day.id)} style={containerStyle}>
+      <Pressable onPress={() => onPress(day.id)} disabled={isDisabled} style={containerStyle}>
         <Text style={textStyle}>{day.displayLabel}</Text>
       </Pressable>
       {hasEntry && (
@@ -218,7 +220,11 @@ const CalendarMonthWithDots = memo(function CalendarMonthWithDots({
       </Calendar.Row.Month>
       <Calendar.Row.Week spacing={ROW_SPACING} theme={theme?.rowWeek}>
         {weekDaysList.map((weekDay, index) => (
-          <Calendar.Item.WeekName key={index} height={calendarWeekHeaderHeight} theme={theme?.itemWeekName}>
+          <Calendar.Item.WeekName
+            key={index}
+            height={calendarWeekHeaderHeight}
+            theme={theme?.itemWeekName}
+          >
             {weekDay}
           </Calendar.Item.WeekName>
         ))}
@@ -236,13 +242,17 @@ const CalendarMonthWithDots = memo(function CalendarMonthWithDots({
 
 type CalendarOverlayProps = {
   effectiveDate: string;
+  highlightDate: string;
   onPick: CalendarOnDayPress;
 };
 
-const CalendarOverlay = ({ effectiveDate, onPick }: CalendarOverlayProps) => {
+const CalendarOverlay = ({ effectiveDate, highlightDate, onPick }: CalendarOverlayProps) => {
   const insets = useSafeAreaInsets();
   const entryDates = useMemo(() => getEntryDates(), []);
   const [initialMonthId] = useState(effectiveDate);
+  // Cap the calendar at today: blocks future months from ever rendering (even
+  // via onEndReached/appendMonths) and disables future days within view.
+  const maxDateId = useMemo(() => todayISO(), []);
 
   // Range is fixed: [account start, initial month]. No earlier/future months.
   const pastRange = useMemo(
@@ -251,9 +261,12 @@ const CalendarOverlay = ({ effectiveDate, onPick }: CalendarOverlayProps) => {
   );
   const futureRange = 0;
 
+  // Decoupled from `effectiveDate`: navigation (router.setParams) changes
+  // `effectiveDate` but must NOT re-render the calendar during the close morph.
+  // `highlightDate` is synced post-close by HomeHeader so the next open is correct.
   const activeDateRanges = useMemo<CalendarActiveDateRange[]>(
-    () => [{ startId: effectiveDate, endId: effectiveDate }],
-    [effectiveDate],
+    () => [{ startId: highlightDate, endId: highlightDate }],
+    [highlightDate],
   );
 
   const handleDayPress = useCallback<CalendarOnDayPress>(
@@ -266,7 +279,11 @@ const CalendarOverlay = ({ effectiveDate, onPick }: CalendarOverlayProps) => {
   const renderItem = useCallback(
     ({ item }: { item: CalendarMonthEnhanced }) => (
       <View style={styles.monthContainer}>
-        <CalendarMonthWithDots calendarMonthId={item.id} entryDates={entryDates} {...item.calendarProps} />
+        <CalendarMonthWithDots
+          calendarMonthId={item.id}
+          entryDates={entryDates}
+          {...item.calendarProps}
+        />
       </View>
     ),
     [entryDates],
@@ -288,6 +305,7 @@ const CalendarOverlay = ({ effectiveDate, onPick }: CalendarOverlayProps) => {
         calendarFirstDayOfWeek="sunday"
         calendarPastScrollRangeInMonths={pastRange}
         calendarFutureScrollRangeInMonths={futureRange}
+        calendarMaxDateId={maxDateId}
         calendarActiveDateRanges={activeDateRanges}
         calendarColorScheme="light"
         calendarDayHeight={DAY_HEIGHT}
