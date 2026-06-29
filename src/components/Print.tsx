@@ -11,7 +11,7 @@ type PrintProps = {
 
 const Print = ({ img, children }: PropsWithChildren<PrintProps>) => {
   return (
-    <View className="flex aspect-print h-full w-full items-center gap-4 bg-paper pt-8">
+    <View className="bg-paper flex aspect-print h-full w-full items-center gap-4 pt-8">
       <StyledImage
         className="aspect-print-image w-[86.79%]"
         source={img}
@@ -19,7 +19,7 @@ const Print = ({ img, children }: PropsWithChildren<PrintProps>) => {
         cachePolicy="memory-disk"
         transition={0}
       />
-      <Text className="font-paper text-base text-primary">{children}</Text>
+      <Text className="text-primary font-paper text-base">{children}</Text>
     </View>
   );
 };

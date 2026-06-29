@@ -17,13 +17,17 @@ import type { Entry } from "../data/entries";
 import { SPRING_CONFIG } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import ArtefactWrapper from "./ArtefactWrapper";
+import CollapsedDeck, { collapsedDeckContainerClass } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
+import FocusOverlay from "./FocusOverlay";
 import { Icon } from "./Icon";
 import Paper from "./Paper";
 import Print from "./Print";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
 
 const StyledPortal = withUniwind(Portal);
+
+const LONG_PRESS_DELAY_MS = 400;
 
 type StackProps = {
   entry: Entry;
@@ -36,8 +40,10 @@ const Stack = ({ entry }: StackProps) => {
   const PAGE_WIDTH = EXPANDED_WIDTH + LAYOUT.EXPANDED_STACK_GAP;
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
   const [activePage, setActivePage] = useState(0);
 
+  const triggerRef = useAnimatedRef<Animated.View>();
   const scrollRef = useAnimatedRef<ScrollView>();
   const scrollOffset = useSharedValue(0);
   const progress = useSharedValue(0);
@@ -96,6 +102,7 @@ const Stack = ({ entry }: StackProps) => {
   };
 
   const expand = () => {
+    setFocusOpen(false);
     setIsExpanded(true);
 
     progress.value = withSpring(1, SPRING_CONFIG);
@@ -125,26 +132,41 @@ const Stack = ({ entry }: StackProps) => {
     [PAGE_WIDTH, scrollOffset, scrollRef],
   );
 
+  const handleRequestCloseFocus = useCallback(() => {
+    setFocusOpen(false);
+  }, []);
+
   return (
     <>
       {!isExpanded && (
-        <Pressable onPress={expand}>
+        <Pressable
+          onPress={expand}
+          onLongPress={() => setFocusOpen(true)}
+          delayLongPress={LONG_PRESS_DELAY_MS}
+        >
           <Animated.View
-            className={`${entry.type === "paper" ? "aspect-a4" : "aspect-print"} relative max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]`}
+            ref={triggerRef}
+            collapsable={false}
+            className={collapsedDeckContainerClass(entry.type)}
           >
-            {wrappedArtefacts}
+            <CollapsedDeck entry={entry} activePage={activePage} />
           </Animated.View>
         </Pressable>
       )}
+
+      <FocusOverlay
+        triggerRef={triggerRef}
+        open={focusOpen}
+        entry={entry}
+        activePage={activePage}
+        onRequestClose={handleRequestCloseFocus}
+      />
 
       {isExpanded && (
         <StyledPortal hostName="overlay" className="items-center justify-center">
           <View className="absolute inset-0 items-center justify-center">
             <Pressable className="absolute inset-0" onPress={collapse} />
-            <View
-              className={`${entry.type === "paper" ? "aspect-a4" : "aspect-print"} relative max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]`}
-              pointerEvents="box-none"
-            >
+            <View className={collapsedDeckContainerClass(entry.type)} pointerEvents="box-none">
               <Animated.ScrollView
                 ref={scrollRef}
                 horizontal
@@ -186,7 +208,7 @@ const Stack = ({ entry }: StackProps) => {
                   onPress={collapse}
                   accessibilityRole="button"
                   accessibilityLabel="Close entry"
-                  className="rounded-full border border-controls-border bg-controls-background p-3"
+                  className="border-controls-border bg-controls-background rounded-full border p-3"
                 >
                   <Icon name="x-mark" size={22} color="#79716B" />
                 </Pressable>

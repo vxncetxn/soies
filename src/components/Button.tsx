@@ -5,7 +5,7 @@ const Button = forwardRef<View, PropsWithChildren<PressableProps>>(
   ({ children, ...props }, ref) => {
     return (
       <Pressable ref={ref} {...props}>
-        <View className="flex items-center justify-center rounded-4xl border border-controls-border bg-controls-background">
+        <View className="border-controls-border bg-controls-background flex items-center justify-center rounded-4xl border">
           {children}
         </View>
       </Pressable>
