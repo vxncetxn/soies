@@ -1,3 +1,9 @@
+export const MORPH_SPRING = { stiffness: 110, damping: 20, mass: 1, overshootClamping: true };
+
+export const PANEL_FADE_END = 0.2;
+export const CONTENT_BLOOM_START = 0.2;
+export const MORPH_BORDER_RADIUS = 32;
+
 export const SPRING_CONFIG = {
   stiffness: 900,
   damping: 110,

@@ -1,11 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Text, View, useWindowDimensions } from "react-native";
-import {
-  useAnimatedScrollHandler,
-  useDerivedValue,
-  useSharedValue,
-} from "react-native-reanimated";
+import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import DayPager from "../../components/DayPager";
@@ -54,12 +50,12 @@ export default function Index() {
   };
 
   return (
-    <View className="relative flex-1 bg-background">
+    <View className="bg-background relative flex-1">
       <HomeHeader date={effectiveDate} titles={titles} currentPage={currentPage} />
 
       {entries.length === 0 ? (
         <View className="flex-1 items-center justify-center px-5">
-          <Text className="text-center text-primary">No entries for this day.</Text>
+          <Text className="text-primary text-center">No entries for this day.</Text>
         </View>
       ) : (
         <DayPager

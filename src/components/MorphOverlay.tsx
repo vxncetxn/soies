@@ -1,25 +1,15 @@
-import { PropsWithChildren, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { PropsWithChildren, useEffect } from "react";
 import { BackHandler, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, {
   AnimatedRef,
   interpolate,
-  measure,
   useAnimatedStyle,
-  useSharedValue,
-  withSpring,
   type SharedValue,
 } from "react-native-reanimated";
 import { Portal } from "react-native-teleport";
-import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
-const BUTTON_BORDER_RADIUS = 32;
-// Slower spring so the shape morph is perceivable (~400ms).
-const MORPH_SPRING = { stiffness: 110, damping: 20, mass: 1, overshootClamping: true };
-// Panel fades in (transparent -> solid) over the first slice so the button
-// cross-fades into the container instead of a foreign white pill appearing.
-const PANEL_FADE_END = 0.2;
-// Calendar blooms in once the container is solid, so the shape morph is visible.
-const CONTENT_BLOOM_START = 0.2;
+import { CONTENT_BLOOM_START, MORPH_BORDER_RADIUS, PANEL_FADE_END } from "../constants/animation";
+import { useMorphFromTrigger } from "../hooks/useMorphFromTrigger";
 
 type MorphOverlayProps = PropsWithChildren<{
   triggerRef: AnimatedRef<Animated.View>;
@@ -46,66 +36,12 @@ const MorphOverlay = ({
   backgroundColor = "#FFFFFF",
 }: MorphOverlayProps) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-
-  const internalProgress = useSharedValue(0);
-  const progress = progressProp ?? internalProgress;
-  const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
-  const screenW = useSharedValue(screenWidth);
-  const screenH = useSharedValue(screenHeight);
-  const isFirstRun = useRef(true);
-
-  useEffect(() => {
-    screenW.value = screenWidth;
-    screenH.value = screenHeight;
-  }, [screenHeight, screenWidth, screenH, screenW]);
-
-  const finishClose = useCallback(() => {
-    onClose?.();
-  }, [onClose]);
-
-  const animateOpen = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      const layout = measure(triggerRef);
-
-      if (layout) {
-        origin.value = {
-          x: layout.pageX,
-          y: layout.pageY,
-          width: layout.width,
-          height: layout.height,
-        };
-      }
-
-      progress.value = withSpring(1, MORPH_SPRING);
-    });
-  }, [origin, progress, triggerRef]);
-
-  const animateClose = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      progress.value = withSpring(0, MORPH_SPRING, (finished) => {
-        if (finished) {
-          scheduleOnRN(finishClose);
-        }
-      });
-    });
-  }, [finishClose, progress]);
-
-  // Always mounted (preloaded). Only animate on `open` changes, not on mount.
-  useLayoutEffect(() => {
-    if (isFirstRun.current) {
-      isFirstRun.current = false;
-      return;
-    }
-
-    if (open) {
-      animateOpen();
-      return;
-    }
-
-    animateClose();
-  }, [animateClose, animateOpen, open]);
+  const { progress, origin, screenW, screenH } = useMorphFromTrigger({
+    triggerRef,
+    open,
+    onClose,
+    progress: progressProp,
+  });
 
   useEffect(() => {
     if (!open) {
@@ -137,7 +73,7 @@ const MorphOverlay = ({
         { scaleX: interpolate(progress.value, [0, 1], [o.width / targetWidth, 1]) },
         { scaleY: interpolate(progress.value, [0, 1], [o.height / targetHeight, 1]) },
       ],
-      borderRadius: interpolate(progress.value, [0, 1], [BUTTON_BORDER_RADIUS, 0]),
+      borderRadius: interpolate(progress.value, [0, 1], [MORPH_BORDER_RADIUS, 0]),
     };
   });
 
@@ -169,7 +105,6 @@ const MorphOverlay = ({
           ]}
           pointerEvents="auto"
         >
-          {/* Children are always mounted (preloaded) so opening never re-renders them. */}
           <Animated.View style={[styles.content, contentStyle]}>{children}</Animated.View>
         </Animated.View>
       </View>
