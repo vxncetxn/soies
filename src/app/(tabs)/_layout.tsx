@@ -19,7 +19,7 @@ export default function Layout() {
             </TabTrigger>
             <TabTrigger name="gallery" href="/gallery" asChild>
               <StyledTabTrigger>
-                <Icon name="frame" size={24} color="#79716B" />
+                <Icon name="photo" size={24} color="#79716B" />
               </StyledTabTrigger>
             </TabTrigger>
           </StyledTabList>

@@ -30,7 +30,8 @@
           ]
         }
       ],
-      "expo-image"
+      "expo-image",
+      "expo-asset"
     ],
     "name": "soies",
     "slug": "soies",
