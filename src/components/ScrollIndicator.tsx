@@ -16,6 +16,12 @@ import { withUniwind } from "uniwind";
 
 import type { Entry } from "../data/entries";
 
+import {
+  LONG_PRESS_MAX_DISTANCE_PX,
+  SCROLL_INDICATOR_LONG_PRESS_MIN_DURATION_MS,
+} from "../constants/interaction";
+import { triggerLongPressHaptic } from "../utils/haptics";
+
 const StyledImage = withUniwind(Image);
 
 type ScrollIndicatorOrientation = "vertical" | "horizontal";
@@ -144,9 +150,10 @@ export const ScrollIndicator = ({
   );
 
   const longPress = Gesture.LongPress()
-    .minDuration(250)
-    .maxDistance(1000)
+    .minDuration(SCROLL_INDICATOR_LONG_PRESS_MIN_DURATION_MS)
+    .maxDistance(LONG_PRESS_MAX_DISTANCE_PX)
     .onStart(() => {
+      triggerLongPressHaptic();
       expandedProgress.value = withSpring(1);
       scheduleOnRN(setExpanded, true);
     })

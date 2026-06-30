@@ -1,4 +1,4 @@
-import { useCallback, useState, ReactNode } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import Animated, {
   interpolate,
@@ -16,11 +16,11 @@ import type { Entry } from "../data/entries";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
-import ArtefactWrapper from "./ArtefactWrapper";
+import CollapsedDeck, { useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
+import FocusOverlay from "./FocusOverlay";
 import { Icon } from "./Icon";
-import Paper from "./Paper";
-import Print from "./Print";
+import LongPressable from "./LongPressable";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
 
 const StyledPortal = withUniwind(Portal);
@@ -36,8 +36,10 @@ const Stack = ({ entry }: StackProps) => {
   const PAGE_WIDTH = EXPANDED_WIDTH + LAYOUT.EXPANDED_STACK_GAP;
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
   const [activePage, setActivePage] = useState(0);
 
+  const triggerRef = useAnimatedRef<Animated.View>();
   const scrollRef = useAnimatedRef<ScrollView>();
   const scrollOffset = useSharedValue(0);
   const progress = useSharedValue(0);
@@ -54,37 +56,17 @@ const Stack = ({ entry }: StackProps) => {
     return Math.round(currentPage.value);
   });
 
+  const wrappedArtefacts = useWrappedArtefacts({
+    entry,
+    progress,
+    currentPage,
+    activeIndex,
+  });
+
   const closeBtnStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0.2, 1], [0, 1]),
     transform: [{ translateY: interpolate(progress.value, [0.2, 1], [40, 0]) }],
   }));
-
-  const wrapArtefact = (index: number, artefact: ReactNode) => (
-    <ArtefactWrapper
-      type={entry.type}
-      key={index}
-      index={index}
-      progress={progress}
-      currentPage={currentPage}
-      activeIndex={activeIndex}
-    >
-      {artefact}
-    </ArtefactWrapper>
-  );
-
-  const wrappedArtefacts =
-    entry.type === "paper"
-      ? entry.artefacts.map((artefact, index) =>
-          wrapArtefact(index, <Paper key={index}>{artefact.text}</Paper>),
-        )
-      : entry.artefacts.map((artefact, index) =>
-          wrapArtefact(
-            index,
-            <Print key={index} img={artefact.img}>
-              {artefact.text}
-            </Print>,
-          ),
-        );
 
   const persistPage = () => {
     const page = Math.max(
@@ -111,6 +93,14 @@ const Stack = ({ entry }: StackProps) => {
     chromeProgress.value = withSpring(0, SPRING_CONFIG);
   };
 
+  const openFocus = useCallback(() => {
+    setFocusOpen(true);
+  }, []);
+
+  const closeFocus = useCallback(() => {
+    setFocusOpen(false);
+  }, []);
+
   const restoreScroll = () => {
     scrollRef.current?.scrollTo({ x: activePage * PAGE_WIDTH, y: 0, animated: false });
     scrollOffset.value = activePage * PAGE_WIDTH;
@@ -128,14 +118,34 @@ const Stack = ({ entry }: StackProps) => {
   return (
     <>
       {!isExpanded && (
-        <Pressable onPress={expand}>
-          <Animated.View
-            className={`${entry.type === "paper" ? "aspect-a4" : "aspect-print"} relative max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]`}
+        <View className="relative">
+          <LongPressable onPress={expand} onLongPress={openFocus}>
+            <CollapsedDeck
+              triggerRef={triggerRef}
+              entry={entry}
+              progress={progress}
+              currentPage={currentPage}
+              activeIndex={activeIndex}
+            />
+          </LongPressable>
+          <Pressable
+            onPress={openFocus}
+            accessibilityRole="button"
+            accessibilityLabel="Entry options"
+            className="absolute -top-12 -right-2 z-[110] rounded-full p-2"
           >
-            {wrappedArtefacts}
-          </Animated.View>
-        </Pressable>
+            <Icon name="ellipsis-horizontal" size={20} color="#79716B" />
+          </Pressable>
+        </View>
       )}
+
+      <FocusOverlay
+        triggerRef={triggerRef}
+        open={focusOpen}
+        entry={entry}
+        activePage={activePage}
+        onRequestClose={closeFocus}
+      />
 
       {isExpanded && (
         <StyledPortal hostName="overlay" className="items-center justify-center">

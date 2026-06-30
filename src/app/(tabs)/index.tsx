@@ -1,11 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Text, View, useWindowDimensions } from "react-native";
-import {
-  useAnimatedScrollHandler,
-  useDerivedValue,
-  useSharedValue,
-} from "react-native-reanimated";
+import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import DayPager from "../../components/DayPager";
