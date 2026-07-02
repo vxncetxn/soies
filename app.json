@@ -6,6 +6,14 @@
     "web": {
       "output": "static"
     },
+    "autolinking": {
+      "ios": {
+        "buildFromSource": [
+          "react-native-reanimated",
+          "react-native-worklets"
+        ]
+      }
+    },
     "plugins": [
       "expo-router",
       "expo-status-bar",
@@ -31,7 +39,9 @@
         }
       ],
       "expo-image",
-      "expo-asset"
+      "expo-asset",
+      "expo-widgets",
+      "expo-localization"
     ],
     "name": "soies",
     "slug": "soies",
@@ -46,6 +56,9 @@
       "eas": {
         "projectId": "bb5ae819-ea64-467e-ad0a-7d2994693e16"
       }
+    },
+    "android": {
+      "package": "com.anonymous.soies"
     }
   }
 }
