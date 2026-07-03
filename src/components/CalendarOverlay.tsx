@@ -2,8 +2,8 @@
  * CalendarOverlay — the calendar content shown inside the morphing date picker.
  *
  * This is the "content" half of the calendar morph (see docs/02). `HomeHeader`
- * renders the date button; `MorphOverlay` provides the measure-and-morph panel
- * that grows from the button to fullscreen; *this* component is what's inside
+ * renders the date button; `BloomButton` provides the measure-and-morph panel
+ * that blooms from the button to fullscreen; *this* component is what's inside
  * that panel — a vertically-scrolling, month-by-month calendar.
  *
  * Key behaviours:
