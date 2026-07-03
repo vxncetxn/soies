@@ -13,3 +13,5 @@ export const TITLE_TRAVEL = 28;
 
 export const SHADOW_SM = { offsetY: 1, opacity: 0.05, radius: 2, elevation: 1 };
 export const SHADOW_XL = { offsetY: 14, opacity: 0.18, radius: 20, elevation: 16 };
+
+export const BLOOM_SPRING = { stiffness: 80, damping: 20, mass: 1.5 };

@@ -41,6 +41,7 @@ export default function Layout() {
             </BlurTargetViewProvider>
           </BlurTargetView>
           <StyledPortalHost name="morph" className="absolute inset-0" />
+          <StyledPortalHost name="bloom" className="absolute inset-0" />
         </SafeAreaProvider>
       </PortalProvider>
     </GestureHandlerRootView>
