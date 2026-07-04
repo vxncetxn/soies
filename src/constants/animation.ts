@@ -14,15 +14,20 @@ export const TITLE_TRAVEL = 28;
 export const SHADOW_SM = { offsetY: 1, opacity: 0.05, radius: 2, elevation: 1 };
 export const SHADOW_XL = { offsetY: 14, opacity: 0.18, radius: 20, elevation: 16 };
 
-// Snappy folder-open feel for BloomButton morph (subtle overshoot, ~300ms).
-export const BLOOM_SPRING = { stiffness: 300, damping: 28, mass: 0.9 };
+// export const BLOOM_SPRING = { stiffness: 20, damping: 20, mass: 5 };
+export const BLOOM_SPRING = {
+  stiffness: 300,
+  damping: 32,
+  mass: 0.9,
+};
 // Trigger label fades out over the first slice so the button cross-fades into the panel.
 export const BLOOM_TRIGGER_FADE_END = 0.2;
-// Panel background reaches full opacity over the first slice.
-export const BLOOM_PANEL_FADE_END = 0.2;
+// Panel background reaches full opacity almost immediately (over the first ~1%
+// of progress) so the morphing rounded shape is visible from the very first
+// frame rather than fading in gradually over the morph.
+export const BLOOM_PANEL_FADE_END = 0.01;
 // Panel content blooms in once the container is visible.
 export const BLOOM_CONTENT_START = 0.2;
 export const BLOOM_TRIGGER_RADIUS = 32;
 export const BLOOM_MENU_RADIUS = 16;
 export const BLOOM_MENU_GAP = 12;
-export const BLOOM_CONTENT_TRANSLATE = 24;

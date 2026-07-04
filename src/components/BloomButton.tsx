@@ -19,14 +19,16 @@
  *   frame sidesteps the coordinate-system clash entirely — there's no
  *   reparenting of the measured node, so nothing to drift.
  *
- * The morph itself (measure-and-morph, GPU-friendly):
+ * The morph itself (measure-and-morph):
  *   On open we measure the trigger's on-screen frame (`pageX/pageY/width/
- *   height`) from a UI-thread worklet and stash it in `origin`. The panel's
- *   layout box is sized to the *target* frame, and we animate transforms only:
- *   `translate` origin → target and `scale` (origin/target → 1), with
- *   `transformOrigin: 'top left'` so the box grows from the trigger's corner.
- *   Animating transforms (not width/height) keeps the morph on the GPU and
- *   avoids per-frame layout recalculation.
+ *   height`) from a UI-thread worklet and stash it in `origin`. The panel BOX
+ *   animates its real `width`/`height` (origin → target) plus `translate`
+ *   (origin → target) — we animate the box's size, NOT a scale, so the uniform
+ *   `borderRadius` stays circular on every frame (an anisotropic scale would
+ *   squash the radius into an ellipse and the panel would read as squarish).
+ *   The CONTENT inside is pinned to the target size (lays out once → no
+ *   per-frame relayout) and SCALES (origin/target → 1, `transformOrigin:
+ *   'top left'`) so it grows alongside the panel while fading in.
  *
  * Variants:
  *   - `menu` (default): width = screenWidth − 40, horizontally centered, height
@@ -38,7 +40,7 @@
  *   - `fullscreen`: morphs to fill the whole screen (the calendar use case).
  *     Solid background, no backdrop.
  *
- * Controlled API (mirrors MorphOverlay):
+ * Controlled API:
  *   The parent owns `open`. The trigger tap calls `onOpenChange(true)`; the
  *   backdrop tap and hardware-back call `onOpenChange(false)`. `onClose` fires
  *   on the JS thread *after* the close spring finishes — HomeHeader uses that
@@ -47,11 +49,21 @@
  *
  * Animation feel (matches bloom-reference.gif):
  *   The trigger cross-fades out over the first slice of progress, the panel
- *   background fades in over the same slice, and the panel content fades in +
- *   slides upward once the container is visible. The spring is tuned for a
- *   snappy "folder-open" feel with a touch of overshoot.
+ *   background snaps in so the morphing rounded shape is visible from frame
+ *   one, and the panel content fades in + GROWS alongside the panel (it scales
+ *   from the trigger's proportions to full size in sync with the box's
+ *   width/height morph). The spring is tuned for a snappy "folder-open" feel
+ *   with a touch of overshoot.
  */
-import { forwardRef, PropsWithChildren, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  PropsWithChildren,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import {
   BackHandler,
   LayoutChangeEvent,
@@ -64,11 +76,11 @@ import {
 import Animated, {
   interpolate,
   measure,
+  type SharedValue,
   useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  type SharedValue,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
@@ -76,7 +88,6 @@ import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import {
   BLOOM_CONTENT_START,
-  BLOOM_CONTENT_TRANSLATE,
   BLOOM_MENU_GAP,
   BLOOM_MENU_RADIUS,
   BLOOM_PANEL_FADE_END,
@@ -128,6 +139,7 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     // `collapsable={false}` (set on the JSX below) is required for measure to
     // return a real layout on Android.
     const triggerRef = useAnimatedRef<Animated.View>();
+
     // Guards the open/close effect so the very first render (mount) doesn't
     // animate — the panel mounts preloaded and should only animate on actual
     // open/close transitions.
@@ -136,36 +148,36 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     const { width: screenWidth, height: screenHeight } = useWindowDimensions();
     const insets = useSafeAreaInsets();
 
-    // 0 = closed, 1 = open. The single source of truth that drives every
-    // animated style below. Owned internally unless the caller passes one.
-    const internalProgress = useSharedValue(0);
-    const progress = progressProp ?? internalProgress;
-    // The trigger's measured screen frame, captured on open. The panel morphs
-    // FROM this origin TO its target frame.
-    const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
     // Screen dimensions mirrored into shared values so animated styles on the
     // UI thread never read stale JS props after a rotation/resize.
     const screenW = useSharedValue(screenWidth);
     const screenH = useSharedValue(screenHeight);
-    // Intrinsic content height for the menu variant (measured via onLayout).
-    // Drives the panel's animated target height. Defaults to a non-zero
-    // placeholder so the morph has a sane target before the first layout.
-    const contentHeight = useSharedValue(200);
+
     // Safe-area insets mirrored into shared values for the menu's vertical
     // anchoring math (the panel must not sit under notches/home indicators).
     const insetTop = useSharedValue(insets.top);
     const insetBottom = useSharedValue(insets.bottom);
 
-    // JS-side height for the panel's *layout box* (menu variant). A shared
-    // value alone can't drive the layout `height` prop, so we keep a state
-    // twin: the shared value drives the animated target, this drives the box.
-    const [measuredHeight, setMeasuredHeight] = useState(0);
+    // 0 = closed, 1 = open. The single source of truth that drives every
+    // animated style below. Owned internally unless the caller passes one.
+    const internalProgress = useSharedValue(0);
+    const progress = progressProp ?? internalProgress;
 
-    // The panel's layout box is the *target* size. For fullscreen that's the
-    // screen; for menu it's the fixed width and the measured intrinsic height
-    // (1px before the first onLayout, invisible because opacity is 0 closed).
+    // The trigger's measured screen frame, captured on open. The panel morphs
+    // FROM this origin TO its target frame.
+    const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
+
+    // Intrinsic content height for the menu variant (measured via onLayout).
+    // Drives BOTH the panel's animated target height (panelStyle) and the
+    // content's scaleY grow ratio (contentStyle). Defaults to a non-zero
+    // placeholder so the morph has a sane target before the first layout fires.
+    const contentHeight = useSharedValue(200);
+
+    // Target content width. Fullscreen = the whole screen; menu = screenWidth −
+    // 40 (horizontally centered). Used both to pin the fullscreen content to
+    // its target size and to measure the menu's intrinsic height at the right
+    // width — the menu's *height* is intrinsic (onLayout), not fixed here.
     const panelLayoutWidth = variant === "fullscreen" ? screenWidth : screenWidth - 40;
-    const panelLayoutHeight = variant === "fullscreen" ? screenHeight : measuredHeight || 1;
 
     // Keep the UI-thread shared values in sync with JS props after dimension
     // changes (rotation, split view, etc.). Without this the morph would target
@@ -272,16 +284,14 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
      * Menu variant only: measure the panel content's intrinsic height at the
      * target width so the panel can be content-sized. We clamp to the safe area
      * so very tall content never overflows under notches/home indicators. The
-     * value is written to both the `measuredHeight` state (for the layout box)
-     * and the `contentHeight` shared value (for the animated target height).
+     * measured height is written straight to the `contentHeight` shared value,
+     * which drives the animated target height on the UI thread — no React state
+     * is involved, so measuring the content never triggers a re-render.
      */
     const handleContentLayout = useCallback(
       (event: LayoutChangeEvent) => {
         const maxHeight = screenHeight - insets.top - insets.bottom - 2 * BLOOM_MENU_GAP;
-        const height = Math.min(event.nativeEvent.layout.height, maxHeight);
-
-        setMeasuredHeight(height);
-        contentHeight.value = height;
+        contentHeight.value = Math.min(event.nativeEvent.layout.height, maxHeight);
       },
       [contentHeight, insets.bottom, insets.top, screenHeight],
     );
@@ -296,15 +306,24 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     }));
 
     /**
-     * Panel morph. The layout box is the *target* size; we animate transforms
-     * to grow it from the trigger's origin frame to the target frame:
-     *   - translate: origin (x,y) → target (x,y)
-     *   - scale: (origin.w/target.w, origin.h/target.h) → (1, 1)
-     * `transformOrigin: 'top left'` (set in `styles.panel`) makes the scale
-     * grow from the trigger's top-left corner, so the box appears to expand
-     * out of the button. Opacity fades the background in over the first slice
-     * (a transparent → solid/​translucent cross-fade), and borderRadius eases
+     * Panel morph. We animate the box's `width`/`height` (and `translate`) from
+     * the trigger's origin frame to the target frame, and ease `borderRadius`
      * from the trigger's pill radius toward the panel's end radius.
+     *
+     * Why width/height instead of `scale`? A uniform `borderRadius` only stays
+     * circular when it is NOT scaled anisotropically. The origin (a wide, short
+     * pill) and the target (a tall panel) have very different aspect ratios, so
+     * a scale morph would use `scaleX !== scaleY` — that turns the uniform
+     * radius into an ELLIPTICAL corner (the short axis collapses to a few px)
+     * and the panel reads as squarish instead of matching the trigger's round
+     * shape. Animating the real width/height keeps the radius uniform on every
+     * frame, so the panel's corners match the trigger's exactly at the start.
+     *
+     * Perf: only this one box resizes per frame. The content inside is pinned
+     * to the *target* size (not `flex: 1`), so it lays out once and is then
+     * SCALED to fill the box as it grows (see contentStyle) — the heavy
+     * calendar grid never relayouts during the morph, it just scales. Opacity
+     * snaps the background in so the morphing shape is visible from frame one.
      *
      * Target frames:
      *   - fullscreen: (0, 0, screenW, screenH).
@@ -335,39 +354,43 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
 
       return {
         opacity: interpolate(progress.value, [0, BLOOM_PANEL_FADE_END], [0, 1], "clamp"),
+        width: interpolate(progress.value, [0, 1], [o.width, targetWidth]),
+        height: interpolate(progress.value, [0, 1], [o.height, targetHeight]),
         transform: [
           { translateX: interpolate(progress.value, [0, 1], [o.x, targetX]) },
           { translateY: interpolate(progress.value, [0, 1], [o.y, targetY]) },
-          {
-            scaleX: interpolate(progress.value, [0, 1], [o.width / targetWidth, 1]),
-          },
-          {
-            scaleY: interpolate(progress.value, [0, 1], [o.height / targetHeight, 1]),
-          },
         ],
         borderRadius: interpolate(progress.value, [0, 1], [BLOOM_TRIGGER_RADIUS, endRadius]),
       };
     });
 
     /**
-     * Panel content: fades in and slides upward once the container is visible
-     * (starting at BLOOM_CONTENT_START). This is the "content rises into the
-     * newly opened space" motion from the reference gif. `clamp` prevents the
-     * content from starting translated/​invisible before its slice.
+     * Panel content: fades in and GROWS alongside the panel. Instead of sliding
+     * up, the content scales from the trigger's proportions to full size in sync
+     * with the panel's width/height growth — `scaleX`/`scaleY` mirror the panel's
+     * size ratio (origin/target → 1), so the content always fills the panel and
+     * expands with it. `transformOrigin: 'top left'` (set on the content wrapper
+     * via `styles.contentWrap`) anchors the grow to the trigger's corner, matching
+     * the panel's growth direction. Opacity starts at BLOOM_CONTENT_START so the
+     * content is hidden while it is most "squished" (smallest); by the time it is
+     * clearly visible it is nearly full size. `clamp` keeps opacity/scale from
+     * animating before their slices.
      */
-    const contentStyle = useAnimatedStyle(() => ({
-      opacity: interpolate(progress.value, [BLOOM_CONTENT_START, 1], [0, 1], "clamp"),
-      transform: [
-        {
-          translateY: interpolate(
-            progress.value,
-            [BLOOM_CONTENT_START, 1],
-            [BLOOM_CONTENT_TRANSLATE, 0],
-            "clamp",
-          ),
-        },
-      ],
-    }));
+    const contentStyle = useAnimatedStyle(() => {
+      const o = origin.value;
+
+      const targetWidth = variant === "fullscreen" ? screenW.value : screenW.value - 40;
+      const targetHeight =
+        variant === "fullscreen" ? screenH.value : contentHeight.value || o.height;
+
+      return {
+        opacity: interpolate(progress.value, [BLOOM_CONTENT_START, 1], [0, 1], "clamp"),
+        transform: [
+          { scaleX: interpolate(progress.value, [0, 1], [o.width / targetWidth, 1]) },
+          { scaleY: interpolate(progress.value, [0, 1], [o.height / targetHeight, 1]) },
+        ],
+      };
+    });
 
     // Trigger tap requests open. We never toggle `open` directly — the parent
     // owns it, so we just forward the intent.
@@ -424,37 +447,46 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
               />
             ) : null}
 
-            {/* The morphing panel. Its layout box is the target size; the
-                `panelStyle` transforms grow it from the trigger's origin. Static
-                style (bg/border) is variant-driven: solid + no border for
-                fullscreen, translucent + hairline border for menu. */}
+            {/* The morphing panel. `panelStyle` animates its width/height +
+                translate from the trigger's origin to the target frame, keeping
+                the borderRadius uniform (no anisotropic scale → no squarish
+                corners). Static bg is variant-driven: solid for fullscreen,
+                translucent for menu. */}
             <Animated.View
               style={[
                 styles.panel,
                 {
-                  width: panelLayoutWidth,
-                  height: panelLayoutHeight,
                   backgroundColor: variant === "fullscreen" ? FULLSCREEN_BG : MENU_BG,
-                  borderWidth: variant === "menu" ? StyleSheet.hairlineWidth : 0,
-                  borderColor: variant === "menu" ? "rgba(0,0,0,0.08)" : undefined,
                 },
                 panelStyle,
               ]}
               pointerEvents="auto"
             >
-              {/* Content wrapper. `flex: 1` for fullscreen so CalendarOverlay
-                  fills the panel; menu content is content-sized (the measuring
-                  View below handles its own width/height). `contentStyle` fades
-                  + slides the content in once the container is visible. */}
+              {/* Content wrapper. Pinned to the *target* size (not `flex: 1`) so
+                  the content lays out once and never relayouts during the morph.
+                  `contentStyle` scales it from the trigger's proportions to full
+                  size in sync with the panel's growth (`transformOrigin: 'top
+                  left'` via `styles.contentWrap`, so it grows from the trigger's
+                  corner) and fades it in once visible — it grows alongside the
+                  panel instead of sliding up. */}
               <Animated.View
-                style={variant === "fullscreen" ? [styles.content, contentStyle] : contentStyle}
+                style={
+                  variant === "fullscreen"
+                    ? [
+                        { width: panelLayoutWidth, height: screenHeight },
+                        styles.contentWrap,
+                        contentStyle,
+                      ]
+                    : [styles.contentWrap, contentStyle]
+                }
               >
                 {variant === "menu" ? (
                   // Measuring wrapper: pin the content to the target width so
                   // its onLayout reports the true intrinsic height at that
-                  // width. The panel's `overflow: hidden` clips it to the
-                  // (initially 1px) box while closed, but onLayout still
-                  // reports the content's natural size.
+                  // width. While closed the panel box sits at the trigger's
+                  // (small) origin frame and `overflow: hidden` clips this
+                  // wrapper to it, but onLayout still reports the content's
+                  // natural, unclipped size.
                   <View onLayout={handleContentLayout} style={{ width: panelLayoutWidth }}>
                     {panelNode}
                   </View>
@@ -481,20 +513,22 @@ const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFill,
   },
-  // The panel is positioned at (0,0) and moved/scaled by `panelStyle`.
-  // `transformOrigin: 'top left'` is essential — it makes the scale grow from
-  // the trigger's corner instead of the box center. `overflow: hidden` clips
-  // the content to the rounded border during the morph.
+  // The panel is positioned at (0,0) and moved/resized by `panelStyle`
+  // (animated width/height + translate). `overflow: hidden` clips any
+  // sub-pixel spillover while the content scales to fill the box — no
+  // `transformOrigin` here because we resize the box (not scale it) to keep
+  // the `borderRadius` uniform on every frame.
   panel: {
     position: "absolute",
     top: 0,
     left: 0,
     overflow: "hidden",
-    transformOrigin: "top left",
   },
-  // Fullscreen content fills the panel so CalendarOverlay can take all space.
-  content: {
-    flex: 1,
+  // Content wrapper grow anchor. `transformOrigin: 'top left'` makes the
+  // content scale up from the trigger's corner (matching the panel's growth
+  // direction) instead of from its center, so it grows alongside the panel.
+  contentWrap: {
+    transformOrigin: "top left",
   },
 });
 
