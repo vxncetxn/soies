@@ -1,17 +1,18 @@
-import type { ImageSource } from "expo-image";
-
-import { addDaysISO, todayISO } from "../utils/date";
-
 export type PaperArtefact = {
   text: string;
 };
 
 export type PrintArtefact = {
   text: string;
-  img: ImageSource | number;
+  imagePath: string;
 };
 
-export type Artefact = PaperArtefact | PrintArtefact;
+export type UnknownArtefact = {
+  type: string;
+  rawData: string;
+};
+
+export type Artefact = PaperArtefact | PrintArtefact | UnknownArtefact;
 
 export type PaperEntry = {
   title: string;
@@ -25,55 +26,45 @@ export type PrintEntry = {
   artefacts: PrintArtefact[];
 };
 
-export type Entry = PaperEntry | PrintEntry;
-
-export type DayEntries = {
-  date: string;
-  entries: Entry[];
+/**
+ * An entry whose primary artefact type is not recognised by this build (e.g. a
+ * future `video` entry read by an older peer). Mirrors `UnknownArtefact`:
+ * preserves the raw type string and the (already-mapped) artefacts so the row
+ * round-trips verbatim and renders a placeholder instead of being silently
+ * coerced into a Print. Forward-compatible across future sync (ADR-0003).
+ */
+export type UnknownEntry = {
+  title: string;
+  type: string;
+  artefacts: Artefact[];
 };
 
-const MOCK_DATA: DayEntries[] = [
-  {
-    date: todayISO(),
-    entries: [
-      {
-        title: "An example entry that is very long",
-        type: "paper",
-        artefacts: [
-          {
-            text: "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since 1966, when designers at Letraset and James Mosley, the librarian at St Bride Printing Library in London, took a 1914 Cicero translation and scrambled it to make dummy text for Letraset's Body Type sheets.",
-          },
-          { text: "Paper 2" },
-          { text: "Paper 3" },
-          { text: "Paper 4" },
-          { text: "Paper 5" },
-        ],
-      },
-      {
-        title: "kiyomizudera",
-        type: "print",
-        artefacts: [{ text: "Print 1", img: require("./mock-image.png") }],
-      },
-    ],
-  },
-  {
-    date: addDaysISO(todayISO(), -1),
-    entries: [
-      {
-        title: "day in retro",
-        type: "paper",
-        artefacts: [{ text: "Paper 1" }, { text: "Paper 2" }],
-      },
-    ],
-  },
-];
+export type Entry = PaperEntry | PrintEntry | UnknownEntry;
 
-export const getEntriesByDate = (date: string): Entry[] => {
-  // Use .find() to get the specific day object
-  const day = MOCK_DATA.find((d) => d.date === date);
-
-  // Return the entries if found, otherwise an empty array
-  return day ? day.entries : [];
+export type Tag = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
 };
 
-export const getEntryDates = (): Set<string> => new Set(MOCK_DATA.map((d) => d.date));
+export type GalleryArtefact = {
+  artefact: Artefact;
+  entryId: string;
+  entryTitle: string;
+  addedAt: number;
+};
+
+export { getEntriesByDate, getEntryDates } from "../db/repositories/entries";
+export { searchEntries } from "../db/repositories/search";
+export { listTags } from "../db/repositories/tags";
+export { getGallery } from "../db/repositories/gallery";
+export { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
+
+export function isUnknownArtefact(artefact: Artefact): artefact is UnknownArtefact {
+  return "rawData" in artefact;
+}
+
+export function isPrintArtefact(artefact: Artefact): artefact is PrintArtefact {
+  return "imagePath" in artefact;
+}

@@ -11,6 +11,7 @@ import { PortalHost, PortalProvider } from "react-native-teleport";
 import { withUniwind } from "uniwind";
 
 import { BlurTargetViewProvider } from "../components/BlurTargetViewContext";
+import { DatabaseProvider } from "../db/DatabaseProvider";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledPortalHost = withUniwind(PortalHost);
@@ -32,12 +33,14 @@ export default function Layout() {
           <StatusBar style="auto" />
           <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
             <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
-              <StyledSafeAreaView className="flex-1 bg-background">
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="(tabs)" />
-                </Stack>
-                <StyledPortalHost name="overlay" className="absolute inset-0" />
-              </StyledSafeAreaView>
+              <DatabaseProvider>
+                <StyledSafeAreaView className="flex-1 bg-background">
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(tabs)" />
+                  </Stack>
+                  <StyledPortalHost name="overlay" className="absolute inset-0" />
+                </StyledSafeAreaView>
+              </DatabaseProvider>
             </BlurTargetViewProvider>
           </BlurTargetView>
           <StyledPortalHost name="morph" className="absolute inset-0" />

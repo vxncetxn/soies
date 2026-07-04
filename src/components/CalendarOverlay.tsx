@@ -35,7 +35,7 @@ import {
   type CalendarTheme,
   useCalendar,
 } from "@marceloterreiro/flash-calendar";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -348,9 +348,21 @@ type CalendarOverlayProps = {
  */
 const CalendarOverlay = ({ effectiveDate, highlightDate, onPick }: CalendarOverlayProps) => {
   const insets = useSafeAreaInsets();
-  // The set of dates that have entries. Computed once from the mock data and
-  // never changes during the session, so an empty dep array is correct.
-  const entryDates = useMemo(() => getEntryDates(), []);
+  const [entryDates, setEntryDates] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getEntryDates().then((dates) => {
+      if (!cancelled) {
+        setEntryDates(dates);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // The month to open on, captured once from the first `effectiveDate`. Using
   // useState (not useMemo) intentionally freezes it: if the route date changes
   // while the calendar is open, we do NOT want to jump the scroll position.

@@ -8,10 +8,7 @@
     },
     "autolinking": {
       "ios": {
-        "buildFromSource": [
-          "react-native-reanimated",
-          "react-native-worklets"
-        ]
+        "buildFromSource": ["react-native-reanimated", "react-native-worklets"]
       }
     },
     "plugins": [

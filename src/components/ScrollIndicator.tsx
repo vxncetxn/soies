@@ -20,6 +20,7 @@ import {
   LONG_PRESS_MAX_DISTANCE_PX,
   SCROLL_INDICATOR_LONG_PRESS_MIN_DURATION_MS,
 } from "../constants/interaction";
+import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
 import { triggerLongPressHaptic } from "../utils/haptics";
 
 const StyledImage = withUniwind(Image);
@@ -295,9 +296,12 @@ type ArtefactPreviewProps = {
 };
 
 export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
-  if (entry.type === "print") {
-    const artefact = entry.artefacts[index];
+  // Render by the artefact's own shape (not the entry's primary type) so a
+  // future/unknown artefact type renders a placeholder instead of crashing on
+  // a missing imagePath, and mixed-type entries preview correctly.
+  const artefact = entry.artefacts[index];
 
+  if (isPrintArtefact(artefact)) {
     return (
       <View
         className="aspect-print h-20 items-center gap-0.5 overflow-hidden border border-controls-border bg-paper pt-1.5 shadow-sm"
@@ -305,7 +309,7 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
       >
         <StyledImage
           className="aspect-print-image w-[80%]"
-          source={artefact.img}
+          source={artefact.imagePath}
           contentFit="cover"
           cachePolicy="memory-disk"
           transition={0}
@@ -317,7 +321,18 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
     );
   }
 
-  const artefact = entry.artefacts[index];
+  if (isUnknownArtefact(artefact)) {
+    return (
+      <View
+        className="aspect-print h-20 items-center justify-center overflow-hidden border border-controls-border bg-paper p-1.5 shadow-sm"
+        pointerEvents="none"
+      >
+        <Text className="font-paper text-primary" numberOfLines={3} style={{ fontSize: 6 }}>
+          Unsupported artefact
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View

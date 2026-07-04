@@ -210,9 +210,7 @@ const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
           <View className="flex w-full gap-1 px-6 py-2">
             <AnimatedTitle titles={titles} currentPage={currentPage} />
             <View className="flex flex-row items-center gap-2">
-              <Text className="font-mono text-base text-secondary">
-                {formatDisplayDate(date)}
-              </Text>
+              <Text className="font-mono text-base text-secondary">{formatDisplayDate(date)}</Text>
               <Icon name="chevron-down" size={20} color="#79716B" />
             </View>
           </View>

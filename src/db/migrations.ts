@@ -1,0 +1,102 @@
+import type { DB } from "@op-engineering/op-sqlite";
+
+type Migration = {
+  version: number;
+  statements: string[];
+};
+
+const MIGRATION_V1: Migration = {
+  version: 1,
+  statements: [
+    `CREATE TABLE users (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      email       TEXT,
+      avatar_path TEXT,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      deleted_at  INTEGER
+    )`,
+    `CREATE TABLE entries (
+      id         TEXT PRIMARY KEY,
+      title      TEXT NOT NULL,
+      type       TEXT NOT NULL,
+      date       TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
+    )`,
+    "CREATE INDEX idx_entries_date_order ON entries(date, sort_order)",
+    `CREATE TABLE artefacts (
+      id         TEXT PRIMARY KEY,
+      entry_id   TEXT NOT NULL REFERENCES entries(id),
+      type       TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      data       TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
+    )`,
+    "CREATE INDEX idx_artefacts_entry_order ON artefacts(entry_id, sort_order)",
+    `CREATE TABLE tags (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
+    )`,
+    "CREATE UNIQUE INDEX idx_tags_name_active ON tags(name) WHERE deleted_at IS NULL",
+    `CREATE TABLE entry_tags (
+      entry_id   TEXT NOT NULL REFERENCES entries(id),
+      tag_id     TEXT NOT NULL REFERENCES tags(id),
+      created_at INTEGER NOT NULL,
+      deleted_at INTEGER,
+      PRIMARY KEY (entry_id, tag_id)
+    )`,
+    "CREATE INDEX idx_entry_tags_tag ON entry_tags(tag_id, deleted_at)",
+    `CREATE TABLE gallery_items (
+      id          TEXT PRIMARY KEY,
+      artefact_id TEXT NOT NULL REFERENCES artefacts(id),
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      added_at    INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      deleted_at  INTEGER
+    )`,
+    "CREATE INDEX idx_gallery_items_order ON gallery_items(sort_order, deleted_at)",
+    "CREATE UNIQUE INDEX idx_gallery_items_artefact_active ON gallery_items(artefact_id) WHERE deleted_at IS NULL",
+    `CREATE VIRTUAL TABLE entries_fts USING fts5(
+      entry_rowid UNINDEXED,
+      title,
+      tokenize='unicode61'
+    )`,
+    `CREATE VIRTUAL TABLE artefacts_fts USING fts5(
+      artefact_rowid UNINDEXED,
+      entry_rowid    UNINDEXED,
+      text,
+      tokenize='unicode61'
+    )`,
+  ],
+};
+
+const MIGRATIONS: Migration[] = [MIGRATION_V1];
+
+export async function runMigrations(db: DB): Promise<void> {
+  const versionResult = await db.execute("PRAGMA user_version");
+  const version = Number(versionResult.rows[0]?.user_version ?? 0);
+
+  for (const migration of MIGRATIONS) {
+    if (migration.version <= version) {
+      continue;
+    }
+
+    // Append the version bump as the final statement so it commits atomically
+    // with the schema inside executeBatch's transaction. PRAGMA user_version is
+    // transactional (SQLite rolls it back on ROLLBACK and persists it on
+    // COMMIT), so a crash mid-migration leaves no partial state: either the
+    // whole migration (schema + version) commits, or none of it does, and the
+    // migration re-runs cleanly on the next launch.
+    const statements = [...migration.statements, `PRAGMA user_version = ${migration.version}`];
+    await db.executeBatch(statements.map((statement) => [statement]));
+  }
+}

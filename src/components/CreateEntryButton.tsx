@@ -104,7 +104,7 @@ const CreateEntryButton = () => {
     <Animated.View
       style={chromeFadeStyle}
       pointerEvents="box-none"
-      className="absolute bottom-5 right-5 z-50"
+      className="absolute right-5 bottom-5 z-50"
     >
       <BloomButton
         variant="menu"

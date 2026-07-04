@@ -64,5 +64,9 @@
     "oxlint": "^1.68.0",
     "typescript": "~6.0.3"
   },
-  "packageManager": "pnpm@9.7.1"
+  "packageManager": "pnpm@9.7.1",
+  "op-sqlite": {
+    "performanceMode": true,
+    "fts5": true
+  }
 }

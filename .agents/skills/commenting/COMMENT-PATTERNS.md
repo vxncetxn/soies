@@ -39,9 +39,9 @@ The header is a map, not a restatement. It covers identity → structure → the
  */
 ```
 
-Key moves: a one-line identity; a plain-English description of what the user sees; the mechanism as **numbered steps**; the *why* of a timing choice ("waiting for completion avoids unmounting mid-animation"); an explicit "this is a prototype" marker.
+Key moves: a one-line identity; a plain-English description of what the user sees; the mechanism as **numbered steps**; the _why_ of a timing choice ("waiting for completion avoids unmounting mid-animation"); an explicit "this is a prototype" marker.
 
-`BloomButton.tsx` (lines 1–57) is the long example — it additionally has a "Why split trigger and panel (the two-world problem)" paragraph that names the exact bug the architecture prevents (the close "jump"), a Variants section, and an API paragraph that pins *when* `onClose` fires and *why* ("so the calendar never re-renders mid-animation"). Match that length when the component has that much going on.
+`BloomButton.tsx` (lines 1–57) is the long example — it additionally has a "Why split trigger and panel (the two-world problem)" paragraph that names the exact bug the architecture prevents (the close "jump"), a Variants section, and an API paragraph that pins _when_ `onClose` fires and _why_ ("so the calendar never re-renders mid-animation"). Match that length when the component has that much going on.
 
 ---
 
@@ -78,7 +78,7 @@ Note "written here-read-by-parent" and "owned upstream" — ownership direction 
 
 ## 3. Module-scope constants — tuning rationale
 
-A constant's comment answers *why this value* and *what it controls visually/behaviourally*.
+A constant's comment answers _why this value_ and _what it controls visually/behaviourally_.
 
 `FocusOverlay.tsx` (lines 49–64):
 
@@ -102,7 +102,7 @@ Each comment ties the number to a perceptual effect ("looks like a glitch", "lif
 
 ## 4. Declarations — thread, role, why-it-exists
 
-For refs, state, and shared values: the role, the thread, and *why this value exists instead of reusing another*.
+For refs, state, and shared values: the role, the thread, and _why this value exists instead of reusing another_.
 
 `FocusOverlay.tsx` (lines 162–174):
 
@@ -118,13 +118,13 @@ const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
 const cloneProgress = useSharedValue(0);
 ```
 
-The standout is the *why-not-reuse*: "We DON'T share the deck's real shared values because the clone must stay frozen…". That is the decision a future dev would otherwise reverse by "simplifying" it and reintroducing the bug.
+The standout is the _why-not-reuse_: "We DON'T share the deck's real shared values because the clone must stay frozen…". That is the decision a future dev would otherwise reverse by "simplifying" it and reintroducing the bug.
 
 ---
 
 ## 5. Function JSDoc — what, where it runs, why this way
 
-A function's JSDoc has three jobs: what it does, **where it runs** (UI-thread worklet vs JS thread), and *why it's done that way*.
+A function's JSDoc has three jobs: what it does, **where it runs** (UI-thread worklet vs JS thread), and _why it's done that way_.
 
 `BloomButton.tsx` (lines 207–233) — open:
 
@@ -147,7 +147,7 @@ const animateOpen = useCallback(() => {
 }, [origin, progress, triggerRef]);
 ```
 
-`FocusOverlay.tsx` (lines 218–233) — close, with the timing *why*:
+`FocusOverlay.tsx` (lines 218–233) — close, with the timing _why_:
 
 ```tsx
 /**
@@ -158,7 +158,7 @@ const animateOpen = useCallback(() => {
  */
 ```
 
-The phrase "only when the spring *finishes* (not if interrupted)" is the kind of precision that prevents a future dev from "fixing" a callback that fires on cancel.
+The phrase "only when the spring _finishes_ (not if interrupted)" is the kind of precision that prevents a future dev from "fixing" a callback that fires on cancel.
 
 ---
 
@@ -169,7 +169,8 @@ Inline `{/* … */}` comments explain the element, why a prop is set, and the pi
 `BloomButton.tsx` (lines 413–422) — the inline trigger:
 
 ```tsx
-{/* Inline trigger — stays in normal layout, never teleported. This is
+{
+  /* Inline trigger — stays in normal layout, never teleported. This is
     the node we measure on open, so it needs `collapsable={false}` and a
     stable ref. `self-start` keeps it content-width (so a small menu
     button measures as a small button); a caller can pass `w-full` via
@@ -178,26 +179,29 @@ Inline `{/* … */}` comments explain the element, why a prop is set, and the pi
     portal's backdrop/panel above. The border/bg here are the pill
     surface; the Pressable inside stretches to fill it (default
     alignItems stretch — do NOT add items-center, that would collapse
-    the content width and break the fullscreen calendar layout). */}
+    the content width and break the fullscreen calendar layout). */
+}
 ```
 
 `DayPager.tsx` (lines 145–149) — the side indicator:
 
 ```tsx
-{/* Side scroll indicator: a vertical rail of dots/previews pinned to the
+{
+  /* Side scroll indicator: a vertical rail of dots/previews pinned to the
     right edge, vertically centered. `pointerEvents="box-none"` lets taps
     pass through the empty areas of this container to the pager beneath,
     while the indicator's own interactive elements still receive taps.
-    It's faded out while an entry is expanded (see indicatorFadeStyle). */}
+    It's faded out while an entry is expanded (see indicatorFadeStyle). */
+}
 ```
 
-Both explain `pointerEvents` by the *gesture consequence* (taps passing through), not by the prop name.
+Both explain `pointerEvents` by the _gesture consequence_ (taps passing through), not by the prop name.
 
 ---
 
 ## 7. StyleSheet — layout intent + why
 
-Each style says what the layout does and *why* that property value.
+Each style says what the layout does and _why_ that property value.
 
 `FocusOverlay.tsx` (lines 360–378):
 
@@ -218,7 +222,7 @@ menu: {
 },
 ```
 
-"`overflow: visible` so shadows aren't clipped" — the *why* of a single property, which is exactly what a dev would otherwise flip to `hidden` and break the shadow.
+"`overflow: visible` so shadows aren't clipped" — the _why_ of a single property, which is exactly what a dev would otherwise flip to `hidden` and break the shadow.
 
 ---
 
@@ -233,4 +237,4 @@ menu: {
 // The old teleported version jumped because…          ← describes removed code; delete with the code
 ```
 
-The last two are the most toxic: commented-out code rots, and comments describing *removed* behaviour actively mislead. When code goes, its comments go with it.
+The last two are the most toxic: commented-out code rots, and comments describing _removed_ behaviour actively mislead. When code goes, its comments go with it.
