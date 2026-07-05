@@ -5,9 +5,9 @@
  *   1. An **inline trigger** (the button itself), which stays in normal layout
  *      and is NEVER teleported. It's the thing the user taps, and the thing we
  *      measure to learn where the bloom should originate from.
- *   2. A **panel**, rendered into the root `bloom` portal host so it floats
- *      above the whole app. It's always mounted (preloaded) and only animates
- *      on open/close — see the `isFirstRun` guard.
+ *   2. A **panel**, rendered into a root portal host so it floats above the
+ *      whole app. It's always mounted (preloaded) and only animates on
+ *      open/close — see the `isFirstRun` guard.
  *
  * Why split trigger and panel (the "two-world problem"):
  *   An earlier version teleported the *same* button node into the portal on
@@ -30,15 +30,28 @@
  *   per-frame relayout) and SCALES (origin/target → 1, `transformOrigin:
  *   'top left'`) so it grows alongside the panel while fading in.
  *
+ * Blurred background (both variants):
+ *   The inline trigger and the bloomed panel share the same `expo-blur`
+ *   `BlurView` (light tint, `BLOOM_BLUR_INTENSITY`) over a `bg-controls-
+ *   background` fallback, wired through `BlurTargetViewProvider` in _layout
+ *   (same plumbing as FocusOverlay). The open/close morph reads as one frosted
+ *   shape growing — no hard swap from solid to translucent. Requires that
+ *   provider; both current callers (HomeHeader, CreateEntryButton) render
+ *   inside it.
+ *
  * Variants:
  *   - `menu` (default): width = screenWidth − 40, horizontally centered, height
  *     is *intrinsic* (measured from `panelNode` via onLayout). Vertically it's
  *     edge-anchored toward the open space — bottom-anchored if the trigger is
  *     in the lower half of the screen (so it blooms upward), top-anchored
- *     otherwise (blooms downward). Translucent background + an invisible
- *     backdrop that closes the panel on tap.
+ *     otherwise (blooms downward). Frosted blur + `border-controls-border` on
+ *     both trigger and panel (the border lines up at morph start). Height
+ *     springs when content changes while open (see `contentKey`). An invisible
+ *     backdrop closes the panel on tap.
  *   - `fullscreen`: morphs to fill the whole screen (the calendar use case).
- *     Solid background, no backdrop.
+ *     Same frosted blur as menu, but the panel is intentionally borderless so
+ *     a 1px frame doesn't ring the whole screen — the trigger's border fades
+ *     out with the trigger as the borderless panel takes over. No backdrop.
  *
  * Controlled API:
  *   The parent owns `open`. The trigger tap calls `onOpenChange(true)`; the
@@ -46,6 +59,14 @@
  *   on the JS thread *after* the close spring finishes — HomeHeader uses that
  *   to sync the calendar's highlight date only once the morph is done, so the
  *   calendar never re-renders mid-animation.
+ *
+ * Content switching (menu only, opt-in):
+ *   Pass `contentKey` when the parent swaps `panelNode` at a different height.
+ *   On key change while open, the old content cross-fades out in an absolutely-
+ *   positioned outgoing layer while the new content fades in; `panelHeight`
+ *   springs to the new measured height. Omit `contentKey` for static content
+ *   (no cross-fade). The outgoing layer re-renders the previous node as a fresh
+ *   React instance (no preserved local state) — fine for menu lists/buttons.
  *
  * Animation feel (matches bloom-reference.gif):
  *   The trigger cross-fades out over the first slice of progress, the panel
@@ -55,6 +76,7 @@
  *   width/height morph). The spring is tuned for a snappy "folder-open" feel
  *   with a touch of overshoot.
  */
+import { BlurView } from "expo-blur";
 import {
   forwardRef,
   PropsWithChildren,
@@ -63,6 +85,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
 } from "react";
 import {
   BackHandler,
@@ -77,30 +100,33 @@ import Animated, {
   interpolate,
   measure,
   type SharedValue,
+  useAnimatedReaction,
   useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import {
+  BLOOM_BLUR_INTENSITY,
+  BLOOM_BLUR_TINT,
   BLOOM_CONTENT_START,
   BLOOM_MENU_GAP,
   BLOOM_MENU_RADIUS,
   BLOOM_PANEL_FADE_END,
+  BLOOM_RESIZE_SPRING,
   BLOOM_SPRING,
   BLOOM_TRIGGER_FADE_END,
   BLOOM_TRIGGER_RADIUS,
 } from "../constants/animation";
+import { useBlurTargetRef } from "./BlurTargetViewContext";
 
-// Solid white for the fullscreen panel (e.g. the calendar fills the screen).
-const FULLSCREEN_BG = "#FFFFFF";
-// Translucent white for menu panels — the app shows through subtly, matching
-// the "glassmorphism" feel in the reference gif.
-const MENU_BG = "rgba(255, 255, 255, 0.82)";
+/** Cross-fade duration when menu content identity changes via `contentKey`. */
+const BLOOM_CONTENT_CROSSFADE_MS = 200;
 
 type BloomButtonProps = Omit<PressableProps, "onPress"> & {
   /** Content rendered inside the inline trigger button (e.g. the date pill). */
@@ -118,6 +144,12 @@ type BloomButtonProps = Omit<PressableProps, "onPress"> & {
   progress?: SharedValue<number>;
   /** Extra NativeWind classes appended to the inline trigger wrapper. */
   className?: string;
+  /**
+   * Opt-in identity key for menu content switching. When it changes while open,
+   * the previous `panelNode` cross-fades out and height springs to the new
+   * content. Omit for static content (backward compatible).
+   */
+  contentKey?: string | number;
 };
 
 const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
@@ -131,6 +163,7 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
       onClose,
       progress: progressProp,
       className,
+      contentKey,
       ...props
     },
     ref,
@@ -144,6 +177,11 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     // animate — the panel mounts preloaded and should only animate on actual
     // open/close transitions.
     const isFirstRun = useRef(true);
+
+    // Skips the first contentKey run so mount doesn't stage an outgoing layer.
+    const isFirstContentKeyRun = useRef(true);
+
+    const blurTargetRef = useBlurTargetRef();
 
     const { width: screenWidth, height: screenHeight } = useWindowDimensions();
     const insets = useSafeAreaInsets();
@@ -168,10 +206,23 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
 
     // Intrinsic content height for the menu variant (measured via onLayout).
-    // Drives BOTH the panel's animated target height (panelStyle) and the
-    // content's scaleY grow ratio (contentStyle). Defaults to a non-zero
-    // placeholder so the morph has a sane target before the first layout fires.
+    // Ground-truth height — drives contentStyle scaleY and the height spring
+    // reaction. Defaults to a non-zero placeholder so the morph has a sane
+    // target before the first layout fires.
     const contentHeight = useSharedValue(200);
+
+    // Animated visual height for the menu panel box. Springs to match
+    // contentHeight when fully open; snaps instantly during the open morph so
+    // the bloom doesn't fight a second spring.
+    const panelHeight = useSharedValue(200);
+
+    // Cross-fade shared values for opt-in content switching (menu only).
+    const outgoingFade = useSharedValue(0);
+    const currentFade = useSharedValue(1);
+
+    const prevPanelNodeRef = useRef(panelNode);
+    const prevContentKeyRef = useRef(contentKey);
+    const [outgoing, setOutgoing] = useState<{ node: ReactNode; height: number } | null>(null);
 
     // Target content width. Fullscreen = the whole screen; menu = screenWidth −
     // 40 (horizontally centered). Used both to pin the fullscreen content to
@@ -191,6 +242,32 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
       insetTop.value = insets.top;
       insetBottom.value = insets.bottom;
     }, [insetBottom, insetTop, insets.bottom, insets.top]);
+
+    /**
+     * Clears the outgoing cross-fade layer after the fade-out timing finishes.
+     * Called from a UI-thread worklet via `scheduleOnRN`.
+     */
+    const clearOutgoing = useCallback(() => {
+      setOutgoing(null);
+    }, []);
+
+    /**
+     * Menu only: spring `panelHeight` to match measured `contentHeight` when
+     * fully open. During the open morph (`progress < 1`) or on the reaction's
+     * first fire (`prev == null`), set instantly so the bloom doesn't fight a
+     * second spring.
+     */
+    useAnimatedReaction(
+      () => contentHeight.value,
+      (next, prev) => {
+        if (next === prev) {
+          return;
+        }
+
+        panelHeight.value =
+          progress.value === 1 && prev != null ? withSpring(next, BLOOM_RESIZE_SPRING) : next;
+      },
+    );
 
     /**
      * Called on the JS thread after the close spring finishes. Forwards to the
@@ -263,6 +340,63 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
       animateClose();
     }, [animateClose, animateOpen, open]);
 
+    /**
+     * Menu + `contentKey` only: when the key changes while open, stash the
+     * previous panelNode into an outgoing layer and cross-fade to the new
+     * content. Gated on `variant === "menu"` (the cross-fade layers are only
+     * rendered for menu) and on `open` so a parent reset (e.g. `onClose` →
+     * "main") while closed doesn't stage invisible fades or height churn.
+     */
+    useLayoutEffect(() => {
+      if (variant !== "menu" || contentKey === undefined) {
+        prevPanelNodeRef.current = panelNode;
+        return;
+      }
+
+      if (!open) {
+        prevPanelNodeRef.current = panelNode;
+        prevContentKeyRef.current = contentKey;
+        return;
+      }
+
+      if (isFirstContentKeyRun.current) {
+        isFirstContentKeyRun.current = false;
+        prevPanelNodeRef.current = panelNode;
+        prevContentKeyRef.current = contentKey;
+        return;
+      }
+
+      if (contentKey === prevContentKeyRef.current) {
+        prevPanelNodeRef.current = panelNode;
+        return;
+      }
+
+      setOutgoing({
+        node: prevPanelNodeRef.current,
+        height: contentHeight.value,
+      });
+      prevPanelNodeRef.current = panelNode;
+      prevContentKeyRef.current = contentKey;
+
+      outgoingFade.value = 1;
+      currentFade.value = 0;
+      outgoingFade.value = withTiming(0, { duration: BLOOM_CONTENT_CROSSFADE_MS }, (finished) => {
+        if (finished) {
+          scheduleOnRN(clearOutgoing);
+        }
+      });
+      currentFade.value = withTiming(1, { duration: BLOOM_CONTENT_CROSSFADE_MS });
+    }, [
+      clearOutgoing,
+      contentHeight,
+      contentKey,
+      currentFade,
+      open,
+      outgoingFade,
+      panelNode,
+      variant,
+    ]);
+
     // Hardware-back (Android) closes the panel when open. Returning true
     // suppresses the default back behavior (navigating away). Both variants
     // benefit; for fullscreen there's no backdrop, so back is the only
@@ -291,7 +425,8 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     const handleContentLayout = useCallback(
       (event: LayoutChangeEvent) => {
         const maxHeight = screenHeight - insets.top - insets.bottom - 2 * BLOOM_MENU_GAP;
-        contentHeight.value = Math.min(event.nativeEvent.layout.height, maxHeight);
+        const nextHeight = Math.min(event.nativeEvent.layout.height, maxHeight);
+        contentHeight.value = nextHeight;
       },
       [contentHeight, insets.bottom, insets.top, screenHeight],
     );
@@ -330,14 +465,13 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
      *   - menu: horizontally centered; vertically edge-anchored toward open
      *     space — if the trigger's center is in the lower half of the screen
      *     the panel sits at the bottom (blooms upward), otherwise at the top
-     *     (blooms downward). Height is the measured intrinsic content height.
+     *     (blooms downward). Height reads `panelHeight` (springs while open).
      */
     const panelStyle = useAnimatedStyle(() => {
       const o = origin.value;
 
       const targetWidth = variant === "fullscreen" ? screenW.value : screenW.value - 40;
-      const targetHeight =
-        variant === "fullscreen" ? screenH.value : contentHeight.value || o.height;
+      const targetHeight = variant === "fullscreen" ? screenH.value : panelHeight.value || o.height;
 
       const targetX = variant === "fullscreen" ? 0 : (screenW.value - targetWidth) / 2;
 
@@ -374,7 +508,8 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
      * the panel's growth direction. Opacity starts at BLOOM_CONTENT_START so the
      * content is hidden while it is most "squished" (smallest); by the time it is
      * clearly visible it is nearly full size. `clamp` keeps opacity/scale from
-     * animating before their slices.
+     * animating before their slices. ScaleY still reads ground-truth
+     * `contentHeight` (not `panelHeight`) — at `progress === 1` the ratio is 1.
      */
     const contentStyle = useAnimatedStyle(() => {
       const o = origin.value;
@@ -391,6 +526,16 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
         ],
       };
     });
+
+    /** Outgoing content layer opacity during menu content cross-fade. */
+    const outgoingStyle = useAnimatedStyle(() => ({
+      opacity: outgoingFade.value,
+    }));
+
+    /** Current content measuring wrapper opacity during menu content cross-fade. */
+    const measuringFadeStyle = useAnimatedStyle(() => ({
+      opacity: currentFade.value,
+    }));
 
     // Trigger tap requests open. We never toggle `open` directly — the parent
     // owns it, so we just forward the intent.
@@ -411,17 +556,24 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
             button measures as a small button); a caller can pass `w-full` via
             className to make it full-width (the calendar does this).
             `pointerEvents` flips to none while open so taps pass through to the
-            portal's backdrop/panel above. The border/bg here are the pill
-            surface; the Pressable inside stretches to fill it (default
-            alignItems stretch — do NOT add items-center, that would collapse
-            the content width and break the fullscreen calendar layout). */}
+            portal's backdrop/panel above. `overflow-hidden` clips the BlurView
+            to the trigger's rounded corners. The border/bg are the pill surface;
+            BlurView frosts the app content behind; the Pressable + children
+            render on top so the icon stays crisp. */}
         <Animated.View
           ref={triggerRef}
           collapsable={false}
           style={triggerStyle}
           pointerEvents={open ? "none" : "auto"}
-          className={`self-start rounded-4xl border border-controls-border bg-controls-background ${className ?? ""}`}
+          className={`self-start overflow-hidden rounded-4xl border border-controls-border bg-controls-background ${className ?? ""}`}
         >
+          {/*<BlurView*/}
+          {/*  blurTarget={blurTargetRef}*/}
+          {/*  blurMethod="dimezisBlurViewSdk31Plus"*/}
+          {/*  tint={BLOOM_BLUR_TINT}*/}
+          {/*  intensity={BLOOM_BLUR_INTENSITY}*/}
+          {/*  style={StyleSheet.absoluteFill}*/}
+          {/*/>*/}
           <Pressable ref={ref} {...props} onPress={handleTriggerPress}>
             {children}
           </Pressable>
@@ -450,18 +602,25 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
             {/* The morphing panel. `panelStyle` animates its width/height +
                 translate from the trigger's origin to the target frame, keeping
                 the borderRadius uniform (no anisotropic scale → no squarish
-                corners). Static bg is variant-driven: solid for fullscreen,
-                translucent for menu. */}
+                corners). Shared BlurView + `bg-controls-background` fallback for
+                both variants; menu adds `border-controls-border`, fullscreen
+                stays borderless so no 1px ring around the whole screen. */}
             <Animated.View
-              style={[
-                styles.panel,
-                {
-                  backgroundColor: variant === "fullscreen" ? FULLSCREEN_BG : MENU_BG,
-                },
-                panelStyle,
-              ]}
+              style={[styles.panel, panelStyle]}
               pointerEvents="auto"
+              className={
+                variant === "menu"
+                  ? "border border-controls-border bg-controls-background"
+                  : "bg-controls-background"
+              }
             >
+              <BlurView
+                blurTarget={blurTargetRef}
+                blurMethod="dimezisBlurViewSdk31Plus"
+                tint={BLOOM_BLUR_TINT}
+                intensity={BLOOM_BLUR_INTENSITY}
+                style={StyleSheet.absoluteFill}
+              />
               {/* Content wrapper. Pinned to the *target* size (not `flex: 1`) so
                   the content lays out once and never relayouts during the morph.
                   `contentStyle` scales it from the trigger's proportions to full
@@ -481,15 +640,36 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
                 }
               >
                 {variant === "menu" ? (
-                  // Measuring wrapper: pin the content to the target width so
-                  // its onLayout reports the true intrinsic height at that
-                  // width. While closed the panel box sits at the trigger's
-                  // (small) origin frame and `overflow: hidden` clips this
-                  // wrapper to it, but onLayout still reports the content's
-                  // natural, unclipped size.
-                  <View onLayout={handleContentLayout} style={{ width: panelLayoutWidth }}>
-                    {panelNode}
-                  </View>
+                  <>
+                    {outgoing ? (
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          {
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: panelLayoutWidth,
+                            height: outgoing.height,
+                          },
+                          outgoingStyle,
+                        ]}
+                      >
+                        {outgoing.node}
+                      </Animated.View>
+                    ) : null}
+                    {/* Measuring wrapper: pin the content to the target width so
+                        its onLayout reports the true intrinsic height at that
+                        width. Absolutely-positioned outgoing layer stays out of
+                        flow so this height stays clean. `measuringFadeStyle`
+                        drives the cross-fade when `contentKey` changes. */}
+                    <Animated.View
+                      onLayout={handleContentLayout}
+                      style={[{ width: panelLayoutWidth }, measuringFadeStyle]}
+                    >
+                      {panelNode}
+                    </Animated.View>
+                  </>
                 ) : (
                   panelNode
                 )}
@@ -517,7 +697,8 @@ const styles = StyleSheet.create({
   // (animated width/height + translate). `overflow: hidden` clips any
   // sub-pixel spillover while the content scales to fill the box — no
   // `transformOrigin` here because we resize the box (not scale it) to keep
-  // the `borderRadius` uniform on every frame.
+  // the `borderRadius` uniform on every frame. BlurView is absoluteFill inside
+  // and resizes with the panel on every morph frame.
   panel: {
     position: "absolute",
     top: 0,

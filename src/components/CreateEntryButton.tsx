@@ -3,10 +3,11 @@
  *
  * It's a thin wrapper around `BloomButton` (variant="menu"): a round plus
  * trigger that stays inline (floating at the bottom-right of the screen,
- * levelled with the tab bar) and, on tap, a separate translucent panel blooms
- * upward into a centered menu of entry types. The menu currently holds two
- * placeholder options (Paper / Print) that only close the panel — the real
- * creation flows are wired later.
+ * levelled with the tab bar) and, on tap, a separate frosted panel blooms
+ * upward into a multi-screen create menu. The demo flow exercises dynamic
+ * height + cross-fade via `contentKey`: main (Paper / Print) → paper types
+ * (taller) or print stub (shorter) → back to main. Real composer flows are
+ * wired later — tapping a paper type just returns to main for now.
  *
  * Positioning:
  *   The trigger is absolutely positioned `bottom-5 right-5` (20px from the
@@ -28,12 +29,14 @@
  *
  * State:
  *   `BloomButton` is controlled, so this component owns the `open` state and
- *   passes it down. Tapping the trigger opens; tapping a menu item, the
- *   backdrop, or hardware-back closes. BloomButton handles the measure-and-morph
- *   (it measures this trigger on open and blooms a separate panel upward from
- *   it, since the trigger is in the lower half of the screen).
+ *   passes it down. Tapping the trigger opens; tapping the backdrop or hardware-
+ *   back closes. `onClose` resets `screen` to `"main"` after the close morph so
+ *   the next open starts at the main menu (invisible while closed thanks to
+ *   BloomButton's `open` gate on cross-fade). BloomButton handles the measure-
+ *   and-morph (it measures this trigger on open and blooms a separate panel
+ *   upward from it, since the trigger is in the lower half of the screen).
  */
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
 
@@ -42,9 +45,9 @@ import BloomButton from "./BloomButton";
 import { useExpandContext } from "./ExpandContext";
 import { Icon } from "./Icon";
 
-// The placeholder creation options. Real flows (navigate to a paper/print
-// composer) are wired later; for now both just close the menu.
-const MENU_ITEMS = [{ label: "Paper" }, { label: "Print" }] as const;
+const PAPER_TYPES = ["Lined", "Grid", "Dotted", "Plain", "Storyboard", "Sketchbook"] as const;
+
+type CreateMenuScreen = "main" | "paper" | "print";
 
 // Trigger sizing: p-2 (8px) around a 24px icon → 40px square. The icon size/
 // colour match the tab bar triggers so the two controls read as a set.
@@ -59,17 +62,9 @@ const CreateEntryButton = () => {
   // fade this control out alongside the tab bar/header during expand.
   const { chromeProgress } = useExpandContext();
   // Controlled open state for the BloomButton. Tapping the trigger opens;
-  // tapping a menu item, the backdrop, or hardware-back closes.
+  // tapping the backdrop or hardware-back closes.
   const [open, setOpen] = useState(false);
-
-  /**
-   * Menu item handler. Every item currently just closes the panel — the real
-   * per-item actions are placeholders. Stable identity via useCallback so the
-   * item Pressables don't re-render when `open` changes.
-   */
-  const handleItemPress = useCallback(() => {
-    setOpen(false);
-  }, []);
+  const [screen, setScreen] = useState<CreateMenuScreen>("main");
 
   // Fade the trigger out over the first slice of the expand animation, matching
   // StyledTabList and HomeHeader. The wrapper uses `pointerEvents="box-none"` so
@@ -79,24 +74,66 @@ const CreateEntryButton = () => {
     opacity: interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0]),
   }));
 
-  // The bloomed menu content. Each row is a Pressable that closes the panel on
-  // tap. BloomButton's menu measuring wrapper pins the width to screenWidth-40,
-  // so these rows stretch to the full panel width.
-  const panelNode = (
+  const mainNode = (
     <View className="py-2">
-      {MENU_ITEMS.map((item) => (
+      <Pressable
+        onPress={() => setScreen("paper")}
+        accessibilityRole="button"
+        accessibilityLabel="Choose Paper"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">Paper</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => setScreen("print")}
+        accessibilityRole="button"
+        accessibilityLabel="Choose Print"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">Print</Text>
+      </Pressable>
+    </View>
+  );
+
+  const paperNode = (
+    <View className="py-2">
+      <Pressable
+        onPress={() => setScreen("main")}
+        accessibilityRole="button"
+        accessibilityLabel="Back to main menu"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-secondary">‹ Back</Text>
+      </Pressable>
+      <Text className="px-4 pb-1 font-sans-medium text-secondary">Paper type</Text>
+      {PAPER_TYPES.map((type) => (
         <Pressable
-          key={item.label}
-          onPress={handleItemPress}
+          key={type}
+          onPress={() => setScreen("main")}
           accessibilityRole="button"
-          accessibilityLabel={`Create ${item.label}`}
+          accessibilityLabel={`Choose ${type} paper`}
           className="px-4 py-3"
         >
-          <Text className="text-base text-primary">{item.label}</Text>
+          <Text className="text-base text-primary">{type}</Text>
         </Pressable>
       ))}
     </View>
   );
+
+  const printNode = (
+    <View className="py-2">
+      <Pressable
+        onPress={() => setScreen("main")}
+        accessibilityRole="button"
+        accessibilityLabel="Back to main menu"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">‹ Print coming soon</Text>
+      </Pressable>
+    </View>
+  );
+
+  const panelNode = screen === "paper" ? paperNode : screen === "print" ? printNode : mainNode;
 
   return (
     // Absolute, bottom-right, levelled with the tab bar. pointerEvents box-none
@@ -110,6 +147,8 @@ const CreateEntryButton = () => {
         variant="menu"
         open={open}
         onOpenChange={setOpen}
+        onClose={() => setScreen("main")}
+        contentKey={screen}
         panelNode={panelNode}
         accessibilityRole="button"
         accessibilityLabel="Create entry"

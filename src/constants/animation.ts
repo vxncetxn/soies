@@ -31,3 +31,14 @@ export const BLOOM_CONTENT_START = 0.2;
 export const BLOOM_TRIGGER_RADIUS = 32;
 export const BLOOM_MENU_RADIUS = 16;
 export const BLOOM_MENU_GAP = 12;
+// Shared by BloomButton's inline trigger and bloomed panel (both variants).
+// "light" frosts; FocusOverlay uses "dark" to dim. Intensity is higher than
+// FocusOverlay's 30 so panel content (menu rows, calendar grid) stays legible.
+export const BLOOM_BLUR_TINT = "light" as const;
+export const BLOOM_BLUR_INTENSITY = 60;
+// Gentler than BLOOM_SPRING — used when menu content height changes while open.
+export const BLOOM_RESIZE_SPRING = {
+  stiffness: 200,
+  damping: 28,
+  mass: 0.9,
+};
