@@ -19,7 +19,7 @@
  * blurred backdrop with an actions menu (Edit/Share/Delete...) — which clones
  * the deck and animates from its measured frame. That lives in `FocusOverlay`.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import Animated, {
   interpolate,
@@ -72,6 +72,28 @@ const Stack = ({ entry }: StackProps) => {
   // Which artefact page is currently active. Persisted across expand/collapse
   // cycles so re-expanding lands you on the same page you left on.
   const [activePage, setActivePage] = useState(0);
+
+  // Reset the persisted artefact page when the entry changes. index.tsx updates
+  // the DayPager in place on date navigation (no remount), so this Stack
+  // instance is reused across entries; without this, `activePage` from a
+  // previous entry could be out of range for the new one and land the expanded
+  // pager beyond the last artefact. `entry` is a stable reference per date
+  // (served from the entry cache), so this only fires on an actual entry change
+  // — not on every expand/collapse within the same entry.
+  //
+  // `scrollOffset` must be reset too: it's a shared value that retains its last
+  // value across re-renders (unlike `useState`, it isn't recreated on remount).
+  // Before the in-place-update change, `key={effectiveDate}` on DayPager forced
+  // a remount, which recreated `scrollOffset` at 0. Now the Stack is reused, so
+  // a leaked `scrollOffset = 2*PAGE_WIDTH` (from collapsing on artefact 2) would
+  // persist into the new date's collapsed deck — `activeIndex = round(scrollOffset/PAGE_WIDTH)`
+  // would be 2, showing artefact 2 on top of the new date's stack. Resetting it
+  // here keeps the collapsed deck on artefact 0 for the new entry.
+  useEffect(() => {
+    setActivePage(0);
+    scrollOffset.value = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry]);
 
   // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
   // deck's on-screen frame and animate the long-press overlay from it.

@@ -15,6 +15,17 @@
  * The screen intentionally keeps all scroll state in Reanimated shared values
  * (not React state) so scrolling never triggers React re-renders — the UI
  * thread reads the values directly inside `useAnimatedStyle`/`useDerivedValue`.
+ *
+ * Entry loading uses a module-level cache plus "adjust state during render": on
+ * a route date change, cached entries are adopted synchronously (before commit)
+ * so the DayPager updates in place with the correct entries — it is NOT keyed by
+ * date, so a date change re-renders rather than remounts, avoiding the native
+ * mount work that contended with the calendar's close spring. The cache is
+ * warmed on mount by a single `getAllEntriesByDate` query (every date at once),
+ * so any date picked from the calendar — including a first-ever visit — is a
+ * cache hit, and the revalidation fetch is skipped on hits to avoid a second
+ * native commit during the close. DayPager resets its scroll to the top on
+ * entries change, and Stack resets its persisted artefact page on entry change.
  */
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
@@ -24,7 +35,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import DayPager from "../../components/DayPager";
 import HomeHeader from "../../components/HomeHeader";
-import { getEntriesByDate, type Entry } from "../../data/entries";
+import { getAllEntriesByDate, getEntriesByDate, type Entry } from "../../data/entries";
 import { todayISO } from "../../utils/date";
 
 // Module-level cache of the measured pager height. The pager height only
@@ -34,13 +45,36 @@ import { todayISO } from "../../utils/date";
 // avoiding a visible "pop" where it mounts at 0 and then resizes.
 let cachedPagerHeight = 0;
 
+// Module-level cache of entries by date. Warmed on mount by the preload effect
+// (one `getAllEntriesByDate` query that loads every date's entries at once), and
+// kept fresh by the load effect's revalidation on cache misses. When you pick a
+// date from the calendar, the component reads this cache synchronously during
+// render (see "adjust state during render" below) so the DayPager updates in
+// place with the correct entries on the very first commit — instead of showing
+// the stale previous date's entries and re-rendering when the async fetch
+// resolves. That stale-then-update flow (and the full DayPager remount an
+// earlier `key={effectiveDate}` caused) ran native mount/update work on the UI
+// thread and contended with the calendar's close spring, dropping the de-bloom's
+// first frames. The load effect skips revalidation on cache hits (no second
+// commit during the close); cache misses still fetch (stale-while-revalidate).
+const entriesCache = new Map<string, Entry[]>();
+const EMPTY_ENTRIES: Entry[] = [];
+// True once the background preload of all entry dates has been kicked off.
+// Module-level so it survives remounts (the cache does too).
+let entriesPreloaded = false;
+
 export default function Index() {
   const { date } = useLocalSearchParams<{ date?: string }>();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
 
   const effectiveDate = date ?? todayISO();
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entries, setEntries] = useState<Entry[]>(
+    () => entriesCache.get(effectiveDate) ?? EMPTY_ENTRIES,
+  );
+  // Tracks the date the `entries` state currently reflects, so we can detect
+  // route date changes during render (see the adjust-state block below).
+  const [prevDate, setPrevDate] = useState(effectiveDate);
   // `loading` is only true until the *first* successful load. After that we
   // keep the previous entries visible while the next date's entries load
   // (stale-while-revalidate), which avoids a full-screen spinner flash on every
@@ -51,15 +85,53 @@ export default function Index() {
   // Bumped by `retry` to retrigger the load effect after an error.
   const [attempt, setAttempt] = useState(0);
 
+  // "Adjust state during render" (see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
+  // When the route date changes, synchronously adopt the cached entries (if any)
+  // BEFORE the first commit, so the DayPager updates in place with the correct
+  // entries instead of showing the stale previous date's entries and re-rendering
+  // again when the async fetch resolves. That stale-then-update flow ran native
+  // update work on the UI thread and contended with the close spring, dropping
+  // the de-bloom's first frames. Calling setState during render is safe here:
+  // React re-renders immediately, before committing, so no painted frame shows
+  // stale entries. For cache misses (first visit to a date, or preload not yet
+  // done) there's no cached value, so `entries` stays stale and the load effect
+  // below swaps in the fresh entries (stale-while-revalidate).
+  if (prevDate !== effectiveDate) {
+    setPrevDate(effectiveDate);
+    const cached = entriesCache.get(effectiveDate);
+    if (cached && cached !== entries) {
+      setEntries(cached);
+    }
+  }
+
   const titles = useMemo(() => entries.map((entry) => entry.title), [entries]);
 
   useEffect(() => {
     let cancelled = false;
+    const cacheHit = entriesCache.has(effectiveDate);
 
     setError(null);
+
+    // Cache hit: the adjust-state block above already adopted the cached entries
+    // during render, so the DayPager updated in place with the correct entries.
+    // Skip the revalidation fetch entirely — calling setEntries with a fresh
+    // array reference here would trigger a second native commit during the close
+    // morph and contend with the spring. The cache is warmed by the preload
+    // effect and revalidated on cache misses, so it stays fresh for navigation.
+    if (cacheHit) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     getEntriesByDate(effectiveDate)
       .then((nextEntries) => {
         if (!cancelled) {
+          // Cache the resolved entries so the next navigation to this date can
+          // adopt them synchronously during render (see the adjust-state block).
+          entriesCache.set(effectiveDate, nextEntries);
           setEntries(nextEntries);
           setLoading(false);
         }
@@ -75,6 +147,31 @@ export default function Index() {
       cancelled = true;
     };
   }, [effectiveDate, attempt]);
+
+  // Background-preload every date's entries into the module-level cache on mount.
+  // One `getAllEntriesByDate` query (entries + artefacts, grouped by date) warms
+  // the cache for every date at once, so ANY date picked from the calendar is a
+  // cache hit: the DayPager updates in place with the correct entries during the
+  // close (no flash of the stale previous date — even on the first ever visit to
+  // a date) and the close spring isn't contended by a stale-then-update flow or a
+  // remount. Module-level `entriesPreloaded` guards against re-running on remount
+  // (the cache survives remounts too). No cleanup: this is a global one-shot
+  // background task, intentionally not tied to this component's lifetime.
+  useEffect(() => {
+    if (entriesPreloaded) {
+      return;
+    }
+    entriesPreloaded = true;
+    getAllEntriesByDate()
+      .then((byDate) => {
+        for (const [preloadDate, next] of byDate) {
+          if (!entriesCache.has(preloadDate)) {
+            entriesCache.set(preloadDate, next);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const retry = () => setAttempt((previous) => previous + 1);
 
@@ -131,7 +228,6 @@ export default function Index() {
         </View>
       ) : (
         <DayPager
-          key={effectiveDate}
           entries={entries}
           pagerHeight={pagerHeight}
           computedHeight={computedHeight}

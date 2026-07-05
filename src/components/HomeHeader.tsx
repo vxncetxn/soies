@@ -6,16 +6,22 @@
  * tracks vertical day paging, and the whole header fades out when an entry
  * expands to fullscreen.
  *
- * Calendar navigation pattern ("navigate behind close"):
- *   When you pick a day in the calendar, we navigate *immediately*
+ * Calendar navigation pattern ("navigate behind close" + entry cache):
+ *   When you pick a day in the calendar, we navigate immediately
  *   (`router.setParams`) so the new day's entries render behind the closing
- *   overlay and are visible the instant it finishes closing. The calendar's
- *   highlight, however, is decoupled from the route: it follows `highlightDate`,
- *   not the `date` route param. `highlightDate` is only synced to the picked
- *   date in `handleClosed` — *after* the close morph finishes — so the calendar
- *   never re-renders mid-animation (which would cause a visible pop as the
- *   active-day pill jumped while the panel shrank). `pickedDateRef` stashes the
- *   picked date between the pick and the post-close sync.
+ *   overlay and are visible as it de-blooms. To keep the de-bloom smooth, the
+ *   entries must be available synchronously when the route changes — otherwise
+ *   the DayPager re-renders with the stale previous date's entries and re-renders
+ *   again when the async fetch resolves, doubling the UI-thread update work and
+ *   dropping the spring's first frames. index.tsx reads a module-level entry
+ *   cache during render (see "adjust state during render" there) so the pager
+ *   updates in place, with the correct entries, on the very first commit. The
+ *   calendar's highlight is decoupled from the route: it follows `highlightDate`,
+ *   not the `date` route param, and is synced to the picked date in
+ *   `handleClosed` — *after* the close morph finishes — so the calendar never
+ *   re-renders mid-animation (which would pop the active-day pill while the
+ *   panel shrank). `pickedDateRef` stashes the picked date between the pick and
+ *   the post-close sync.
  *
  * Relationship to other components:
  *   - `BloomButton` (variant="fullscreen") owns the measure-and-morph from the
@@ -138,9 +144,12 @@ const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
 
   /**
    * Day pick handler. Navigate immediately so the new day's entries render
-   * *behind* the closing overlay and are visible the moment it finishes closing.
-   * The calendar is decoupled (its `activeDateRanges` follows `highlightDate`,
-   * not the route), so this navigation does NOT re-render the calendar. We stash
+   * *behind* the closing overlay and are visible as it de-blooms. The entries
+   * are served synchronously from the entry cache in index.tsx so the DayPager
+   * remounts once with the correct entries (no stale-then-update double mount,
+   * which is what contended with the close spring on the UI thread). The
+   * calendar is decoupled (its `activeDateRanges` follows `highlightDate`, not
+   * the route), so this navigation does NOT re-render the calendar. We stash
    * the picked date for `handleClosed` to sync the highlight post-close, then
    * request close — BloomButton animates the morph and calls `onClose` when done.
    */

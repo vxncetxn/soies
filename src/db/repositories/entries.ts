@@ -178,6 +178,43 @@ export async function getEntryDates(): Promise<Set<string>> {
   return new Set(result.rows.map((row) => String(row.date)));
 }
 
+/**
+ * Load every non-deleted entry with its artefacts, grouped by date. Used to
+ * warm the in-memory entry cache on app start so any date picked from the
+ * calendar is a cache hit — the DayPager then updates in place with the correct
+ * entries during the calendar's close morph (no flash of the stale previous
+ * date) and the close spring isn't contended by a stale-then-update double
+ * commit or a remount. Two queries total (entries + artefacts), regardless of
+ * date count.
+ */
+export async function getAllEntriesByDate(): Promise<Map<string, Entry[]>> {
+  const db = await getDatabase();
+  const result = await db.execute(
+    `SELECT id, title, type, date, sort_order, created_at, updated_at, deleted_at
+     FROM entries
+     WHERE deleted_at IS NULL
+     ORDER BY date, sort_order`,
+  );
+
+  const rows = result.rows as EntryRow[];
+  const artefactsByEntry = await getArtefactsForEntries(
+    rows.map((row) => row.id),
+    db,
+  );
+
+  const byDate = new Map<string, Entry[]>();
+  for (const row of rows) {
+    const entry = mapEntryRow(row, (artefactsByEntry.get(row.id) ?? []).map(mapArtefactRow));
+    const list = byDate.get(row.date);
+    if (list) {
+      list.push(entry);
+    } else {
+      byDate.set(row.date, [entry]);
+    }
+  }
+  return byDate;
+}
+
 export async function getEntriesByIds(ids: string[]): Promise<Entry[]> {
   if (ids.length === 0) {
     return [];

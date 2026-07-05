@@ -16,7 +16,7 @@
  * height is known (`pagerHeight > 0`) so `currentPage = scrollOffset / height`
  * in the parent never divides by zero.
  */
-import { useCallback } from "react";
+import { useCallback, useLayoutEffect } from "react";
 import { ScrollView, View } from "react-native";
 import Animated, {
   useAnimatedRef,
@@ -68,6 +68,20 @@ const DayPager = ({
   // fade the side indicator out while an entry is expanded (so it doesn't
   // overlap the fullscreen expanded view).
   const { chromeProgress } = useExpandContext();
+
+  // When the entries change (date navigation that updates us in place — index.tsx
+  // intentionally does NOT key us by date, so a date change re-renders rather
+  // than remounts), reset the vertical scroll to the top entry. With the old
+  // `key={effectiveDate}` the ScrollView remounted and started at 0 for free;
+  // updating in place preserves the scroll position, so we imperatively scroll
+  // back to the top here. Runs before paint so the stale scroll position is
+  // never visible (and the closing calendar overlay covers it anyway). The
+  // parent's own `effectiveDate` effect resets the `scrollOffset` shared value
+  // in parallel; this resets the actual ScrollView.
+  useLayoutEffect(() => {
+    scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries]);
 
   // Fade the side scroll indicator out over the first slice of the expand
   // animation. `chromeProgress` is 0 when collapsed, 1 when an entry is

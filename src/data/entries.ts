@@ -55,7 +55,7 @@ export type GalleryArtefact = {
   addedAt: number;
 };
 
-export { getEntriesByDate, getEntryDates } from "../db/repositories/entries";
+export { getEntriesByDate, getEntryDates, getAllEntriesByDate } from "../db/repositories/entries";
 export { searchEntries } from "../db/repositories/search";
 export { listTags } from "../db/repositories/tags";
 export { getGallery } from "../db/repositories/gallery";
