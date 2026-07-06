@@ -30,22 +30,29 @@
  *   per-frame relayout) and SCALES (origin/target → 1, `transformOrigin:
  *   'top left'`) so it grows alongside the panel while fading in.
  *
- * Blurred background (both variants):
- *   The inline trigger and the bloomed panel share the same `expo-blur`
- *   `BlurView` (light tint, `BLOOM_BLUR_INTENSITY`) over a `bg-controls-
- *   background` fallback, wired through `BlurTargetViewProvider` in _layout
- *   (same plumbing as FocusOverlay). The open/close morph reads as one frosted
- *   shape growing — no hard swap from solid to translucent. Requires that
- *   provider; both current callers (HomeHeader, CreateEntryButton) render
- *   inside it.
+ * Blurred background (panel only — trigger blur intentionally off for now):
+ *   The bloomed panel has an `expo-blur` `BlurView` (light tint,
+ *   `BLOOM_BLUR_INTENSITY`) over a `bg-controls-background` fallback, wired
+ *   through `BlurTargetViewProvider` in _layout (same plumbing as
+ *   FocusOverlay). Requires that provider; both current callers (HomeHeader,
+ *   CreateEntryButton) render inside it. The inline trigger is currently just
+ *   the border + `bg-controls-background` surface — its `BlurView` is checked
+ *   in as a commented placeholder (see the trigger JSX) so the trigger stays a
+ *   solid pill for now; re-enabling it is a one-line uncomment. The menu
+ *   panel's BlurView mounts lazily on the first open (gated on `hasOpened`,
+ *   after `origin` is measured) so it never initializes at the 1×1 default
+ *   rest frame — with the menu's 1px border the absoluteFill blur would be a
+ *   zero/negative frame that expo-blur can't recover from on cold load. The
+ *   fullscreen panel has no border and is not gated.
  *
  * Variants:
  *   - `menu` (default): width = screenWidth − 40, horizontally centered, height
  *     is *intrinsic* (measured from `panelNode` via onLayout). Vertically it's
  *     edge-anchored toward the open space — bottom-anchored if the trigger is
  *     in the lower half of the screen (so it blooms upward), top-anchored
- *     otherwise (blooms downward). Frosted blur + `border-controls-border` on
- *     both trigger and panel (the border lines up at morph start). Height
+ *     otherwise (blooms downward). The panel has frosted blur +
+ *     `border-controls-border`; the trigger shares the same border (so it
+ *     lines up at morph start) but no blur for now. Height
  *     springs when content changes while open (see `contentKey`). An invisible
  *     backdrop closes the panel on tap.
  *   - `fullscreen`: morphs to fill the whole screen (the calendar use case).
@@ -224,6 +231,19 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
     const prevContentKeyRef = useRef(contentKey);
     const [outgoing, setOutgoing] = useState<{ node: ReactNode; height: number } | null>(null);
 
+    // Whether the panel has been opened at least once. The menu panel's BlurView
+    // is gated on this so it first mounts once `origin` holds the real measured
+    // trigger frame, NOT at app launch — at launch the panel sits at the default
+    // 1×1 origin, and with the menu's 1px border the absoluteFill BlurView would
+    // be inset to a zero/negative frame that expo-blur initializes against and
+    // then fails to recover from when the panel later grows (cold-load bug).
+    // Fullscreen has no border, so its BlurView is not gated. Stays true after
+    // the first open so close/re-open morphs keep the blur.
+    const [hasOpened, setHasOpened] = useState(false);
+    const markOpened = useCallback(() => {
+      setHasOpened(true);
+    }, []);
+
     // Target content width. Fullscreen = the whole screen; menu = screenWidth −
     // 40 (horizontally centered). Used both to pin the fullscreen content to
     // its target size and to measure the menu's intrinsic height at the right
@@ -303,8 +323,16 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
         };
 
         progress.value = withSpring(1, BLOOM_SPRING);
+
+        // Now that `origin` holds the real trigger frame, hop to the JS thread
+        // to mount the menu panel's BlurView (gated on `hasOpened`). Mounting it
+        // here — instead of at app launch — ensures its first layout is at a
+        // real, non-degenerate frame (the panel is already growing from the
+        // measured origin), so expo-blur never hits the 1×1 + border init that
+        // it can't recover from.
+        scheduleOnRN(markOpened);
       });
-    }, [origin, progress, triggerRef]);
+    }, [markOpened, origin, progress, triggerRef]);
 
     /**
      * Close: spring `progress` back to 0, and only when the spring *finishes*
@@ -556,17 +584,24 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
             button measures as a small button); a caller can pass `w-full` via
             className to make it full-width (the calendar does this).
             `pointerEvents` flips to none while open so taps pass through to the
-            portal's backdrop/panel above. `overflow-hidden` clips the BlurView
-            to the trigger's rounded corners. The border/bg are the pill surface;
-            BlurView frosts the app content behind; the Pressable + children
-            render on top so the icon stays crisp. */}
+            portal's backdrop/panel above. The border + `bg-controls-background`
+            are the pill surface; the Pressable + children render on top so the
+            icon stays crisp. A `BlurView` matching the panel's is checked in
+            below as a commented placeholder — the trigger is intentionally a
+            solid pill for now; uncomment it (and re-add `overflow-hidden` on
+            this wrapper to clip the blur to the rounded corners) to frost the
+            trigger too. */}
         <Animated.View
           ref={triggerRef}
           collapsable={false}
           style={triggerStyle}
           pointerEvents={open ? "none" : "auto"}
-          className={`self-start overflow-hidden rounded-4xl border border-controls-border bg-controls-background ${className ?? ""}`}
+          className={`self-start rounded-4xl border border-controls-border bg-controls-background ${className ?? ""}`}
         >
+          {/* Trigger blur intentionally disabled for now — the trigger stays a
+              solid pill. Uncomment below (and re-add `overflow-hidden` on the
+              wrapper above to clip the blur to the rounded corners) to frost
+              the trigger. */}
           {/*<BlurView*/}
           {/*  blurTarget={blurTargetRef}*/}
           {/*  blurMethod="dimezisBlurViewSdk31Plus"*/}
@@ -614,13 +649,24 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
                   : "bg-controls-background"
               }
             >
-              <BlurView
-                blurTarget={blurTargetRef}
-                blurMethod="dimezisBlurViewSdk31Plus"
-                tint={BLOOM_BLUR_TINT}
-                intensity={BLOOM_BLUR_INTENSITY}
-                style={StyleSheet.absoluteFill}
-              />
+              {/* The menu panel's BlurView mounts lazily on the first open
+                  (gated on `hasOpened`), after `origin` is measured, so it
+                  never initializes at the panel's 1×1 default rest frame —
+                  which, with the menu's 1px border, insets the absoluteFill
+                  blur to a zero/negative frame that expo-blur can't recover
+                  from on cold load. Fullscreen has no border, so its blur
+                  initializes fine and stays ungated. Once `hasOpened` is true
+                  the menu BlurView stays mounted so close/re-open morphs keep
+                  the blur. */}
+              {variant === "fullscreen" || hasOpened ? (
+                <BlurView
+                  blurTarget={blurTargetRef}
+                  blurMethod="dimezisBlurViewSdk31Plus"
+                  tint={BLOOM_BLUR_TINT}
+                  intensity={BLOOM_BLUR_INTENSITY}
+                  style={StyleSheet.absoluteFill}
+                />
+              ) : null}
               {/* Content wrapper. Pinned to the *target* size (not `flex: 1`) so
                   the content lays out once and never relayouts during the morph.
                   `contentStyle` scales it from the trigger's proportions to full
