@@ -28,8 +28,9 @@ import Animated, {
 
 import type { Entry } from "../data/entries";
 
-import { CHROME_FADE_END } from "../constants/animation";
-import { useExpandContext } from "./ExpandContext";
+import { CREATE_HOME_EXIT_END, CREATE_SLIDE_DISTANCE } from "../constants/animation";
+import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
+import { useCreateContext } from "./CreateContext";
 import { EntryPreview, ScrollIndicator } from "./ScrollIndicator";
 import Stack from "./Stack";
 
@@ -64,11 +65,26 @@ const DayPager = ({
   // Animated ref to the ScrollView so we can imperatively `scrollTo` when the
   // user jumps to an entry via the side indicator.
   const scrollRef = useAnimatedRef<ScrollView>();
-  // `chromeProgress` drives the header/expand chrome fade. We read it here to
-  // fade the side indicator out while an entry is expanded (so it doesn't
-  // overlap the fullscreen expanded view).
-  const { chromeProgress } = useExpandContext();
+  const { createProgress } = useCreateContext();
+  // Side indicator fades on both chrome expand and create open (combined fade).
+  const indicatorFadeStyle = useHomeChromeFade();
 
+  // Pager body exit: slides down + fades ONLY on create open. The original
+  // never faded the pager body on chrome expand (the expanded card overlay
+  // covers it), so we keep chrome out of this and only react to createProgress.
+  const pagerExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(createProgress.value, [0, CREATE_HOME_EXIT_END], [1, 0], "clamp"),
+    transform: [
+      {
+        translateY: interpolate(
+          createProgress.value,
+          [0, CREATE_HOME_EXIT_END],
+          [0, CREATE_SLIDE_DISTANCE],
+          "clamp",
+        ),
+      },
+    ],
+  }));
   // When the entries change (date navigation that updates us in place — index.tsx
   // intentionally does NOT key us by date, so a date change re-renders rather
   // than remounts), reset the vertical scroll to the top entry. With the old
@@ -82,14 +98,6 @@ const DayPager = ({
     scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries]);
-
-  // Fade the side scroll indicator out over the first slice of the expand
-  // animation. `chromeProgress` is 0 when collapsed, 1 when an entry is
-  // expanded; `CHROME_FADE_END` is the fraction of the animation by which the
-  // chrome should be fully hidden.
-  const indicatorFadeStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0]),
-  }));
 
   /**
    * Jump directly to a given entry index (called by the ScrollIndicator when
@@ -125,34 +133,27 @@ const DayPager = ({
         }}
       >
         {pagerHeight > 0 && (
-          <Animated.ScrollView
-            ref={scrollRef}
-            // `pagingEnabled` makes it snap one page (one `pagerHeight`) at a
-            // time, so each swipe lands exactly on an entry.
-            pagingEnabled
-            showsVerticalScrollIndicator={false}
-            // ~one scroll event per frame (60fps) — smooth enough for the
-            // indicator to track without flooding the UI thread.
-            scrollEventThrottle={16}
-            // Unmount views that are far off-screen. With many entries this
-            // keeps memory down; the trade-off is a remount cost when scrolling
-            // back, which paging makes rare.
-            removeClippedSubviews
-            onScroll={onScroll}
-            // Fixed height so each page is exactly one entry tall.
-            style={{ height: pagerHeight }}
-          >
-            {entries.map((entry, index) => (
-              // Each page is a full-height, centered slot holding one Stack.
-              <View
-                key={index}
-                style={{ height: pagerHeight }}
-                className="items-center justify-center px-5"
-              >
-                <Stack entry={entry} />
-              </View>
-            ))}
-          </Animated.ScrollView>
+          <Animated.View style={pagerExitStyle}>
+            <Animated.ScrollView
+              ref={scrollRef}
+              pagingEnabled
+              showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              removeClippedSubviews
+              onScroll={onScroll}
+              style={{ height: pagerHeight }}
+            >
+              {entries.map((entry, index) => (
+                <View
+                  key={index}
+                  style={{ height: pagerHeight }}
+                  className="items-center justify-center px-5"
+                >
+                  <Stack entry={entry} />
+                </View>
+              ))}
+            </Animated.ScrollView>
+          </Animated.View>
         )}
       </View>
 

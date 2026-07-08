@@ -42,3 +42,10 @@ export const BLOOM_RESIZE_SPRING = {
   damping: 28,
   mass: 0.9,
 };
+
+/** Create overlay: Home exit finishes at this progress slice. */
+export const CREATE_HOME_EXIT_END = 0.5;
+/** Create overlay: entries slide down this many px during Home exit. */
+export const CREATE_SLIDE_DISTANCE = 120;
+/** Create overlay open/close spring (reuses bloom feel). */
+export const CREATE_SPRING = BLOOM_SPRING;

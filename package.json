@@ -45,6 +45,7 @@
     "react-native": "0.86.0",
     "react-native-edge-fade": "^0.0.1",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-keyboard-controller": "^1.21.14",
     "react-native-nano-icons": "^0.1.8",
     "react-native-nitro-image": "^0.15.1",
     "react-native-nitro-modules": "^0.36.1",

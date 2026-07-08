@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { useRef } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { PortalHost, PortalProvider } from "react-native-teleport";
 import { withUniwind } from "uniwind";
@@ -28,25 +29,28 @@ export default function Layout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <PortalProvider>
-        <SafeAreaProvider>
-          <StatusBar style="auto" />
-          <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
-            <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
-              <DatabaseProvider>
-                <StyledSafeAreaView className="flex-1 bg-background">
-                  <Stack screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="(tabs)" />
-                  </Stack>
-                  <StyledPortalHost name="overlay" className="absolute inset-0" />
-                </StyledSafeAreaView>
-              </DatabaseProvider>
-            </BlurTargetViewProvider>
-          </BlurTargetView>
-          <StyledPortalHost name="morph" className="absolute inset-0" />
-          <StyledPortalHost name="bloom" className="absolute inset-0" />
-        </SafeAreaProvider>
-      </PortalProvider>
+      <KeyboardProvider>
+        <PortalProvider>
+          <SafeAreaProvider>
+            <StatusBar style="auto" />
+            <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
+              <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
+                <DatabaseProvider>
+                  <StyledSafeAreaView className="flex-1 bg-background">
+                    <Stack screenOptions={{ headerShown: false }}>
+                      <Stack.Screen name="(tabs)" />
+                    </Stack>
+                    <StyledPortalHost name="overlay" className="absolute inset-0" />
+                  </StyledSafeAreaView>
+                </DatabaseProvider>
+              </BlurTargetViewProvider>
+            </BlurTargetView>
+            <StyledPortalHost name="morph" className="absolute inset-0" />
+            <StyledPortalHost name="bloom" className="absolute inset-0" />
+            <StyledPortalHost name="create" className="absolute inset-0" />
+          </SafeAreaProvider>
+        </PortalProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

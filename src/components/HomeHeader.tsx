@@ -34,13 +34,13 @@
 import { useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Text, View } from "react-native";
-import Animated, { interpolate, SharedValue, useAnimatedStyle } from "react-native-reanimated";
+import Animated, { SharedValue, useAnimatedStyle } from "react-native-reanimated";
 
-import { CHROME_FADE_END, TITLE_TRAVEL } from "../constants/animation";
+import { TITLE_TRAVEL } from "../constants/animation";
+import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { formatDisplayDate } from "../utils/date";
 import BloomButton from "./BloomButton";
 import CalendarOverlay from "./CalendarOverlay";
-import { useExpandContext } from "./ExpandContext";
 import { Icon } from "./Icon";
 
 type AnimatedTitleProps = {
@@ -126,10 +126,6 @@ type HomeHeaderProps = {
 
 const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
   const router = useRouter();
-  // 0 = collapsed, 1 = an entry is expanded fullscreen. Drives the header chrome
-  // fade-out so the header doesn't overlap the expanded view.
-  const { chromeProgress } = useExpandContext();
-
   // Controlled open state for the calendar BloomButton. Tapping the pill opens
   // it; picking a day or hardware-back closes it.
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -176,13 +172,11 @@ const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
   }, []);
 
   // Header chrome fade: fades the whole header out as an entry expands
-  // (`chromeProgress` 0 → 1 over the first `CHROME_FADE_END` slice). The
-  // calendar-open trigger fade is handled inside BloomButton (its `triggerStyle`
-  // cross-fades the trigger as the panel blooms), so here we only handle the
-  // entry-expand chrome hide.
-  const chromeFadeStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0]),
-  }));
+  // (`chromeProgress` 0 → 1 over the first `CHROME_FADE_END` slice) or when
+  // the create overlay opens (`createProgress` 0 → 0.5). The calendar-open
+  // trigger fade is handled inside BloomButton (its `triggerStyle` cross-fades
+  // the trigger as the panel blooms), so here we only handle chrome hide.
+  const chromeFadeStyle = useHomeChromeFade();
 
   return (
     // Floating header pinned to the top. `z-50` keeps it above the pager; the

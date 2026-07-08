@@ -1,17 +1,12 @@
 import { forwardRef, PropsWithChildren } from "react";
 import { ViewProps } from "react-native";
-import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
-import { CHROME_FADE_END } from "../../constants/animation";
-import { useExpandContext } from "../ExpandContext";
+import { useHomeChromeFade } from "../../hooks/useHomeChromeFade";
 
 const StyledTabList = forwardRef<Animated.View, PropsWithChildren<ViewProps>>(
   ({ children, ...props }, ref) => {
-    const { chromeProgress } = useExpandContext();
-
-    const fadeStyle = useAnimatedStyle(() => ({
-      opacity: interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0]),
-    }));
+    const fadeStyle = useHomeChromeFade();
 
     return (
       <Animated.View

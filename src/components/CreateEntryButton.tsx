@@ -4,10 +4,8 @@
  * It's a thin wrapper around `BloomButton` (variant="menu"): a round plus
  * trigger that stays inline (floating at the bottom-right of the screen,
  * levelled with the tab bar) and, on tap, a separate frosted panel blooms
- * upward into a multi-screen create menu. The demo flow exercises dynamic
- * height + cross-fade via `contentKey`: main (Paper / Print) → paper types
- * (taller) or print stub (shorter) → back to main. Real composer flows are
- * wired later — tapping a paper type just returns to main for now.
+ * upward into a create menu. Tapping "Paper" closes the bloom and opens the
+ * Create overlay (see `CreateContext.openCreate`); "Print" is a stub for now.
  *
  * Positioning:
  *   The trigger is absolutely positioned `bottom-5 right-5` (20px from the
@@ -21,11 +19,11 @@
  *   coordinate space.
  *
  * Chrome fade:
- *   The trigger fades out with `chromeProgress` — the same expand signal that
- *   hides the tab bar (`StyledTabList`) and the header (`HomeHeader`) — so it
- *   disappears when an entry expands to fullscreen. Its bloomed panel lives in
- *   the root `bloom` portal (outside this fade wrapper), so an open menu stays
- *   visible regardless of the fade.
+ *   The trigger fades out with `chromeProgress` (entry expand) and
+ *   `createProgress` (create overlay open) — combined via `useHomeChromeFade`,
+ *   the same signal that hides the tab bar (`StyledTabList`) and the header
+ *   (`HomeHeader`). Its bloomed panel lives in the root `bloom` portal (outside
+ *   this fade wrapper), so an open menu stays visible regardless of the fade.
  *
  * State:
  *   `BloomButton` is controlled, so this component owns the `open` state and
@@ -36,18 +34,18 @@
  *   and-morph (it measures this trigger on open and blooms a separate panel
  *   upward from it, since the trigger is in the lower half of the screen).
  */
+import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
-import { CHROME_FADE_END } from "../constants/animation";
+import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
+import { todayISO } from "../utils/date";
 import BloomButton from "./BloomButton";
-import { useExpandContext } from "./ExpandContext";
+import { useCreateContext } from "./CreateContext";
 import { Icon } from "./Icon";
 
-const PAPER_TYPES = ["Lined", "Grid", "Dotted", "Plain", "Storyboard", "Sketchbook"] as const;
-
-type CreateMenuScreen = "main" | "paper" | "print";
+type CreateMenuScreen = "main" | "print";
 
 // Trigger sizing: p-2 (8px) around a 24px icon → 40px square. The icon size/
 // colour match the tab bar triggers so the two controls read as a set.
@@ -58,26 +56,20 @@ const TRIGGER_ICON_COLOR = "#79716B";
  * CreateEntryButton — see file header for the big picture.
  */
 const CreateEntryButton = () => {
-  // Expand chrome: 0 = collapsed, 1 = an entry is expanded fullscreen. Used to
-  // fade this control out alongside the tab bar/header during expand.
-  const { chromeProgress } = useExpandContext();
-  // Controlled open state for the BloomButton. Tapping the trigger opens;
-  // tapping the backdrop or hardware-back closes.
+  const { date } = useLocalSearchParams<{ date?: string }>();
+  const effectiveDate = date ?? todayISO();
+  const { openCreate } = useCreateContext();
   const [open, setOpen] = useState(false);
   const [screen, setScreen] = useState<CreateMenuScreen>("main");
-
-  // Fade the trigger out over the first slice of the expand animation, matching
-  // StyledTabList and HomeHeader. The wrapper uses `pointerEvents="box-none"` so
-  // its empty corners don't intercept taps on the screen beneath; only the
-  // trigger itself captures taps.
-  const chromeFadeStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0]),
-  }));
+  const chromeFadeStyle = useHomeChromeFade();
 
   const mainNode = (
     <View className="py-2">
       <Pressable
-        onPress={() => setScreen("paper")}
+        onPress={() => {
+          setOpen(false);
+          openCreate("paper", effectiveDate);
+        }}
         accessibilityRole="button"
         accessibilityLabel="Choose Paper"
         className="px-4 py-3"
@@ -95,31 +87,6 @@ const CreateEntryButton = () => {
     </View>
   );
 
-  const paperNode = (
-    <View className="py-2">
-      <Pressable
-        onPress={() => setScreen("main")}
-        accessibilityRole="button"
-        accessibilityLabel="Back to main menu"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-secondary">‹ Back</Text>
-      </Pressable>
-      <Text className="px-4 pb-1 font-sans-medium text-secondary">Paper type</Text>
-      {PAPER_TYPES.map((type) => (
-        <Pressable
-          key={type}
-          onPress={() => setScreen("main")}
-          accessibilityRole="button"
-          accessibilityLabel={`Choose ${type} paper`}
-          className="px-4 py-3"
-        >
-          <Text className="text-base text-primary">{type}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-
   const printNode = (
     <View className="py-2">
       <Pressable
@@ -133,7 +100,7 @@ const CreateEntryButton = () => {
     </View>
   );
 
-  const panelNode = screen === "paper" ? paperNode : screen === "print" ? printNode : mainNode;
+  const panelNode = screen === "print" ? printNode : mainNode;
 
   return (
     // Absolute, bottom-right, levelled with the tab bar. pointerEvents box-none

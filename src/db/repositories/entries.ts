@@ -84,6 +84,20 @@ export async function insertEntry(input: InsertEntryInput, tx?: DbExecutor): Pro
   });
 }
 
+export async function getNextSortOrder(date: string, tx?: DbExecutor): Promise<number> {
+  const db = tx ?? (await getDatabase());
+  const result = await db.execute(
+    `SELECT MAX(sort_order) AS max_sort
+     FROM entries
+     WHERE date = ? AND deleted_at IS NULL`,
+    [date],
+  );
+  const maxSort = result.rows[0]?.max_sort;
+  const parsed = typeof maxSort === "number" ? maxSort : Number(maxSort ?? 0);
+
+  return Number.isFinite(parsed) ? parsed + 1 : 0;
+}
+
 export async function updateEntryTitle(
   entryId: string,
   title: string,

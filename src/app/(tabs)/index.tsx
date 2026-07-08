@@ -33,9 +33,16 @@ import { ActivityIndicator, Pressable, Text, View, useWindowDimensions } from "r
 import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useEntriesVersion } from "../../components/CreateContext";
 import DayPager from "../../components/DayPager";
 import HomeHeader from "../../components/HomeHeader";
 import { getAllEntriesByDate, getEntriesByDate, type Entry } from "../../data/entries";
+import {
+  getCachedEntries,
+  hasCachedEntries,
+  seedEntriesCache,
+  setCachedEntries,
+} from "../../data/entriesCache";
 import { todayISO } from "../../utils/date";
 
 // Module-level cache of the measured pager height. The pager height only
@@ -57,7 +64,6 @@ let cachedPagerHeight = 0;
 // thread and contended with the calendar's close spring, dropping the de-bloom's
 // first frames. The load effect skips revalidation on cache hits (no second
 // commit during the close); cache misses still fetch (stale-while-revalidate).
-const entriesCache = new Map<string, Entry[]>();
 const EMPTY_ENTRIES: Entry[] = [];
 // True once the background preload of all entry dates has been kicked off.
 // Module-level so it survives remounts (the cache does too).
@@ -65,12 +71,13 @@ let entriesPreloaded = false;
 
 export default function Index() {
   const { date } = useLocalSearchParams<{ date?: string }>();
+  const { entriesVersion } = useEntriesVersion();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
 
   const effectiveDate = date ?? todayISO();
   const [entries, setEntries] = useState<Entry[]>(
-    () => entriesCache.get(effectiveDate) ?? EMPTY_ENTRIES,
+    () => getCachedEntries(effectiveDate) ?? EMPTY_ENTRIES,
   );
   // Tracks the date the `entries` state currently reflects, so we can detect
   // route date changes during render (see the adjust-state block below).
@@ -99,7 +106,7 @@ export default function Index() {
   // below swaps in the fresh entries (stale-while-revalidate).
   if (prevDate !== effectiveDate) {
     setPrevDate(effectiveDate);
-    const cached = entriesCache.get(effectiveDate);
+    const cached = getCachedEntries(effectiveDate);
     if (cached && cached !== entries) {
       setEntries(cached);
     }
@@ -109,7 +116,7 @@ export default function Index() {
 
   useEffect(() => {
     let cancelled = false;
-    const cacheHit = entriesCache.has(effectiveDate);
+    const cacheHit = hasCachedEntries(effectiveDate);
 
     setError(null);
 
@@ -131,7 +138,7 @@ export default function Index() {
         if (!cancelled) {
           // Cache the resolved entries so the next navigation to this date can
           // adopt them synchronously during render (see the adjust-state block).
-          entriesCache.set(effectiveDate, nextEntries);
+          setCachedEntries(effectiveDate, nextEntries);
           setEntries(nextEntries);
           setLoading(false);
         }
@@ -146,7 +153,7 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-  }, [effectiveDate, attempt]);
+  }, [effectiveDate, attempt, entriesVersion]);
 
   // Background-preload every date's entries into the module-level cache on mount.
   // One `getAllEntriesByDate` query (entries + artefacts, grouped by date) warms
@@ -164,11 +171,7 @@ export default function Index() {
     entriesPreloaded = true;
     getAllEntriesByDate()
       .then((byDate) => {
-        for (const [preloadDate, next] of byDate) {
-          if (!entriesCache.has(preloadDate)) {
-            entriesCache.set(preloadDate, next);
-          }
-        }
+        seedEntriesCache(byDate);
       })
       .catch(() => {});
   }, []);
