@@ -1,13 +1,24 @@
-import { PropsWithChildren, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+/**
+ * MorphOverlay — legacy measure-and-morph overlay (superseded by BloomPanel /
+ * FocusOverlay for active calendar and focus flows).
+ *
+ * EXCEPTION (React Compiler / Worklets closure): this file is intentionally
+ * left unchanged and has **no callsite** under `src/` (`rg "MorphOverlay" src`
+ * finds only this definition). It still uses `scheduleOnRN(finishClose, onClose)`
+ * — a function-valued Worklets argument that is unsafe after React Compiler
+ * rerenders. Do not wire a callsite without first applying the BloomPanel
+ * pattern (stable dispatcher + primitive sequence, RN effect → callback ref).
+ */
+import { PropsWithChildren, useEffect, useLayoutEffect, useRef } from "react";
 import { BackHandler, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, {
-  AnimatedRef,
+  type AnimatedRef,
   interpolate,
   measure,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  type SharedValue,
 } from "react-native-reanimated";
 import { Portal } from "react-native-teleport";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
@@ -20,6 +31,57 @@ const MORPH_SPRING = { stiffness: 110, damping: 20, mass: 1, overshootClamping: 
 const PANEL_FADE_END = 0.2;
 // Calendar blooms in once the container is solid, so the shape morph is visible.
 const CONTENT_BLOOM_START = 0.2;
+
+type MorphOrigin = { x: number; y: number; width: number; height: number };
+
+const finishClose = (onClose?: () => void) => {
+  onClose?.();
+};
+
+const animateOpen = ({
+  triggerRef,
+  origin,
+  progress,
+}: {
+  triggerRef: AnimatedRef<Animated.View>;
+  origin: SharedValue<MorphOrigin>;
+  progress: SharedValue<number>;
+}) => {
+  scheduleOnUI(() => {
+    "worklet";
+    const layout = measure(triggerRef);
+
+    if (layout) {
+      origin.set({
+        x: layout.pageX,
+        y: layout.pageY,
+        width: layout.width,
+        height: layout.height,
+      });
+    }
+
+    progress.set(withSpring(1, MORPH_SPRING));
+  });
+};
+
+const animateClose = ({
+  progress,
+  onClose,
+}: {
+  progress: SharedValue<number>;
+  onClose?: () => void;
+}) => {
+  scheduleOnUI(() => {
+    "worklet";
+    progress.set(
+      withSpring(0, MORPH_SPRING, (finished) => {
+        if (finished) {
+          scheduleOnRN(finishClose, onClose);
+        }
+      }),
+    );
+  });
+};
 
 type MorphOverlayProps = PropsWithChildren<{
   triggerRef: AnimatedRef<Animated.View>;
@@ -55,42 +117,9 @@ const MorphOverlay = ({
   const isFirstRun = useRef(true);
 
   useEffect(() => {
-    screenW.value = screenWidth;
-    screenH.value = screenHeight;
+    screenW.set(screenWidth);
+    screenH.set(screenHeight);
   }, [screenHeight, screenWidth, screenH, screenW]);
-
-  const finishClose = useCallback(() => {
-    onClose?.();
-  }, [onClose]);
-
-  const animateOpen = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      const layout = measure(triggerRef);
-
-      if (layout) {
-        origin.value = {
-          x: layout.pageX,
-          y: layout.pageY,
-          width: layout.width,
-          height: layout.height,
-        };
-      }
-
-      progress.value = withSpring(1, MORPH_SPRING);
-    });
-  }, [origin, progress, triggerRef]);
-
-  const animateClose = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      progress.value = withSpring(0, MORPH_SPRING, (finished) => {
-        if (finished) {
-          scheduleOnRN(finishClose);
-        }
-      });
-    });
-  }, [finishClose, progress]);
 
   // Always mounted (preloaded). Only animate on `open` changes, not on mount.
   useLayoutEffect(() => {
@@ -100,12 +129,12 @@ const MorphOverlay = ({
     }
 
     if (open) {
-      animateOpen();
+      animateOpen({ triggerRef, origin, progress });
       return;
     }
 
-    animateClose();
-  }, [animateClose, animateOpen, open]);
+    animateClose({ progress, onClose });
+  }, [onClose, open, origin, progress, triggerRef]);
 
   useEffect(() => {
     if (!open) {
@@ -121,29 +150,29 @@ const MorphOverlay = ({
   }, [onRequestClose, open]);
 
   const panelStyle = useAnimatedStyle(() => {
-    const o = origin.value;
-    const targetWidth = variant === "fullscreen" ? screenW.value : o.width;
-    const targetHeight = variant === "fullscreen" ? screenH.value : o.height * 4;
+    const o = origin.get();
+    const targetWidth = variant === "fullscreen" ? screenW.get() : o.width;
+    const targetHeight = variant === "fullscreen" ? screenH.get() : o.height * 4;
     const targetX = variant === "fullscreen" ? 0 : o.x;
     const targetY = variant === "fullscreen" ? 0 : o.y + o.height + 8;
 
     return {
       opacity: solid
-        ? interpolate(progress.value, [0, PANEL_FADE_END], [0, 1])
-        : interpolate(progress.value, [0, 1], [0.92, 0.98]),
+        ? interpolate(progress.get(), [0, PANEL_FADE_END], [0, 1])
+        : interpolate(progress.get(), [0, 1], [0.92, 0.98]),
       transform: [
-        { translateX: interpolate(progress.value, [0, 1], [o.x, targetX]) },
-        { translateY: interpolate(progress.value, [0, 1], [o.y, targetY]) },
-        { scaleX: interpolate(progress.value, [0, 1], [o.width / targetWidth, 1]) },
-        { scaleY: interpolate(progress.value, [0, 1], [o.height / targetHeight, 1]) },
+        { translateX: interpolate(progress.get(), [0, 1], [o.x, targetX]) },
+        { translateY: interpolate(progress.get(), [0, 1], [o.y, targetY]) },
+        { scaleX: interpolate(progress.get(), [0, 1], [o.width / targetWidth, 1]) },
+        { scaleY: interpolate(progress.get(), [0, 1], [o.height / targetHeight, 1]) },
       ],
-      borderRadius: interpolate(progress.value, [0, 1], [BUTTON_BORDER_RADIUS, 0]),
+      borderRadius: interpolate(progress.get(), [0, 1], [BUTTON_BORDER_RADIUS, 0]),
     };
   });
 
   const contentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [CONTENT_BLOOM_START, 1], [0, 1]),
-    transform: [{ scale: interpolate(progress.value, [CONTENT_BLOOM_START, 1], [0.96, 1]) }],
+    opacity: interpolate(progress.get(), [CONTENT_BLOOM_START, 1], [0, 1]),
+    transform: [{ scale: interpolate(progress.get(), [CONTENT_BLOOM_START, 1], [0.96, 1]) }],
   }));
 
   const panelWidth = variant === "fullscreen" ? screenWidth : screenWidth * 0.88;

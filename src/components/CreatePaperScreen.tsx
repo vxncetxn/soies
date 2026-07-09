@@ -1,7 +1,8 @@
 import { BlurTargetView, BlurView } from "expo-blur";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -116,7 +117,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   // can flip pointerEvents (which can't be animated) on the two headers and the
   // collapsed controls. Only fires on threshold crossings, not every frame.
   useAnimatedReaction(
-    () => expandProgress.value,
+    () => expandProgress.get(),
     (v, prev) => {
       if (prev === null) {
         return;
@@ -136,7 +137,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   // elements don't need their own opacity fades — they ride the root's — which
   // avoids a compounded (parent × child) fade that would slow/delay content.
   const screenEnterStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [CREATE_HOME_EXIT_END, 1], [0, 1], "clamp"),
+    opacity: interpolate(progress.get(), [CREATE_HOME_EXIT_END, 1], [0, 1], "clamp"),
   }));
 
   // The paper additionally slides up as it appears. Opacity is left to the root
@@ -144,7 +145,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   const paperStyle = useAnimatedStyle(() => ({
     transform: [
       {
-        translateY: interpolate(progress.value, [CREATE_HOME_EXIT_END, 1], [40, 0], "clamp"),
+        translateY: interpolate(progress.get(), [CREATE_HOME_EXIT_END, 1], [40, 0], "clamp"),
       },
     ],
   }));
@@ -156,7 +157,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   // represents the upward translation), so we negate it back to a positive
   // inset and clamp at 0.
   const scrollAnimatedProps = useAnimatedProps(() => {
-    const inset = Math.max(0, -keyboardHeight.value) + PAPER_BOTTOM_GUTTER;
+    const inset = Math.max(0, -keyboardHeight.get()) + PAPER_BOTTOM_GUTTER;
     return {
       contentInset: { bottom: inset },
       scrollIndicatorInsets: { bottom: inset },
@@ -172,7 +173,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
     height:
       topPad +
       interpolate(
-        expandProgress.value,
+        expandProgress.get(),
         [0, 1],
         [CREATE_HEADER_HEIGHT, EXPANDED_HEADER_HEIGHT],
         "clamp",
@@ -180,87 +181,91 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   }));
 
   const createHeaderStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.value, [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
+    opacity: interpolate(expandProgress.get(), [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
   }));
   const expandedHeaderStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.value, [CHROME_CROSSFADE_END, 1], [0, 1], "clamp"),
+    opacity: interpolate(expandProgress.get(), [CHROME_CROSSFADE_END, 1], [0, 1], "clamp"),
   }));
 
   // Collapsed controls (Cancel / BloomBar / Submit) fade out when the paper is
   // focused — the expanded state shows no floating controls over the paper.
   const controlsFadeStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.value, [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
+    opacity: interpolate(expandProgress.get(), [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
   }));
   // Controls lift above the keyboard for the title-focus case (keyboard open,
   // paper not focused). `keyboardHeight` is negative when open, so
-  // `translateY: keyboardHeight.value` moves them UP — negating it (the old
+  // `translateY: keyboardHeight.get()` moves them UP — negating it (the old
   // code) pushed them down off-screen.
   const controlsLiftStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: keyboardHeight.value }],
+    transform: [{ translateY: keyboardHeight.get() }],
   }));
 
   // Title-focus blur: same dark BlurView recipe as FocusOverlay. Fades with
   // titleFocusProgress. When focused the backdrop Pressable intercepts taps
   // (dismisses title without focusing the paper underneath).
   const titleFocusBackdropStyle = useAnimatedStyle(() => ({
-    opacity: titleFocusProgress.value,
+    opacity: titleFocusProgress.get(),
   }));
 
-  const handleTitleFocus = useCallback(() => {
+  const handleTitleFocus = () => {
     setIsTitleFocused(true);
-    titleFocusProgress.value = withTiming(1, { duration: TITLE_FOCUS_FADE_MS });
-  }, [titleFocusProgress]);
+    titleFocusProgress.set(withTiming(1, { duration: TITLE_FOCUS_FADE_MS }));
+  };
 
-  const dismissTitleFocus = useCallback(() => {
+  const dismissTitleFocus = () => {
     // Drive overlay state here — don't rely on TextInput onBlur alone. Toggling
     // multiline used to remount the native field and drop focus without firing
     // onBlur, leaving the frost stuck with no keyboard.
     setIsTitleFocused(false);
-    titleFocusProgress.value = withTiming(0, { duration: TITLE_FOCUS_FADE_MS });
+    titleFocusProgress.set(withTiming(0, { duration: TITLE_FOCUS_FADE_MS }));
     titleInputRef.current?.blur();
-  }, [titleFocusProgress]);
+  };
 
-  const handleTitleBlur = useCallback(() => {
+  const handleTitleBlur = () => {
     // Sync overlay if focus was lost without going through dismissTitleFocus
     // (e.g. tapping into EditablePaper). Safe to call repeatedly — state/timing
     // are idempotent when already dismissed.
     setIsTitleFocused(false);
-    titleFocusProgress.value = withTiming(0, { duration: TITLE_FOCUS_FADE_MS });
-  }, [titleFocusProgress]);
+    titleFocusProgress.set(withTiming(0, { duration: TITLE_FOCUS_FADE_MS }));
+  };
 
   // Backdrop tap dismisses title-focus via state (not blur()-only), so a
   // stuck overlay after a silent native focus loss still clears.
-  const handleTitleBackdropPress = useCallback(() => {
+  const handleTitleBackdropPress = () => {
     dismissTitleFocus();
-  }, [dismissTitleFocus]);
+  };
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = async () => {
     if (saving) {
       return;
     }
 
+    // No TryStatement: React Compiler 1.0 cannot lower try/finally, and is
+    // limited inside try/catch, under panicThreshold: 'all_errors'. Promise
+    // chaining preserves success / error / cleanup without a try block.
+    const resolvedTitle = title.trim() || "Untitled";
     setSaving(true);
-
-    try {
-      await savePaperEntry({
-        date,
-        title: title.trim() || "Untitled",
-        text: paperText,
+    await savePaperEntry({
+      date,
+      title: resolvedTitle,
+      text: paperText,
+    })
+      .then(() => {
+        bumpEntriesVersion();
+        onClose();
+      })
+      .finally(() => {
+        setSaving(false);
       });
-      bumpEntriesVersion();
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  }, [bumpEntriesVersion, date, onClose, paperText, saving, title]);
+  };
 
-  const handleBack = useCallback(() => {
+  const handleBack = () => {
     // Back from the expanded header = leave the paper: blur the text input,
     // which fires EditablePaper's onBlur → collapses the sheet (expandProgress
     // → 0) and dismisses the keyboard. The chrome cross-fades back to the
     // create header + controls.
     textInputRef.current?.blur();
-  }, []);
+  };
 
   const barMenuNode = (
     <View className="py-2">
@@ -406,8 +411,14 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
           accessibilityLabel="Dismiss title editing"
         >
           <BlurView
-            blurTarget={createBlurTargetRef}
-            blurMethod="dimezisBlurViewSdk31Plus"
+            // blurTarget/blurMethod are Android-only; passing them on iOS still
+            // runs findNodeHandle inside expo-blur (StrictMode deprecation).
+            {...(Platform.OS === "android"
+              ? {
+                  blurTarget: createBlurTargetRef,
+                  blurMethod: "dimezisBlurViewSdk31Plus" as const,
+                }
+              : {})}
             tint="dark"
             intensity={TITLE_FOCUS_BLUR_INTENSITY}
             style={StyleSheet.absoluteFill}
@@ -463,11 +474,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
                 styles.titleInput,
                 !isTitleFocused ? styles.titleInputIdle : null,
                 {
-                  color: isTitleFocused
-                    ? "#FFFFFF"
-                    : title.length > 0
-                      ? "transparent"
-                      : "#79716B",
+                  color: isTitleFocused ? "#FFFFFF" : title.length > 0 ? "transparent" : "#79716B",
                 },
               ]}
             />

@@ -7,8 +7,8 @@ import { BackHandler } from "react-native";
  * `true` stops the press from navigating away). No subscription while inactive,
  * so a closed overlay/panel doesn't intercept back.
  *
- * `onDismiss` should be stable (e.g. a `useCallback` or a state setter) — the
- * effect re-subscribes when its identity changes.
+ * `onDismiss` should have a stable function identity (from React Compiler or a
+ * state setter) — the effect re-subscribes when its identity changes.
  */
 export function useHardwareBackDismiss(active: boolean, onDismiss: () => void) {
   useEffect(() => {

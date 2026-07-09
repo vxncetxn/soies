@@ -1,5 +1,5 @@
 import { createContext, useContext, type PropsWithChildren, type RefObject } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 
 const BlurTargetViewContext = createContext<RefObject<View | null> | null>(null);
 
@@ -26,4 +26,22 @@ export const useBlurTargetRef = () => {
   }
 
   return blurTargetRef;
+};
+
+/**
+ * `expo-blur`'s `blurTarget` / `blurMethod` are Android-only. Passing a target
+ * on iOS still runs `findNodeHandle` inside BlurView, which StrictMode reports
+ * as deprecated. Omit the props off Android so calendar/focus/create blurs stay
+ * quiet under StrictMode without changing the iOS visual path (UIVisualEffect).
+ */
+export const useAndroidBlurTargetProps = (
+  blurMethod: "dimezisBlurView" | "dimezisBlurViewSdk31Plus" = "dimezisBlurViewSdk31Plus",
+) => {
+  const blurTargetRef = useBlurTargetRef();
+
+  if (Platform.OS !== "android") {
+    return {};
+  }
+
+  return { blurTarget: blurTargetRef, blurMethod };
 };

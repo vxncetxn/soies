@@ -6,11 +6,6 @@
     "web": {
       "output": "static"
     },
-    "autolinking": {
-      "ios": {
-        "buildFromSource": ["react-native-reanimated", "react-native-worklets"]
-      }
-    },
     "plugins": [
       "expo-router",
       "expo-status-bar",
@@ -56,6 +51,9 @@
     },
     "android": {
       "package": "com.anonymous.soies"
+    },
+    "experiments": {
+      "reactCompiler": true
     }
   }
 }

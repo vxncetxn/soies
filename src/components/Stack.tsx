@@ -19,7 +19,7 @@
  * blurred backdrop with an actions menu (Edit/Share/Delete...) — which clones
  * the deck and animates from its measured frame. That lives in `FocusOverlay`.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import Animated, {
   interpolate,
@@ -72,6 +72,21 @@ const Stack = ({ entry }: StackProps) => {
   // Which artefact page is currently active. Persisted across expand/collapse
   // cycles so re-expanding lands you on the same page you left on.
   const [activePage, setActivePage] = useState(0);
+  // Tracks which entry `activePage` / `scrollOffset` currently reflect so we
+  // can reset them during render when the DayPager reuses this Stack across
+  // dates (see adjust-state block below).
+  const [prevEntry, setPrevEntry] = useState(entry);
+
+  // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
+  // deck's on-screen frame and animate the long-press overlay from it.
+  const triggerRef = useAnimatedRef<Animated.View>();
+  // Ref to the expanded horizontal ScrollView, for imperative scrollTo on jump.
+  const scrollRef = useAnimatedRef<ScrollView>();
+  // Raw horizontal scroll offset of the expanded pager (UI thread).
+  const scrollOffset = useSharedValue(0);
+  // 0 = collapsed deck, 1 = expanded pager. The single animation clock shared
+  // by both render branches' ArtefactWrappers.
+  const progress = useSharedValue(0);
 
   // Reset the persisted artefact page when the entry changes. index.tsx updates
   // the DayPager in place on date navigation (no remount), so this Stack
@@ -89,42 +104,38 @@ const Stack = ({ entry }: StackProps) => {
   // persist into the new date's collapsed deck — `activeIndex = round(scrollOffset/PAGE_WIDTH)`
   // would be 2, showing artefact 2 on top of the new date's stack. Resetting it
   // here keeps the collapsed deck on artefact 0 for the new entry.
-  useEffect(() => {
+  //
+  // React state adjusts during render (RC-safe). The SharedValue reset runs in
+  // useLayoutEffect — writing `.set()` during render trips Reanimated's
+  // "Writing to value during component render" warning under StrictMode.
+  if (prevEntry !== entry) {
+    setPrevEntry(entry);
     setActivePage(0);
-    scrollOffset.value = 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry]);
+  }
 
-  // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
-  // deck's on-screen frame and animate the long-press overlay from it.
-  const triggerRef = useAnimatedRef<Animated.View>();
-  // Ref to the expanded horizontal ScrollView, for imperative scrollTo on jump.
-  const scrollRef = useAnimatedRef<ScrollView>();
-  // Raw horizontal scroll offset of the expanded pager (UI thread).
-  const scrollOffset = useSharedValue(0);
-  // 0 = collapsed deck, 1 = expanded pager. The single animation clock shared
-  // by both render branches' ArtefactWrappers.
-  const progress = useSharedValue(0);
+  useLayoutEffect(() => {
+    scrollOffset.set(0);
+  }, [entry, scrollOffset]);
 
   // Worklet that copies the horizontal scroll offset into `scrollOffset`. Runs
   // on the UI thread so the artefacts and indicator track scrolling with no
   // JS round-trip per frame.
   const onScroll = useAnimatedScrollHandler((event) => {
-    scrollOffset.value = event.contentOffset.x;
+    scrollOffset.set(event.contentOffset.x);
   });
 
   // Fractional current page of the expanded pager (0.0 = first artefact, 1.5 =
   // halfway between the 2nd and 3rd). Drives the artefacts' horizontal
   // positioning and the scroll indicator.
   const currentPage = useDerivedValue(() => {
-    return scrollOffset.value / PAGE_WIDTH;
+    return scrollOffset.get() / PAGE_WIDTH;
   });
 
   // The index of the artefact currently "on top". In the expanded pager this is
   // the page you're nearest; in the collapsed deck it's the card on top of the
   // stack. `Math.round` of the fractional current page gives the nearest page.
   const activeIndex = useDerivedValue(() => {
-    return Math.round(currentPage.value);
+    return Math.round(currentPage.get());
   });
 
   // Build the wrapped artefacts for the EXPANDED pager. (CollapsedDeck builds
@@ -140,8 +151,8 @@ const Stack = ({ entry }: StackProps) => {
   // The close button fades/slides in partway through the expand animation
   // (starts at progress 0.2) so it doesn't appear instantly with the deck.
   const closeBtnStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0.2, 1], [0, 1]),
-    transform: [{ translateY: interpolate(progress.value, [0.2, 1], [40, 0]) }],
+    opacity: interpolate(progress.get(), [0.2, 1], [0, 1]),
+    transform: [{ translateY: interpolate(progress.get(), [0.2, 1], [40, 0]) }],
   }));
 
   /**
@@ -154,7 +165,7 @@ const Stack = ({ entry }: StackProps) => {
   const persistPage = () => {
     const page = Math.max(
       0,
-      Math.min(entry.artefacts.length - 1, Math.round(scrollOffset.value / PAGE_WIDTH)),
+      Math.min(entry.artefacts.length - 1, Math.round(scrollOffset.get() / PAGE_WIDTH)),
     );
 
     setActivePage(page);
@@ -169,8 +180,8 @@ const Stack = ({ entry }: StackProps) => {
   const expand = () => {
     setIsExpanded(true);
 
-    progress.value = withSpring(1, SPRING_CONFIG);
-    chromeProgress.value = withSpring(1, SPRING_CONFIG);
+    progress.set(withSpring(1, SPRING_CONFIG));
+    chromeProgress.set(withSpring(1, SPRING_CONFIG));
   };
 
   /**
@@ -184,18 +195,18 @@ const Stack = ({ entry }: StackProps) => {
 
     setIsExpanded(false);
 
-    progress.value = withSpring(0, SPRING_CONFIG);
-    chromeProgress.value = withSpring(0, SPRING_CONFIG);
+    progress.set(withSpring(0, SPRING_CONFIG));
+    chromeProgress.set(withSpring(0, SPRING_CONFIG));
   };
 
   // Long-press opens the focus/actions overlay (separate from expand/collapse).
-  const openFocus = useCallback(() => {
+  const openFocus = () => {
     setFocusOpen(true);
-  }, []);
+  };
 
-  const closeFocus = useCallback(() => {
+  const closeFocus = () => {
     setFocusOpen(false);
-  }, []);
+  };
 
   /**
    * Restore the saved page when the expanded pager lays out. Because the pager
@@ -206,7 +217,7 @@ const Stack = ({ entry }: StackProps) => {
    */
   const restoreScroll = () => {
     scrollRef.current?.scrollTo({ x: activePage * PAGE_WIDTH, y: 0, animated: false });
-    scrollOffset.value = activePage * PAGE_WIDTH;
+    scrollOffset.set(activePage * PAGE_WIDTH);
   };
 
   /**
@@ -214,14 +225,11 @@ const Stack = ({ entry }: StackProps) => {
    * Imperatively scrolls (non-animated) and syncs `scrollOffset` + `activePage`
    * immediately so downstream animations don't lag by a frame.
    */
-  const jumpToArtefact = useCallback(
-    (index: number) => {
-      scrollRef.current?.scrollTo({ x: index * PAGE_WIDTH, y: 0, animated: false });
-      scrollOffset.value = index * PAGE_WIDTH;
-      setActivePage(index);
-    },
-    [PAGE_WIDTH, scrollOffset, scrollRef],
-  );
+  const jumpToArtefact = (index: number) => {
+    scrollRef.current?.scrollTo({ x: index * PAGE_WIDTH, y: 0, animated: false });
+    scrollOffset.set(index * PAGE_WIDTH);
+    setActivePage(index);
+  };
 
   return (
     <>

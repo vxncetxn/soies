@@ -1,4 +1,4 @@
-import { createContext, PropsWithChildren, useCallback, useContext, useState } from "react";
+import { createContext, PropsWithChildren, useContext, useState } from "react";
 import { useSharedValue, withSpring, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
@@ -40,9 +40,9 @@ type CreateState = { mode: Exclude<CreateMode, null>; date: string };
  */
 const EntriesVersionProvider = ({ children }: PropsWithChildren) => {
   const [entriesVersion, setEntriesVersion] = useState(0);
-  const bumpEntriesVersion = useCallback(() => {
+  const bumpEntriesVersion = () => {
     setEntriesVersion((previous) => previous + 1);
-  }, []);
+  };
 
   return (
     <EntriesVersionContext.Provider value={{ entriesVersion, bumpEntriesVersion }}>
@@ -58,31 +58,29 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
   const createMode: CreateMode = create?.mode ?? null;
   const createDate = create?.date ?? "";
 
-  const finishClose = useCallback(() => {
-    setCreate(null);
-  }, []);
-
-  const openCreate = useCallback(
-    (mode: Exclude<CreateMode, null>, date: string) => {
-      setCreate({ mode, date });
-      scheduleOnUI(() => {
-        "worklet";
-        createProgress.value = withSpring(1, CREATE_SPRING);
-      });
-    },
-    [createProgress],
-  );
-
-  const closeCreate = useCallback(() => {
+  const openCreate = (mode: Exclude<CreateMode, null>, date: string) => {
+    setCreate({ mode, date });
     scheduleOnUI(() => {
       "worklet";
-      createProgress.value = withSpring(0, CREATE_SPRING, (finished) => {
-        if (finished) {
-          scheduleOnRN(finishClose);
-        }
-      });
+      createProgress.set(withSpring(1, CREATE_SPRING));
     });
-  }, [createProgress, finishClose]);
+  };
+
+  const closeCreate = () => {
+    scheduleOnUI(() => {
+      "worklet";
+      createProgress.set(
+        withSpring(0, CREATE_SPRING, (finished) => {
+          if (finished) {
+            // React's stable state dispatcher is a valid RN-runtime function.
+            // Scheduling it directly avoids serializing the render-local
+            // finishClose callback, which aborted in Worklets after a rerender.
+            scheduleOnRN(setCreate, null);
+          }
+        }),
+      );
+    });
+  };
 
   return (
     <CreateContext.Provider

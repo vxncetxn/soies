@@ -29,6 +29,7 @@ assets/nanoicons/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+.cursor/debug-*.log
 
 # macOS
 .DS_Store
@@ -44,3 +45,8 @@ app-example
 
 # ide
 .idea
+
+# Local pnpm store (used when global store is unwritable)
+.pnpm-store/
+vendor/
+.pnpm-home/

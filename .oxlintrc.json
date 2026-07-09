@@ -4,7 +4,11 @@
   "categories": {
     "correctness": "error"
   },
-  "rules": {},
+  "rules": {
+    "react/react-compiler": ["error", { "reportAllBailouts": true }],
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn"
+  },
   "env": {
     "builtin": true
   }

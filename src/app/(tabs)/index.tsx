@@ -28,7 +28,7 @@
  * entries change, and Stack resets its persisted artefact page on entry change.
  */
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -112,22 +112,26 @@ export default function Index() {
     }
   }
 
-  const titles = useMemo(() => entries.map((entry) => entry.title), [entries]);
+  // Cache hit: finish the first-load spinner during render (not in an effect) so
+  // React Compiler does not flag EffectSetState. The adjust-state block above
+  // already adopted cached entries before paint.
+  const cacheHit = hasCachedEntries(effectiveDate);
+  if (cacheHit && loading) {
+    setLoading(false);
+  }
+  if (cacheHit && error) {
+    setError(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    const cacheHit = hasCachedEntries(effectiveDate);
 
-    setError(null);
-
-    // Cache hit: the adjust-state block above already adopted the cached entries
-    // during render, so the DayPager updated in place with the correct entries.
-    // Skip the revalidation fetch entirely — calling setEntries with a fresh
-    // array reference here would trigger a second native commit during the close
-    // morph and contend with the spring. The cache is warmed by the preload
-    // effect and revalidated on cache misses, so it stays fresh for navigation.
-    if (cacheHit) {
-      setLoading(false);
+    // Cache hit: skip the revalidation fetch entirely — calling setEntries with
+    // a fresh array reference here would trigger a second native commit during
+    // the close morph and contend with the spring. The cache is warmed by the
+    // preload effect and revalidated on cache misses, so it stays fresh for
+    // navigation. Loading/error for cache hits are settled during render above.
+    if (hasCachedEntries(effectiveDate)) {
       return () => {
         cancelled = true;
       };
@@ -141,6 +145,7 @@ export default function Index() {
           setCachedEntries(effectiveDate, nextEntries);
           setEntries(nextEntries);
           setLoading(false);
+          setError(null);
         }
       })
       .catch((nextError: unknown) => {
@@ -183,11 +188,11 @@ export default function Index() {
   const scrollOffset = useSharedValue(0);
 
   useLayoutEffect(() => {
-    scrollOffset.value = 0;
+    scrollOffset.set(0);
   }, [effectiveDate, scrollOffset]);
 
   const onScroll = useAnimatedScrollHandler((event) => {
-    scrollOffset.value = event.contentOffset.y;
+    scrollOffset.set(event.contentOffset.y);
   });
 
   const currentPage = useDerivedValue(() => {
@@ -195,7 +200,7 @@ export default function Index() {
       return 0;
     }
 
-    return scrollOffset.value / pagerHeight;
+    return scrollOffset.get() / pagerHeight;
   }, [pagerHeight]);
 
   const handlePagerHeightChange = (height: number) => {
@@ -207,7 +212,11 @@ export default function Index() {
 
   return (
     <View className="relative flex-1 bg-background">
-      <HomeHeader date={effectiveDate} titles={titles} currentPage={currentPage} />
+      <HomeHeader
+        date={effectiveDate}
+        titles={entries.map((entry) => entry.title)}
+        currentPage={currentPage}
+      />
 
       {error ? (
         <View className="flex-1 items-center justify-center gap-4 px-5">

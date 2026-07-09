@@ -10,9 +10,9 @@ export function useHomeChromeFade() {
   const { createProgress } = useCreateContext();
 
   return useAnimatedStyle(() => {
-    const chromeOpacity = interpolate(chromeProgress.value, [0, CHROME_FADE_END], [1, 0], "clamp");
+    const chromeOpacity = interpolate(chromeProgress.get(), [0, CHROME_FADE_END], [1, 0], "clamp");
     const createOpacity = interpolate(
-      createProgress.value,
+      createProgress.get(),
       [0, CREATE_HOME_EXIT_END],
       [1, 0],
       "clamp",

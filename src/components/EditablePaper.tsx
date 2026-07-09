@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useState } from "react";
+import { type RefObject, useState } from "react";
 import {
   LayoutChangeEvent,
   NativeSyntheticEvent,
@@ -117,108 +117,99 @@ const EditablePaper = ({
   // again on delete so the user can retype.
   const [maxChars, setMaxChars] = useState(ARTEFACT_TEXT_LIMITS.paper);
 
-  const handlePaperLayout = useCallback((event: LayoutChangeEvent) => {
+  const handlePaperLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setInnerWidth(Math.max(0, width - PAPER_PADDING * 2));
     setInnerHeight(Math.max(0, height - PAPER_PADDING * 2));
-  }, []);
+  };
 
   // Offset in `src` at which the non-newline char count reaches the total text
   // length of the lines that fit — so the slice keeps explicit newlines that
   // fall within the fitting part (join(lines.text) would drop them).
-  const truncateToFit = useCallback(
-    (lines: TextLayoutEventData["lines"], src: string) => {
-      let fitTextLen = 0;
-      for (const line of lines) {
-        if (line.y + line.height <= innerHeight + 1) {
-          fitTextLen += line.text.length;
-        } else {
-          break;
-        }
+  const truncateToFit = (lines: TextLayoutEventData["lines"], src: string) => {
+    let fitTextLen = 0;
+    for (const line of lines) {
+      if (line.y + line.height <= innerHeight + 1) {
+        fitTextLen += line.text.length;
+      } else {
+        break;
       }
-      let count = 0;
-      let cut = 0;
-      for (let i = 0; i < src.length && count < fitTextLen; i++) {
-        if (src[i] !== "\n") {
-          count += 1;
-        }
-        cut = i + 1;
+    }
+    let count = 0;
+    let cut = 0;
+    for (let i = 0; i < src.length && count < fitTextLen; i++) {
+      if (src[i] !== "\n") {
+        count += 1;
       }
-      return src.slice(0, cut);
-    },
-    [innerHeight],
-  );
+      cut = i + 1;
+    }
+    return src.slice(0, cut);
+  };
 
-  const handleMirrorTextLayout = useCallback(
-    (event: NativeSyntheticEvent<TextLayoutEventData>) => {
-      if (innerHeight <= 0 || innerWidth <= 0) {
-        return;
-      }
-      const lines = event.nativeEvent.lines;
-      const last = lines.length > 0 ? lines[lines.length - 1] : null;
-      const textBottom = last ? last.y + last.height : 0;
+  const handleMirrorTextLayout = (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    if (innerHeight <= 0 || innerWidth <= 0) {
+      return;
+    }
+    const lines = event.nativeEvent.lines;
+    const last = lines.length > 0 ? lines[lines.length - 1] : null;
+    const textBottom = last ? last.y + last.height : 0;
 
-      // (1) Overflow: truncate to the last fitting line, and tighten maxChars so
-      // further keystrokes are blocked silently (no flash).
-      if (textBottom > innerHeight + 1) {
-        const truncated = truncateToFit(lines, value);
-        if (truncated.length < value.length) {
-          onChangeText(truncated);
-          setMaxChars(truncated.length);
-        }
-        return;
+    // (1) Overflow: truncate to the last fitting line, and tighten maxChars so
+    // further keystrokes are blocked silently (no flash).
+    if (textBottom > innerHeight + 1) {
+      const truncated = truncateToFit(lines, value);
+      if (truncated.length < value.length) {
+        onChangeText(truncated);
+        setMaxChars(truncated.length);
       }
+      return;
+    }
 
-      // (2) Fits. Predict whether the next keystroke would wrap past the page.
-      // The lock fires only when the CURRENT last line is the LAST fitting line
-      // (the next line would overflow: textBottom + last.height > innerHeight)
-      // AND it's effectively full (another avg-width char would wrap). Both
-      // terms come from the mirror's real line geometry, so the cap is always at
-      // the true page bottom regardless of the font's actual line height — which
-      // does not match INPUT_LINE_HEIGHT on iOS multiline.
-      let nextMaxChars = ARTEFACT_TEXT_LIMITS.paper;
-      const nextLineOverflows = last != null && textBottom + last.height > innerHeight + 1;
-      if (nextLineOverflows && last && last.text.length > 0) {
-        const avgCharWidth = last.width / last.text.length;
-        if (last.width + avgCharWidth > innerWidth) {
-          nextMaxChars = value.length;
-        }
+    // (2) Fits. Predict whether the next keystroke would wrap past the page.
+    // The lock fires only when the CURRENT last line is the LAST fitting line
+    // (the next line would overflow: textBottom + last.height > innerHeight)
+    // AND it's effectively full (another avg-width char would wrap). Both
+    // terms come from the mirror's real line geometry, so the cap is always at
+    // the true page bottom regardless of the font's actual line height — which
+    // does not match INPUT_LINE_HEIGHT on iOS multiline.
+    let nextMaxChars = ARTEFACT_TEXT_LIMITS.paper;
+    const nextLineOverflows = last != null && textBottom + last.height > innerHeight + 1;
+    if (nextLineOverflows && last && last.text.length > 0) {
+      const avgCharWidth = last.width / last.text.length;
+      if (last.width + avgCharWidth > innerWidth) {
+        nextMaxChars = value.length;
       }
-      setMaxChars(nextMaxChars);
-    },
-    [innerHeight, innerWidth, onChangeText, truncateToFit, value],
-  );
+    }
+    setMaxChars(nextMaxChars);
+  };
 
-  const handleChangeText = useCallback(
-    (next: string) => {
-      // Loosen the cap on delete so the user can retype after hitting the limit.
-      // (The native maxLength only caps the max; deletes are always allowed, so
-      // we detect a shrink here and reset maxChars — the mirror re-tightens it
-      // once the remaining text is laid out.)
-      if (next.length < value.length) {
-        setMaxChars(ARTEFACT_TEXT_LIMITS.paper);
-      }
-      onChangeText(next);
-    },
-    [onChangeText, value],
-  );
+  const handleChangeText = (next: string) => {
+    // Loosen the cap on delete so the user can retype after hitting the limit.
+    // (The native maxLength only caps the max; deletes are always allowed, so
+    // we detect a shrink here and reset maxChars — the mirror re-tightens it
+    // once the remaining text is laid out.)
+    if (next.length < value.length) {
+      setMaxChars(ARTEFACT_TEXT_LIMITS.paper);
+    }
+    onChangeText(next);
+  };
 
   // Focus blooms the sheet to the expanded artefact size; blur collapses it
   // back. Same spring as the Stack expand so the motion feels identical.
-  const handleFocus = useCallback(() => {
-    expandProgress.value = withSpring(1, SPRING_CONFIG);
-  }, [expandProgress]);
+  const handleFocus = () => {
+    expandProgress.set(withSpring(1, SPRING_CONFIG));
+  };
 
-  const handleBlur = useCallback(() => {
-    expandProgress.value = withSpring(0, SPRING_CONFIG);
-  }, [expandProgress]);
+  const handleBlur = () => {
+    expandProgress.set(withSpring(0, SPRING_CONFIG));
+  };
 
   // The sheet scales from collapsed (1) to expanded (expandedScale). Layout
   // stays at the collapsed size — only the visual grows — so the WYSIWYG cap
   // (based on the collapsed inner area) stays constant and matches the
   // collapsed artefact that will display this text on Home.
   const paperStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(expandProgress.value, [0, 1], [1, expandedScale]) }],
+    transform: [{ scale: interpolate(expandProgress.get(), [0, 1], [1, expandedScale]) }],
   }));
 
   return (

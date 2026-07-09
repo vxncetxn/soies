@@ -35,7 +35,7 @@ import {
   type CalendarTheme,
   useCalendar,
 } from "@marceloterreiro/flash-calendar";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -177,11 +177,9 @@ type DayCellProps = {
 
 // Lightweight day cell: a single Pressable + Text + absolute dot. No per-cell
 // hook, no theme-context lookup, no library wrapper — to minimize the JS cost
-// of rendering ~84 visible cells when the calendar opens.
-//
-// `memo` is intentional: the parent (renderItem) is stable and `entryDates` is
-// a stable Set, so memo skips re-rendering cells whose `day` hasn't changed.
-const DayCell = memo(function DayCell({ day, entryDates, onPress }: DayCellProps) {
+// of rendering ~84 visible cells when the calendar opens. React Compiler handles
+// render caching for unchanged inputs, so this stays a plain component.
+function DayCell({ day, entryDates, onPress }: DayCellProps) {
   // Days that belong to the previous/next month (used to fill the grid) render
   // as empty slots — no number, no press target.
   if (day.isDifferentMonth) {
@@ -226,7 +224,7 @@ const DayCell = memo(function DayCell({ day, entryDates, onPress }: DayCellProps
       )}
     </View>
   );
-});
+}
 
 // Theme for the parts of the calendar we still let flash-calendar render
 // itself (month title + weekday names). Day cells are rendered by DayCell
@@ -364,20 +362,13 @@ const CalendarOverlay = ({ effectiveDate, highlightDate, onPick }: CalendarOverl
     };
   }, []);
   // The month to open on, captured once from the first `effectiveDate`. Using
-  // useState (not useMemo) intentionally freezes it: if the route date changes
+  // State intentionally freezes it: if the route date changes
   // while the calendar is open, we do NOT want to jump the scroll position.
   const [initialMonthId] = useState(effectiveDate);
-  // Cap the calendar at today: blocks future months from ever rendering (even
-  // via onEndReached/appendMonths) and disables future days within view.
-  const maxDateId = useMemo(() => todayISO(), []);
-
-  // Range is fixed: [account start, initial month]. No earlier/future months.
-  // The past range is the whole-month count from the account start to the
-  // initial month; clamped at 0 in case effectiveDate is before the start.
-  const pastRange = useMemo(
-    () => Math.max(0, monthsBetween(ACCOUNT_START_DATE_ID, initialMonthId)),
-    [initialMonthId],
-  );
+  // Cap the calendar at today-at-mount: blocks future months from rendering and
+  // disables future days within view. Like initialMonthId, this is intentionally
+  // frozen while the calendar instance is open.
+  const [maxDateId] = useState(() => todayISO());
   const futureRange = 0;
 
   // Decoupled from `effectiveDate`: navigation (router.setParams) changes
@@ -386,33 +377,23 @@ const CalendarOverlay = ({ effectiveDate, highlightDate, onPick }: CalendarOverl
   //
   // flash-calendar highlights days via "active date ranges"; a single-day range
   // (startId == endId) highlights exactly one day.
-  const activeDateRanges = useMemo<CalendarActiveDateRange[]>(
-    () => [{ startId: highlightDate, endId: highlightDate }],
-    [highlightDate],
-  );
+  const activeDateRanges: CalendarActiveDateRange[] = [
+    { startId: highlightDate, endId: highlightDate },
+  ];
 
-  // Thin wrapper around `onPick` so the child callback identity is stable
-  // (depends only on `onPick`, which is stable from HomeHeader).
-  const handleDayPress = useCallback<CalendarOnDayPress>(
-    (dateId) => {
-      onPick(dateId);
-    },
-    [onPick],
-  );
+  const handleDayPress: CalendarOnDayPress = (dateId) => {
+    onPick(dateId);
+  };
 
-  // Render a single month in the list. Stable identity (depends only on the
-  // entry-dates set) so the list doesn't recreate render items each render.
-  const renderItem = useCallback(
-    ({ item }: { item: CalendarMonthEnhanced }) => (
-      <View style={styles.monthContainer}>
-        <CalendarMonthWithDots
-          calendarMonthId={item.id}
-          entryDates={entryDates}
-          {...item.calendarProps}
-        />
-      </View>
-    ),
-    [entryDates],
+  // Render a single month in the list.
+  const renderItem = ({ item }: { item: CalendarMonthEnhanced }) => (
+    <View style={styles.monthContainer}>
+      <CalendarMonthWithDots
+        calendarMonthId={item.id}
+        entryDates={entryDates}
+        {...item.calendarProps}
+      />
+    </View>
   );
 
   return (
@@ -440,7 +421,10 @@ const CalendarOverlay = ({ effectiveDate, highlightDate, onPick }: CalendarOverl
         calendarInstanceId={CALENDAR_INSTANCE_ID}
         calendarInitialMonthId={initialMonthId}
         calendarFirstDayOfWeek="sunday"
-        calendarPastScrollRangeInMonths={pastRange}
+        calendarPastScrollRangeInMonths={Math.max(
+          0,
+          monthsBetween(ACCOUNT_START_DATE_ID, initialMonthId),
+        )}
         calendarFutureScrollRangeInMonths={futureRange}
         calendarMaxDateId={maxDateId}
         calendarActiveDateRanges={activeDateRanges}

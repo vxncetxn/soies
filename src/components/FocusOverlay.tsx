@@ -12,24 +12,27 @@
  *      from a UI-thread worklet and store it in `origin`.
  *   2. Spring `progress` 0 → 1. The backdrop fades in, the clone blooms in at
  *      the deck's measured position, and the menu items stagger in.
- *   3. On close, spring `progress` back to 0; when the spring *finishes*, call
- *      `onClose` via the JS thread. Waiting for completion avoids unmounting
- *      mid-animation.
+ *   3. On close, spring `progress` back to 0. No post-close RN notification is
+ *      required: the overlay is preloaded and stays mounted; `open={false}`
+ *      alone drives the close spring. (An earlier `onClose` + `scheduleOnRN`
+ *      bridge was unused by Stack and risked function-valued Worklets args.)
  *
  * The overlay always lives in the root `morph` portal host and is always
  * mounted (preloaded) by `Stack` so opening never mounts it fresh. It only
- * animates when `open` flips — see the `isFirstRun` guard.
+ * animates when `open` flips — see the `previousOpenRef` transition guard
+ * (StrictMode-safe: mount / effect replay does not schedule a close spring).
  *
  * Note: the menu items are currently wired to a no-op (`noopAction`) — this is
  * a UI/interaction prototype; the actions aren't implemented yet.
  */
 import { BlurView } from "expo-blur";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
-  AnimatedRef,
+  type AnimatedRef,
   interpolate,
   measure,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -38,11 +41,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
-import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
+import { scheduleOnUI } from "react-native-worklets";
 
 import type { Entry } from "../data/entries";
 
-import { useBlurTargetRef } from "./BlurTargetViewContext";
+import { useAndroidBlurTargetProps } from "./BlurTargetViewContext";
 import CollapsedDeck from "./CollapsedDeck";
 import { Icon } from "./Icon";
 
@@ -82,9 +85,6 @@ type FocusOverlayProps = {
   // shows the same card as the original.
   activePage: number;
   onRequestClose: () => void;
-  // Optional callback fired after the close spring completes (not currently
-  // used by Stack, but available for cleanup/sync).
-  onClose?: () => void;
 };
 
 type FocusMenuItemProps = {
@@ -115,16 +115,16 @@ const FocusMenuItem = ({ label, icon, index, open, onPress }: FocusMenuItemProps
     const delay = MENU_BASE_DELAY_MS + index * MENU_STAGGER_MS;
 
     if (open) {
-      itemProgress.value = withDelay(delay, withTiming(1, { duration: MENU_ITEM_DURATION_MS }));
+      itemProgress.set(withDelay(delay, withTiming(1, { duration: MENU_ITEM_DURATION_MS })));
     } else {
-      itemProgress.value = withTiming(0, { duration: MENU_CLOSE_DURATION_MS });
+      itemProgress.set(withTiming(0, { duration: MENU_CLOSE_DURATION_MS }));
     }
   }, [index, itemProgress, open]);
 
   // Map progress to opacity + a small upward translate as the item appears.
   const itemStyle = useAnimatedStyle(() => ({
-    opacity: itemProgress.value,
-    transform: [{ translateY: interpolate(itemProgress.value, [0, 1], [MENU_TRANSLATE_Y, 0]) }],
+    opacity: itemProgress.get(),
+    transform: [{ translateY: interpolate(itemProgress.get(), [0, 1], [MENU_TRANSLATE_Y, 0]) }],
   }));
 
   return (
@@ -142,6 +142,41 @@ const FocusMenuItem = ({ label, icon, index, open, onPress }: FocusMenuItemProps
   );
 };
 
+type OverlayOrigin = { x: number; y: number; width: number; height: number };
+
+const animateOpen = ({
+  triggerRef,
+  origin,
+  progress,
+}: {
+  triggerRef: AnimatedRef<Animated.View>;
+  origin: SharedValue<OverlayOrigin>;
+  progress: SharedValue<number>;
+}) => {
+  scheduleOnUI(() => {
+    "worklet";
+    const layout = measure(triggerRef);
+
+    if (layout) {
+      origin.set({
+        x: layout.pageX,
+        y: layout.pageY,
+        width: layout.width,
+        height: layout.height,
+      });
+    }
+
+    progress.set(withSpring(1, FOCUS_SPRING));
+  });
+};
+
+const animateClose = ({ progress }: { progress: SharedValue<number> }) => {
+  scheduleOnUI(() => {
+    "worklet";
+    progress.set(withSpring(0, FOCUS_SPRING));
+  });
+};
+
 /**
  * FocusOverlay — the overlay component (see file header for the big picture).
  */
@@ -151,12 +186,11 @@ const FocusOverlay = ({
   entry,
   activePage,
   onRequestClose,
-  onClose,
 }: FocusOverlayProps) => {
   const insets = useSafeAreaInsets();
-  // The view to blur (the app content behind the overlay). Provided by
-  // BlurTargetViewContext so expo-blur knows what to sample.
-  const blurTargetRef = useBlurTargetRef();
+  // Android-only blurTarget — see useAndroidBlurTargetProps (avoids StrictMode
+  // findNodeHandle from expo-blur on iOS).
+  const androidBlurProps = useAndroidBlurTargetProps();
   // 0 = closed, 1 = open. Drives backdrop, clone, and (indirectly) the menu.
   const progress = useSharedValue(0);
   // The collapsed deck's measured screen frame. The clone is positioned here.
@@ -168,86 +202,34 @@ const FocusOverlay = ({
   const cloneProgress = useSharedValue(0);
   const cloneCurrentPage = useSharedValue(0);
   const cloneActiveIndex = useSharedValue(0);
-  // Guards the open/close effect so the very first render (mount) doesn't
-  // trigger an animation — the overlay mounts preloaded and should only animate
-  // on actual open/close transitions.
-  const isFirstRun = useRef(true);
+  // Transition guard: only animate when `open` actually flips. Initialized from
+  // `open` so mount / StrictMode effect replay does not schedule a close spring.
+  const previousOpenRef = useRef(open);
 
   // Mirror the deck's current page into the clone's shared values whenever it
   // changes. This way the clone shows the same card as the original when it
   // opens, but won't move if the list scrolls behind the overlay.
   useEffect(() => {
-    cloneCurrentPage.value = activePage;
-    cloneActiveIndex.value = activePage;
+    cloneCurrentPage.set(activePage);
+    cloneActiveIndex.set(activePage);
   }, [activePage, cloneActiveIndex, cloneCurrentPage]);
 
-  /**
-   * Called on the JS thread after the close spring finishes. Forwards to the
-   * optional `onClose` callback. Wrapped in useCallback for a stable identity
-   * so the close worklet can call it via `scheduleOnRN`.
-   */
-  const finishClose = useCallback(() => {
-    onClose?.();
-  }, [onClose]);
-
-  /**
-   * Open the overlay: schedule a worklet on the UI thread that measures the
-   * deck (`triggerRef`), stores its frame in `origin`, then springs `progress`
-   * to 1. Measuring on the UI thread is synchronous and flicker-free — the
-   * measurement and the spring start in the same worklet, so the clone is
-   * positioned before it blooms in.
-   */
-  const animateOpen = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      const layout = measure(triggerRef);
-
-      if (layout) {
-        origin.value = {
-          x: layout.pageX,
-          y: layout.pageY,
-          width: layout.width,
-          height: layout.height,
-        };
-      }
-
-      progress.value = withSpring(1, FOCUS_SPRING);
-    });
-  }, [origin, progress, triggerRef]);
-
-  /**
-   * Close the overlay: spring `progress` back to 0, and only when the spring
-   * *finishes* (not if interrupted) hop back to the JS thread to call
-   * `finishClose`. Waiting for completion means the overlay stays visible
-   * throughout the close animation and only tears down when it's done.
-   */
-  const animateClose = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      progress.value = withSpring(0, FOCUS_SPRING, (finished) => {
-        if (finished) {
-          scheduleOnRN(finishClose);
-        }
-      });
-    });
-  }, [finishClose, progress]);
-
-  // Trigger open/close on `open` changes, but skip the very first run (mount)
-  // so preloading doesn't animate. useLayoutEffect runs before paint so the
-  // animation starts in the same frame as the state change.
+  // Trigger open/close on `open` transitions only. useLayoutEffect runs before
+  // paint so the animation starts in the same frame as the state change.
   useLayoutEffect(() => {
-    if (isFirstRun.current) {
-      isFirstRun.current = false;
+    if (previousOpenRef.current === open) {
       return;
     }
+
+    previousOpenRef.current = open;
 
     if (open) {
-      animateOpen();
+      animateOpen({ triggerRef, origin, progress });
       return;
     }
 
-    animateClose();
-  }, [animateClose, animateOpen, open]);
+    animateClose({ progress });
+  }, [open, origin, progress, triggerRef]);
 
   // Hardware-back (Android) closes the overlay when open. Returning true
   // suppresses the default back behavior (navigating away).
@@ -267,7 +249,7 @@ const FocusOverlay = ({
   // Backdrop opacity follows `progress`, reaching full opacity by
   // BACKDROP_FADE_END so the blur is at full strength shortly into the anim.
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, BACKDROP_FADE_END], [0, 1]),
+    opacity: interpolate(progress.get(), [0, BACKDROP_FADE_END], [0, 1]),
   }));
 
   // The clone: positioned at the deck's measured frame (origin) and faded in
@@ -275,19 +257,19 @@ const FocusOverlay = ({
   // "lifted" feel. Width/height are fixed to the measured frame so the clone
   // exactly covers the original deck.
   const cloneStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [CLONE_BLOOM_START, CLONE_BLOOM_START + 0.15], [0, 1]),
+    opacity: interpolate(progress.get(), [CLONE_BLOOM_START, CLONE_BLOOM_START + 0.15], [0, 1]),
     transform: [
-      { translateX: origin.value.x },
-      { translateY: origin.value.y },
-      { scale: interpolate(progress.value, [CLONE_BLOOM_START, 1], [1, 1.02]) },
+      { translateX: origin.get().x },
+      { translateY: origin.get().y },
+      { scale: interpolate(progress.get(), [CLONE_BLOOM_START, 1], [1, 1.02]) },
     ],
-    width: origin.value.width,
-    height: origin.value.height,
+    width: origin.get().width,
+    height: origin.get().height,
   }));
 
   // Placeholder action handler — the menu actions aren't implemented yet, so
-  // tapping an item does nothing. Stable identity via useCallback.
-  const noopAction = useCallback(() => {}, []);
+  // tapping an item does nothing.
+  const noopAction = () => {};
 
   // The menu sits just below the top safe area.
   const menuTop = insets.top + 12;
@@ -295,8 +277,8 @@ const FocusOverlay = ({
   // Anchor the menu to the artefact's measured frame so the right-aligned items
   // line up with the artefact's right edge (not the screen edge).
   const menuStyle = useAnimatedStyle(() => ({
-    left: origin.value.x,
-    width: origin.value.width,
+    left: origin.get().x,
+    width: origin.get().width,
   }));
 
   return (
@@ -315,8 +297,7 @@ const FocusOverlay = ({
         >
           <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
             <BlurView
-              blurTarget={blurTargetRef}
-              blurMethod="dimezisBlurViewSdk31Plus"
+              {...androidBlurProps}
               tint="dark"
               intensity={BLUR_INTENSITY}
               style={StyleSheet.absoluteFill}

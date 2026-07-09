@@ -22,11 +22,14 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let cancelled = false;
 
-    setError(null);
+    // Do not call setError/setReady synchronously in the effect body — that
+    // trips React Compiler EffectSetState. Clear/settle only in async callbacks
+    // (or in `retry`, which already resets error/ready before bumping attempt).
     initDatabase()
       .then(() => {
         if (!cancelled) {
           setReady(true);
+          setError(null);
         }
       })
       .catch((nextError: unknown) => {

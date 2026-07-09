@@ -16,7 +16,7 @@
  * height is known (`pagerHeight > 0`) so `currentPage = scrollOffset / height`
  * in the parent never divides by zero.
  */
-import { useCallback, useLayoutEffect } from "react";
+import { useLayoutEffect } from "react";
 import { ScrollView, View } from "react-native";
 import Animated, {
   useAnimatedRef,
@@ -73,11 +73,11 @@ const DayPager = ({
   // never faded the pager body on chrome expand (the expanded card overlay
   // covers it), so we keep chrome out of this and only react to createProgress.
   const pagerExitStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(createProgress.value, [0, CREATE_HOME_EXIT_END], [1, 0], "clamp"),
+    opacity: interpolate(createProgress.get(), [0, CREATE_HOME_EXIT_END], [1, 0], "clamp"),
     transform: [
       {
         translateY: interpolate(
-          createProgress.value,
+          createProgress.get(),
           [0, CREATE_HOME_EXIT_END],
           [0, CREATE_SLIDE_DISTANCE],
           "clamp",
@@ -94,10 +94,12 @@ const DayPager = ({
   // never visible (and the closing calendar overlay covers it anyway). The
   // parent's own `effectiveDate` effect resets the `scrollOffset` shared value
   // in parallel; this resets the actual ScrollView.
+  // `scrollRef` is a stable AnimatedRef identity, so listing it satisfies
+  // exhaustive-deps without re-firing (and avoids eslint-disable, which React
+  // Compiler treats as a hard skip / panic under panicThreshold: 'all_errors').
   useLayoutEffect(() => {
     scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries]);
+  }, [entries, scrollRef]);
 
   /**
    * Jump directly to a given entry index (called by the ScrollIndicator when
@@ -106,17 +108,14 @@ const DayPager = ({
    * position immediately (otherwise downstream animations would lag by a frame
    * until the next onScroll event). No-op until the pager has a real height.
    */
-  const jumpToEntry = useCallback(
-    (index: number) => {
-      if (pagerHeight === 0) {
-        return;
-      }
+  const jumpToEntry = (index: number) => {
+    if (pagerHeight === 0) {
+      return;
+    }
 
-      scrollRef.current?.scrollTo({ x: 0, y: index * pagerHeight, animated: false });
-      scrollOffset.value = index * pagerHeight;
-    },
-    [pagerHeight, scrollOffset, scrollRef],
-  );
+    scrollRef.current?.scrollTo({ x: 0, y: index * pagerHeight, animated: false });
+    scrollOffset.set(index * pagerHeight);
+  };
 
   return (
     <View className="relative flex-1">

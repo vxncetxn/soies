@@ -32,7 +32,7 @@
  *     entry expands (the header would overlap the fullscreen expanded view).
  */
 import { useRouter } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Text, View } from "react-native";
 import Animated, { SharedValue, useAnimatedStyle } from "react-native-reanimated";
 
@@ -72,10 +72,10 @@ const TitleLayer = ({
   const style = useAnimatedStyle(() => {
     // Signed distance from the current page: 0 = active, negative = above,
     // positive = below. Drives the vertical peek.
-    const distance = index - currentPage.value;
+    const distance = index - currentPage.get();
     // 1 when this title is the active page, easing to 0 as the page moves away.
     // Clamped to [0, 1] so distant titles don't go negative.
-    const base = 1 - Math.min(1, Math.abs(currentPage.value - index));
+    const base = 1 - Math.min(1, Math.abs(currentPage.get() - index));
 
     return {
       opacity: base * base,
@@ -149,14 +149,11 @@ const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
    * the picked date for `handleClosed` to sync the highlight post-close, then
    * request close — BloomButton animates the morph and calls `onClose` when done.
    */
-  const handleDayPress = useCallback(
-    (dateId: string) => {
-      router.setParams({ date: dateId });
-      pickedDateRef.current = dateId;
-      setCalendarOpen(false);
-    },
-    [router],
-  );
+  const handleDayPress = (dateId: string) => {
+    router.setParams({ date: dateId });
+    pickedDateRef.current = dateId;
+    setCalendarOpen(false);
+  };
 
   /**
    * Post-close callback (BloomButton calls this after the close spring
@@ -164,12 +161,12 @@ const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
    * safe to sync the highlight to the picked date without jilting the morph.
    * Clears the stash so a subsequent open starts from the synced highlight.
    */
-  const handleClosed = useCallback(() => {
+  const handleClosed = () => {
     if (pickedDateRef.current) {
       setHighlightDate(pickedDateRef.current);
       pickedDateRef.current = null;
     }
-  }, []);
+  };
 
   // Header chrome fade: fades the whole header out as an entry expands
   // (`chromeProgress` 0 → 1 over the first `CHROME_FADE_END` slice) or when

@@ -28,9 +28,11 @@ const ArtefactWrapper = ({
   const EXPANDED_WIDTH = SCREEN_WIDTH - 20;
 
   const animatedStyle = useAnimatedStyle(() => {
-    const active = activeIndex.value;
+    const active = activeIndex.get();
+    const page = currentPage.get();
+    const p = progress.get();
 
-    const expandedX = (index - currentPage.value) * SCREEN_WIDTH;
+    const expandedX = (index - page) * SCREEN_WIDTH;
     let collapsedX = 0;
 
     if (index !== active) {
@@ -39,9 +41,9 @@ const ArtefactWrapper = ({
       collapsedX = distance * LAYOUT.STACK_OFFSET;
     }
 
-    const translateX = interpolate(progress.value, [0, 1], [collapsedX, expandedX]);
+    const translateX = interpolate(p, [0, 1], [collapsedX, expandedX]);
 
-    const scale = interpolate(progress.value, [0, 1], [1, EXPANDED_WIDTH / BASE_WIDTH]);
+    const scale = interpolate(p, [0, 1], [1, EXPANDED_WIDTH / BASE_WIDTH]);
 
     return {
       transform: [{ translateX }, { scale }],
@@ -49,11 +51,11 @@ const ArtefactWrapper = ({
       shadowColor: "#000",
       shadowOffset: {
         width: 0,
-        height: interpolate(progress.value, [0, 1], [SHADOW_SM.offsetY, SHADOW_XL.offsetY]),
+        height: interpolate(p, [0, 1], [SHADOW_SM.offsetY, SHADOW_XL.offsetY]),
       },
-      shadowOpacity: interpolate(progress.value, [0, 1], [SHADOW_SM.opacity, SHADOW_XL.opacity]),
-      shadowRadius: interpolate(progress.value, [0, 1], [SHADOW_SM.radius, SHADOW_XL.radius]),
-      elevation: interpolate(progress.value, [0, 1], [SHADOW_SM.elevation, SHADOW_XL.elevation]),
+      shadowOpacity: interpolate(p, [0, 1], [SHADOW_SM.opacity, SHADOW_XL.opacity]),
+      shadowRadius: interpolate(p, [0, 1], [SHADOW_SM.radius, SHADOW_XL.radius]),
+      elevation: interpolate(p, [0, 1], [SHADOW_SM.elevation, SHADOW_XL.elevation]),
     };
   });
 

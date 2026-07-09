@@ -20,7 +20,7 @@
  *     elements (also reused by `Stack` for the expanded pager, so both states
  *     render the same artefact components driven by the same shared values).
  */
-import { ReactNode, useMemo } from "react";
+import { ReactNode } from "react";
 import { Text, View } from "react-native";
 import Animated, { type AnimatedRef, type SharedValue } from "react-native-reanimated";
 
@@ -93,11 +93,9 @@ type UseWrappedArtefactsParams = {
  *
  * For each artefact this picks the right content component (`Paper` for text
  * artefacts, `Print` for image artefacts) and wraps it in an `ArtefactWrapper`
- * that handles the collapsed↔expanded animation. The result is memoized so the
- * element identities stay stable across re-renders unless the inputs change —
- * important because both `CollapsedDeck` (collapsed state) and `Stack`
- * (expanded state) call this, and we don't want to recreate the subtrees on
- * every render.
+ * that handles the collapsed↔expanded animation. React Compiler handles render
+ * caching for unchanged inputs, so this hook can return the mapped elements
+ * directly instead of carrying a manual memo wrapper.
  */
 export const useWrappedArtefacts = ({
   entry,
@@ -105,29 +103,27 @@ export const useWrappedArtefacts = ({
   currentPage,
   activeIndex,
 }: UseWrappedArtefactsParams) => {
-  return useMemo(() => {
-    // Curried helper: wrap one artefact's JSX in an ArtefactWrapper with the
-    // shared animation values and a stable key.
-    const wrapArtefact = (index: number, artefact: ReactNode) => (
-      <ArtefactWrapper
-        type={entry.type}
-        key={index}
-        index={index}
-        progress={progress}
-        currentPage={currentPage}
-        activeIndex={activeIndex}
-      >
-        {artefact}
-      </ArtefactWrapper>
-    );
+  // Curried helper: wrap one artefact's JSX in an ArtefactWrapper with the
+  // shared animation values and a stable key.
+  const wrapArtefact = (index: number, artefact: ReactNode) => (
+    <ArtefactWrapper
+      type={entry.type}
+      key={index}
+      index={index}
+      progress={progress}
+      currentPage={currentPage}
+      activeIndex={activeIndex}
+    >
+      {artefact}
+    </ArtefactWrapper>
+  );
 
-    // Pick the right content component per artefact (by the artefact's own
-    // shape, see renderArtefactContent), then wrap each one in an
-    // ArtefactWrapper with the shared animation values and a stable key.
-    return entry.artefacts.map((artefact, index) =>
-      wrapArtefact(index, renderArtefactContent(artefact, index)),
-    );
-  }, [activeIndex, currentPage, entry, progress]);
+  // Pick the right content component per artefact (by the artefact's own shape,
+  // see renderArtefactContent), then wrap each one in an ArtefactWrapper with
+  // the shared animation values and a stable key.
+  return entry.artefacts.map((artefact, index) =>
+    wrapArtefact(index, renderArtefactContent(artefact, index)),
+  );
 };
 
 type CollapsedDeckProps = {

@@ -9,7 +9,7 @@
  * origin in sync via `useBloomOriginFade`). This component renders the panel
  * into a root portal host (`hostName`, defaults to "bloom") so it floats above
  * the whole app. The panel is always mounted (preloaded) and only animates on
- * open/close — see the `isFirstRun` guard.
+ * open/close — see the `previousOpenRef` transition guard.
  *
  * The morph itself (measure-and-morph):
  *   On open we measure the origin's on-screen frame (`pageX/pageY/width/
@@ -51,7 +51,13 @@
  *   `onOpenChange(false)`. `onClose` fires on the JS thread *after* the close
  *   spring finishes — HomeHeader uses that to sync the calendar's highlight
  *   date only once the morph is done, so the calendar never re-renders
- *   mid-animation.
+ *   mid-animation. Completion crosses UI→RN via a primitive sequence counter
+ *   (never via a function-valued `scheduleOnRN` argument): the spring
+ *   increments a SharedValue and dispatches that number into React state; an
+ *   RN effect then invokes the latest `onClose` from a ref. React Compiler
+ *   callback caching does not replace Worklets' remote-function / serialization
+ *   contract — only stable React dispatchers plus serializable primitives may
+ *   cross that boundary.
  *
  * Content switching (menu only, opt-in):
  *   Pass `contentKey` when the parent swaps `panelNode` at a different height.
@@ -60,6 +66,9 @@
  *   springs to the new measured height. Omit `contentKey` for static content
  *   (no cross-fade). The outgoing layer re-renders the previous node as a fresh
  *   React instance (no preserved local state) — fine for menu lists/buttons.
+ *   Clearing the outgoing layer uses `scheduleOnRN(setOutgoing, null)` — a
+ *   stable dispatcher plus a primitive — never a helper that takes the setter
+ *   as a function-valued argument.
  *
  * Animation feel (matches bloom-reference.gif):
  *   The origin cross-fades out over the first slice of progress, the panel
@@ -70,14 +79,8 @@
  *   with a touch of overshoot.
  */
 import { BlurView } from "expo-blur";
-import { ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  LayoutChangeEvent,
-  Pressable,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { LayoutChangeEvent, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, {
   type AnimatedRef,
   interpolate,
@@ -106,13 +109,74 @@ import {
   BLOOM_TRIGGER_RADIUS,
 } from "../constants/animation";
 import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
-import { useBlurTargetRef } from "./BlurTargetViewContext";
+import { useAndroidBlurTargetProps } from "./BlurTargetViewContext";
 
+// Fast enough that menu navigation feels immediate, but long enough for the
+// outgoing and incoming content to read as one intentional height transition.
 const BLOOM_CONTENT_CROSSFADE_MS = 200;
+
+type PanelOrigin = { x: number; y: number; width: number; height: number };
+type OutgoingContent = { node: ReactNode; height: number };
+
+const animateOpen = ({
+  originRef,
+  origin,
+  progress,
+}: {
+  originRef: AnimatedRef<Animated.View>;
+  origin: SharedValue<PanelOrigin>;
+  progress: SharedValue<number>;
+}) => {
+  scheduleOnUI(() => {
+    "worklet";
+    const layout = measure(originRef);
+
+    if (!layout) {
+      return;
+    }
+
+    origin.set({
+      x: layout.pageX,
+      y: layout.pageY,
+      width: layout.width,
+      height: layout.height,
+    });
+
+    progress.set(withSpring(1, BLOOM_SPRING));
+  });
+};
+
+/**
+ * Springs progress to 0. On finished, increments `closeSequence` and dispatches
+ * that primitive into React via a stable setter — never a render-local callback
+ * or function-valued argument (Worklets serializes args; function args crash).
+ */
+const animateClose = ({
+  progress,
+  closeSequence,
+  setCloseSequence,
+}: {
+  progress: SharedValue<number>;
+  closeSequence: SharedValue<number>;
+  setCloseSequence: (value: number) => void;
+}) => {
+  scheduleOnUI(() => {
+    "worklet";
+    progress.set(
+      withSpring(0, BLOOM_SPRING, (finished) => {
+        if (finished) {
+          const next = closeSequence.get() + 1;
+          closeSequence.set(next);
+          scheduleOnRN(setCloseSequence, next);
+        }
+      }),
+    );
+  });
+};
 
 export function useBloomOriginFade(progress: SharedValue<number>) {
   return useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, BLOOM_TRIGGER_FADE_END], [1, 0], "clamp"),
+    opacity: interpolate(progress.get(), [0, BLOOM_TRIGGER_FADE_END], [1, 0], "clamp"),
   }));
 }
 
@@ -152,10 +216,23 @@ const BloomPanel = ({
   hostName = "bloom",
   originOffset,
 }: BloomPanelProps) => {
-  const isFirstRun = useRef(true);
+  // Transition guard: only animate when `open` actually flips. Initialized from
+  // `open` so mount / StrictMode setup-cleanup replay does not schedule a
+  // spurious close spring (unlike a one-shot `isFirstRun` flag that can be
+  // confused by effect remount).
+  const previousOpenRef = useRef(open);
   const isFirstContentKeyRun = useRef(true);
 
-  const blurTargetRef = useBlurTargetRef();
+  // Latest onClose, updated in an effect (never during render) so the close
+  // completion path always invokes the current callback without putting a
+  // function across the Worklets boundary.
+  const onCloseRef = useRef(onClose);
+  const closeSequenceSV = useSharedValue(0);
+  const [closeSequence, setCloseSequence] = useState(0);
+
+  // Android-only blurTarget — see useAndroidBlurTargetProps (avoids StrictMode
+  // findNodeHandle from expo-blur on iOS).
+  const androidBlurProps = useAndroidBlurTargetProps();
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -175,95 +252,64 @@ const BloomPanel = ({
 
   const prevPanelNodeRef = useRef(panelNode);
   const prevContentKeyRef = useRef(contentKey);
-  const [outgoing, setOutgoing] = useState<{ node: ReactNode; height: number } | null>(null);
+  const [outgoing, setOutgoing] = useState<OutgoingContent | null>(null);
   const [hasOpened, setHasOpened] = useState(false);
-
-  const markOpened = useCallback(() => {
-    setHasOpened(true);
-  }, []);
 
   const panelLayoutWidth = variant === "fullscreen" ? screenWidth : screenWidth - 40;
 
   useEffect(() => {
-    screenW.value = screenWidth;
-    screenH.value = screenHeight;
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (closeSequence === 0) {
+      return;
+    }
+
+    onCloseRef.current?.();
+  }, [closeSequence]);
+
+  useEffect(() => {
+    screenW.set(screenWidth);
+    screenH.set(screenHeight);
   }, [screenHeight, screenWidth, screenH, screenW]);
 
   useEffect(() => {
-    insetTop.value = insets.top;
-    insetBottom.value = insets.bottom;
+    insetTop.set(insets.top);
+    insetBottom.set(insets.bottom);
   }, [insetBottom, insetTop, insets.bottom, insets.top]);
 
   useEffect(() => {
-    originOffsetX.value = originOffset?.x ?? 0;
-    originOffsetY.value = originOffset?.y ?? 0;
+    originOffsetX.set(originOffset?.x ?? 0);
+    originOffsetY.set(originOffset?.y ?? 0);
   }, [originOffset?.x, originOffset?.y, originOffsetX, originOffsetY]);
 
-  const clearOutgoing = useCallback(() => {
-    setOutgoing(null);
-  }, []);
-
   useAnimatedReaction(
-    () => contentHeight.value,
+    () => contentHeight.get(),
     (next, prev) => {
       if (next === prev) {
         return;
       }
 
-      const willSpring = progress.value === 1 && prev != null;
-      panelHeight.value = willSpring ? withSpring(next, BLOOM_RESIZE_SPRING) : next;
+      const willSpring = progress.get() === 1 && prev != null;
+      panelHeight.set(willSpring ? withSpring(next, BLOOM_RESIZE_SPRING) : next);
     },
   );
 
-  const finishClose = useCallback(() => {
-    onClose?.();
-  }, [onClose]);
-
-  const animateOpen = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      const layout = measure(originRef);
-
-      if (!layout) {
-        return;
-      }
-
-      origin.value = {
-        x: layout.pageX,
-        y: layout.pageY,
-        width: layout.width,
-        height: layout.height,
-      };
-
-      progress.value = withSpring(1, BLOOM_SPRING);
-      scheduleOnRN(markOpened);
-    });
-  }, [markOpened, origin, originRef, progress]);
-
-  const animateClose = useCallback(() => {
-    scheduleOnUI(() => {
-      "worklet";
-      progress.value = withSpring(0, BLOOM_SPRING, (finished) => {
-        if (finished) {
-          scheduleOnRN(finishClose);
-        }
-      });
-    });
-  }, [finishClose, progress]);
-
   useLayoutEffect(() => {
-    if (isFirstRun.current) {
-      isFirstRun.current = false;
+    if (previousOpenRef.current === open) {
       return;
     }
+
+    previousOpenRef.current = open;
 
     if (open) {
-      animateOpen();
+      animateOpen({ originRef, origin, progress });
       return;
     }
 
-    animateClose();
-  }, [animateClose, animateOpen, open]);
+    animateClose({ progress, closeSequence: closeSequenceSV, setCloseSequence });
+  }, [closeSequenceSV, open, origin, originRef, progress, variant]);
 
   useLayoutEffect(() => {
     if (variant !== "menu" || contentKey === undefined) {
@@ -291,72 +337,75 @@ const BloomPanel = ({
 
     setOutgoing({
       node: prevPanelNodeRef.current,
-      height: contentHeight.value,
+      height: contentHeight.get(),
     });
     prevPanelNodeRef.current = panelNode;
     prevContentKeyRef.current = contentKey;
 
-    outgoingFade.value = 1;
-    currentFade.value = 0;
-    outgoingFade.value = withTiming(0, { duration: BLOOM_CONTENT_CROSSFADE_MS }, (finished) => {
-      if (finished) {
-        scheduleOnRN(clearOutgoing);
-      }
-    });
-    currentFade.value = withTiming(1, { duration: BLOOM_CONTENT_CROSSFADE_MS });
-  }, [
-    clearOutgoing,
-    contentHeight,
-    contentKey,
-    currentFade,
-    open,
-    outgoingFade,
-    panelNode,
-    progress,
-    variant,
-  ]);
+    outgoingFade.set(1);
+    currentFade.set(0);
+    outgoingFade.set(
+      withTiming(0, { duration: BLOOM_CONTENT_CROSSFADE_MS }, (finished) => {
+        if (finished) {
+          // Stable React dispatcher + primitive — mirrors setCreate(null).
+          scheduleOnRN(setOutgoing, null);
+        }
+      }),
+    );
+    currentFade.set(withTiming(1, { duration: BLOOM_CONTENT_CROSSFADE_MS }));
+  }, [contentHeight, contentKey, currentFade, open, outgoingFade, panelNode, progress, variant]);
 
-  // Hardware-back (Android) closes the panel when open. `dismiss` is stable
-  // (keyed on `onOpenChange`) so the hook only re-subscribes on `open` flips.
-  const dismiss = useCallback(() => onOpenChange(false), [onOpenChange]);
+  // Hardware-back (Android) closes the panel when open. React Compiler handles
+  // caching this handler for unchanged `onOpenChange`.
+  const dismiss = () => onOpenChange(false);
   useHardwareBackDismiss(open, dismiss);
 
-  const handleContentLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const maxHeight = screenHeight - insets.top - insets.bottom - 2 * BLOOM_MENU_GAP;
-      const rawHeight = event.nativeEvent.layout.height;
-      const nextHeight = Math.min(rawHeight, maxHeight);
-      contentHeight.value = nextHeight;
-    },
-    [contentHeight, insets.bottom, insets.top, screenHeight],
-  );
+  const handleContentLayout = (event: LayoutChangeEvent) => {
+    const maxHeight = screenHeight - insets.top - insets.bottom - 2 * BLOOM_MENU_GAP;
+    const rawHeight = event.nativeEvent.layout.height;
+    const nextHeight = Math.min(rawHeight, maxHeight);
+    contentHeight.set(nextHeight);
+  };
+
+  const handlePanelLayout = (event: LayoutChangeEvent) => {
+    if (variant !== "menu" || hasOpened || !open) {
+      return;
+    }
+
+    const { width, height } = event.nativeEvent.layout;
+    // Gate: BlurView must not mount into BloomPanel's 1×1 rest frame.
+    // onLayout runs on RN after the measured panel begins expanding.
+    if (width > 1 && height > 1) {
+      setHasOpened(true);
+    }
+  };
 
   const panelStyle = useAnimatedStyle(() => {
-    const o = origin.value;
+    const o = origin.get();
 
-    const targetWidth = variant === "fullscreen" ? screenW.value : screenW.value - 40;
-    const targetHeight = variant === "fullscreen" ? screenH.value : panelHeight.value || o.height;
+    const targetWidth = variant === "fullscreen" ? screenW.get() : screenW.get() - 40;
+    const targetHeight = variant === "fullscreen" ? screenH.get() : panelHeight.get() || o.height;
 
-    const targetX = variant === "fullscreen" ? 0 : (screenW.value - targetWidth) / 2;
+    const targetX = variant === "fullscreen" ? 0 : (screenW.get() - targetWidth) / 2;
 
     let targetY = 0;
     if (variant === "menu") {
       const triggerCenterY = o.y + o.height / 2;
       targetY =
-        triggerCenterY >= screenH.value / 2
-          ? screenH.value - targetHeight - insetBottom.value - BLOOM_MENU_GAP
-          : insetTop.value + BLOOM_MENU_GAP;
+        triggerCenterY >= screenH.get() / 2
+          ? screenH.get() - targetHeight - insetBottom.get() - BLOOM_MENU_GAP
+          : insetTop.get() + BLOOM_MENU_GAP;
     }
 
     const endRadius = variant === "fullscreen" ? 0 : BLOOM_MENU_RADIUS;
-    const p = progress.value;
+    const p = progress.get();
 
     // Correct for a teleported trigger whose measure() is declaration-site (see
     // originOffset docs). Only the ORIGIN end of the interpolation is shifted:
     // the panel must START on the real trigger. The TARGET is computed from
     // screen/inset values that are already in paint space, so it is left as-is.
-    const offX = originOffsetX.value;
-    const offY = originOffsetY.value;
+    const offX = originOffsetX.get();
+    const offY = originOffsetY.get();
     const startX = o.x - offX;
     const startY = o.y - offY;
 
@@ -373,26 +422,26 @@ const BloomPanel = ({
   });
 
   const contentStyle = useAnimatedStyle(() => {
-    const o = origin.value;
+    const o = origin.get();
 
-    const targetWidth = variant === "fullscreen" ? screenW.value : screenW.value - 40;
-    const targetHeight = variant === "fullscreen" ? screenH.value : contentHeight.value || o.height;
+    const targetWidth = variant === "fullscreen" ? screenW.get() : screenW.get() - 40;
+    const targetHeight = variant === "fullscreen" ? screenH.get() : contentHeight.get() || o.height;
 
     return {
-      opacity: interpolate(progress.value, [BLOOM_CONTENT_START, 1], [0, 1], "clamp"),
+      opacity: interpolate(progress.get(), [BLOOM_CONTENT_START, 1], [0, 1], "clamp"),
       transform: [
-        { scaleX: interpolate(progress.value, [0, 1], [o.width / targetWidth, 1]) },
-        { scaleY: interpolate(progress.value, [0, 1], [o.height / targetHeight, 1]) },
+        { scaleX: interpolate(progress.get(), [0, 1], [o.width / targetWidth, 1]) },
+        { scaleY: interpolate(progress.get(), [0, 1], [o.height / targetHeight, 1]) },
       ],
     };
   });
 
   const outgoingStyle = useAnimatedStyle(() => ({
-    opacity: outgoingFade.value,
+    opacity: outgoingFade.get(),
   }));
 
   const measuringFadeStyle = useAnimatedStyle(() => ({
-    opacity: currentFade.value,
+    opacity: currentFade.get(),
   }));
 
   const handleBackdropPress = () => {
@@ -412,6 +461,7 @@ const BloomPanel = ({
         ) : null}
 
         <Animated.View
+          onLayout={handlePanelLayout}
           style={[styles.panel, panelStyle]}
           pointerEvents="auto"
           className={
@@ -421,13 +471,14 @@ const BloomPanel = ({
           }
         >
           {variant === "fullscreen" || hasOpened ? (
-            <BlurView
-              blurTarget={blurTargetRef}
-              blurMethod="dimezisBlurViewSdk31Plus"
-              tint={BLOOM_BLUR_TINT}
-              intensity={BLOOM_BLUR_INTENSITY}
-              style={StyleSheet.absoluteFill}
-            />
+            <>
+              <BlurView
+                {...androidBlurProps}
+                tint={BLOOM_BLUR_TINT}
+                intensity={BLOOM_BLUR_INTENSITY}
+                style={StyleSheet.absoluteFill}
+              />
+            </>
           ) : null}
           <Animated.View
             style={
