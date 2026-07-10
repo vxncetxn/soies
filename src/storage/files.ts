@@ -21,7 +21,9 @@ export async function saveMediaFile(
   await ensureArtifactsDir();
   const destination = new File(artifactsDirectory(), `${artefactId}.${ext}`);
   const source = new File(srcUri);
-  source.copy(destination);
+  // File.copy is async in Expo SDK 57 — must await or the DB can commit before
+  // bytes land (and failures become unhandled rejections).
+  await source.copy(destination);
   return destination.uri;
 }
 

@@ -7,7 +7,7 @@
  *   - Header cross-fade between create header and expanded Back · n/N · Prev/Next
  *   - Bottom Cancel / BloomBar / Submit (fade out when artefact is expanded;
  *     stay put on title focus so the keyboard covers them)
- *   - document-plus add (immediate or bloom media) + max-cap Tooltip
+ *   - document-plus add via discriminated `addConfig` + max-cap Tooltip
  *
  * The artefact editor (pager + EditablePaper / EditablePrint) is passed as
  * `children` inside the paper-slide region.
@@ -50,6 +50,21 @@ const CHROME_CROSSFADE_END = 0.5;
 const TITLE_FONT_SIZE = 30;
 const TITLE_LINE_HEIGHT = 36;
 
+/** Paper: append immediately. Print: open bloom media panel. */
+export type CreateAddConfig =
+  | { kind: "immediate"; onAdd: () => void }
+  | {
+      kind: "bloom";
+      panel: ReactNode;
+      /** Drives BloomBar cross-fade; parent owns pick/alert screen id. */
+      contentKey: string | number;
+      onOpen?: () => void;
+      /** When true, bloom should show the add panel (permission/error reopen). */
+      forceAddPanel?: boolean;
+      barOpen?: boolean;
+      onBarOpenChange?: (open: boolean) => void;
+    };
+
 export type CreateScreenChromeProps = {
   progress: SharedValue<number>;
   /** 0 = default, 1 = artefact Type state — drives header/controls cross-fade. */
@@ -67,18 +82,7 @@ export type CreateScreenChromeProps = {
   artefactCount: number;
   onPrevArtefact: () => void;
   onNextArtefact: () => void;
-  /** Paper: append blank. Ignored when `addBloomPanel` is set (Print). */
-  onAddArtefact: () => void;
-  /**
-   * When set, document-plus opens the bloom with this panel (Print media pick).
-   * Parent owns pick/alert state and passes the panel node.
-   */
-  addBloomPanel?: ReactNode;
-  addBloomContentKey?: string | number;
-  onAddBloomOpen?: () => void;
-  /** Optional controlled bloom open (Print pick closes before system UI). */
-  barOpen?: boolean;
-  onBarOpenChange?: (open: boolean) => void;
+  addConfig: CreateAddConfig;
   children: ReactNode;
 };
 
@@ -96,12 +100,7 @@ const CreateScreenChrome = ({
   artefactCount,
   onPrevArtefact,
   onNextArtefact,
-  onAddArtefact,
-  addBloomPanel,
-  addBloomContentKey,
-  onAddBloomOpen,
-  barOpen: barOpenProp,
-  onBarOpenChange,
+  addConfig,
   children,
 }: CreateScreenChromeProps) => {
   const insets = useSafeAreaInsets();
@@ -109,8 +108,9 @@ const CreateScreenChrome = ({
   const topPad = insets.top + 12;
 
   const [barOpenInternal, setBarOpenInternal] = useState(false);
-  const barOpen = barOpenProp ?? barOpenInternal;
-  const setBarOpen = onBarOpenChange ?? setBarOpenInternal;
+  const bloomConfig = addConfig.kind === "bloom" ? addConfig : null;
+  const barOpen = bloomConfig?.barOpen ?? barOpenInternal;
+  const setBarOpen = bloomConfig?.onBarOpenChange ?? setBarOpenInternal;
   const [barScreen, setBarScreen] = useState<"menu" | "add">("menu");
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
@@ -123,13 +123,8 @@ const CreateScreenChrome = ({
   const canNext = activeArtefactIndex < artefactCount - 1;
   const counterLabel = `${activeArtefactIndex + 1}/${artefactCount}`;
 
-  // Permission/error reopen: parent sets barOpen + content key after picker;
-  // barScreen may still be "menu" from the close-before-picker path.
   const showAddBloomPanel =
-    Boolean(addBloomPanel) &&
-    (barScreen === "add" ||
-      addBloomContentKey === "permission" ||
-      addBloomContentKey === "error");
+    bloomConfig != null && (barScreen === "add" || Boolean(bloomConfig.forceAddPanel));
 
   useAnimatedReaction(
     () => expandProgress.get(),
@@ -193,6 +188,9 @@ const CreateScreenChrome = ({
   }));
 
   const handleTitleFocus = () => {
+    if (saving) {
+      return;
+    }
     setIsTitleFocused(true);
     titleFocusProgress.set(withTiming(1, { duration: TITLE_FOCUS_FADE_MS }));
   };
@@ -213,16 +211,19 @@ const CreateScreenChrome = ({
   };
 
   const handleDocumentPlus = () => {
+    if (saving) {
+      return;
+    }
     if (atMax) {
       setMaxTooltipVisible(true);
       return;
     }
-    if (addBloomPanel) {
+    if (addConfig.kind === "bloom") {
       setBarScreen("add");
-      onAddBloomOpen?.();
+      addConfig.onOpen?.();
       return;
     }
-    onAddArtefact();
+    addConfig.onAdd();
   };
 
   const barMenuNode = (
@@ -231,17 +232,13 @@ const CreateScreenChrome = ({
     </View>
   );
 
-  const panelNode =
-    showAddBloomPanel && addBloomPanel ? addBloomPanel : barMenuNode;
-  const contentKey =
-    showAddBloomPanel && addBloomContentKey != null
-      ? addBloomContentKey
-      : barScreen;
+  const panelNode = showAddBloomPanel && bloomConfig ? bloomConfig.panel : barMenuNode;
+  const contentKey = showAddBloomPanel && bloomConfig ? bloomConfig.contentKey : barScreen;
 
   return (
     <Animated.View style={[screenEnterStyle, { flex: 1 }]} className="bg-background">
       <BlurTargetView ref={createBlurTargetRef} style={styles.blurTarget}>
-        <View className="flex-1">
+        <View className="flex-1" pointerEvents={saving ? "none" : "auto"}>
           <Animated.View style={headerTotalHeightStyle} />
 
           <Animated.View style={[paperStyle, { flex: 1 }]}>{children}</Animated.View>
@@ -258,12 +255,14 @@ const CreateScreenChrome = ({
             },
           ]}
           className="flex-row items-center justify-between"
-          pointerEvents={isExpanded ? "none" : "box-none"}
+          pointerEvents={isExpanded || saving ? "none" : "box-none"}
         >
           <Pressable
             onPress={onClose}
+            disabled={saving}
             accessibilityRole="button"
             accessibilityLabel="Cancel create entry"
+            accessibilityState={{ disabled: saving }}
             className="rounded-full border border-controls-border bg-controls-background p-3"
           >
             <Icon name="x-mark" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
@@ -274,17 +273,25 @@ const CreateScreenChrome = ({
               slots={[
                 {
                   node: (
-                    <Icon name="line-squiggle" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+                    <Icon
+                      name="line-squiggle"
+                      size={CONTROL_ICON_SIZE}
+                      color={CONTROL_ICON_COLOR}
+                    />
                   ),
                   onPress: () => {},
                   accessibilityLabel: "Drawing tools",
                 },
                 {
                   node: (
-                    <Icon name="document-plus" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+                    <Icon
+                      name="document-plus"
+                      size={CONTROL_ICON_SIZE}
+                      color={CONTROL_ICON_COLOR}
+                    />
                   ),
                   onPress: handleDocumentPlus,
-                  opensPanel: Boolean(addBloomPanel) && !atMax,
+                  opensPanel: addConfig.kind === "bloom" && !atMax && !saving,
                   accessibilityLabel: "Add page",
                 },
                 {
@@ -302,6 +309,9 @@ const CreateScreenChrome = ({
               bloomTriggerIndex={2}
               open={barOpen}
               onOpenChange={(open) => {
+                if (saving) {
+                  return;
+                }
                 setBarOpen(open);
                 if (!open) {
                   setBarScreen("menu");
@@ -367,6 +377,7 @@ const CreateScreenChrome = ({
           isTitleFocused ? undefined : headerTotalHeightStyle,
         ]}
         className={isTitleFocused ? undefined : "overflow-hidden"}
+        pointerEvents={saving ? "none" : "box-none"}
       >
         {/* Plate fades in only for Type/expanded — not default, not title-focus. */}
         <Animated.View
@@ -390,6 +401,7 @@ const CreateScreenChrome = ({
               onChangeText={onChangeTitle}
               onFocus={handleTitleFocus}
               onBlur={handleTitleBlur}
+              editable={!saving}
               placeholder="Title of entry"
               placeholderTextColor="#79716B"
               multiline
@@ -417,7 +429,7 @@ const CreateScreenChrome = ({
 
         <Animated.View
           style={[styles.expandedHeader, expandedHeaderStyle, { top: topPad }]}
-          pointerEvents={isExpanded ? "auto" : "none"}
+          pointerEvents={isExpanded && !saving ? "auto" : "none"}
         >
           <View
             className="flex-1 flex-row items-center justify-between"

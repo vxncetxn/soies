@@ -7,13 +7,12 @@ import CreatePaperScreen from "./CreatePaperScreen";
 import CreatePrintScreen from "./CreatePrintScreen";
 
 const CreateOverlay = () => {
-  const { createProgress, createMode, createDate, createImageUri, closeCreate } =
+  const { createProgress, createMode, createDate, createImageUri, createSessionBusy, closeCreate } =
     useCreateContext();
 
-  // Hardware-back (Android) dismisses the create overlay while a mode is open.
-  // `closeCreate` is stable, so the hook only re-subscribes when `createMode`
-  // flips between null and a real mode.
-  useHardwareBackDismiss(createMode !== null, closeCreate);
+  // Hardware-back dismisses the create overlay while a mode is open — but not
+  // mid-save (would orphan an in-flight persist / race a new session).
+  useHardwareBackDismiss(createMode !== null && !createSessionBusy, closeCreate);
 
   const showPrint = createMode === "print" && createImageUri.length > 0;
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "expo-crypto";
 /**
  * CreatePrintScreen — author a multi-artefact Print entry (up to 5).
  *
@@ -6,35 +7,23 @@
  * Type: scroll locked; Prev/Next jumps + focuses caption.
  */
 import { Image } from "expo-image";
-import { randomUUID } from "expo-crypto";
-import { useCallback, useRef, useState } from "react";
-import { TextInput, View } from "react-native";
-import {
-  runOnJS,
-  type SharedValue,
-  useAnimatedReaction,
-  useSharedValue,
-} from "react-native-reanimated";
+import { useEffect, useState } from "react";
+import { View } from "react-native";
+import { type SharedValue } from "react-native-reanimated";
 import { withUniwind } from "uniwind";
 
+import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { savePrintEntry } from "../data/savePrintEntry";
-import {
-  pickPrintImage,
-  type PickPrintImageSource,
-} from "../media/pickPrintImage";
-import CreateArtefactPager, {
-  type CreateArtefactPagerHandle,
-} from "./CreateArtefactPager";
-import { useEntriesVersion } from "./CreateContext";
+import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
+import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
+import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
+import CreateArtefactPager from "./CreateArtefactPager";
+import { useCreateContext, useEntriesVersion } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePrint from "./EditablePrint";
-import {
-  PrintMediaBloomPanel,
-  type PrintMediaBloomScreen,
-} from "./PrintMediaBloomPanel";
+import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
 
 const StyledImage = withUniwind(Image);
-const CHROME_CROSSFADE_END = 0.5;
 
 type DraftPrint = { id: string; text: string; imageUri: string };
 
@@ -45,157 +34,85 @@ type CreatePrintScreenProps = {
   onClose: () => void;
 };
 
-const CreatePrintScreen = ({
-  progress,
-  date,
-  imageUri,
-  onClose,
-}: CreatePrintScreenProps) => {
+const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScreenProps) => {
   const { bumpEntriesVersion } = useEntriesVersion();
+  const { setCreateSessionBusy } = useCreateContext();
   const [title, setTitle] = useState("");
   const [artefacts, setArtefacts] = useState<DraftPrint[]>(() => [
     { id: randomUUID(), text: "", imageUri },
   ]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [enteringIndex, setEnteringIndex] = useState<number | null>(null);
-  const [typeState, setTypeState] = useState(false);
-
-  const [mediaScreen, setMediaScreen] = useState<PrintMediaBloomScreen>("media");
-  const [permissionSource, setPermissionSource] =
-    useState<PickPrintImageSource>("camera");
-  const [errorMessage, setErrorMessage] = useState("Couldn’t get that image.");
-  const [picking, setPicking] = useState(false);
   const [barOpen, setBarOpen] = useState(false);
 
-  const expandProgress = useSharedValue(0);
-  const pagerRef = useRef<CreateArtefactPagerHandle>(null);
-  const keepExpandedOnBlurRef = useRef(false);
-  const suppressArtefactFocusRef = useRef(false);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
+  const {
+    activeIndex,
+    enteringIndex,
+    setEnteringIndex,
+    typeState,
+    expandProgress,
+    pagerRef,
+    keepExpandedOnBlurRef,
+    suppressArtefactFocusRef,
+    inputRefs,
+    handleActiveIndexChange,
+    handlePrev,
+    handleNext,
+    handleBack,
+    tryAppend,
+    syncArtefactCount,
+  } = useCreateArtefactAuthoring();
 
-  useAnimatedReaction(
-    () => expandProgress.get(),
-    (v, prev) => {
-      if (prev === null) {
-        return;
-      }
-      if (
-        (prev <= CHROME_CROSSFADE_END && v > CHROME_CROSSFADE_END) ||
-        (prev > CHROME_CROSSFADE_END && v <= CHROME_CROSSFADE_END)
-      ) {
-        runOnJS(setTypeState)(v > CHROME_CROSSFADE_END);
-      }
-    },
-  );
-
-  const handleActiveIndexChange = useCallback((index: number) => {
-    setActiveIndex(index);
-  }, []);
-
-  const focusArtefact = useCallback((index: number) => {
-    keepExpandedOnBlurRef.current = true;
-    pagerRef.current?.jumpToIndex(index, true);
-    setActiveIndex(index);
-    inputRefs.current[index]?.focus();
-    requestAnimationFrame(() => {
-      keepExpandedOnBlurRef.current = false;
-    });
-  }, []);
-
-  const handlePrev = () => {
-    if (activeIndex <= 0) {
-      return;
-    }
-    focusArtefact(activeIndex - 1);
-  };
-
-  const handleNext = () => {
-    if (activeIndex >= artefacts.length - 1) {
-      return;
-    }
-    focusArtefact(activeIndex + 1);
-  };
+  useEffect(() => {
+    syncArtefactCount(artefacts.length);
+  }, [artefacts.length, syncArtefactCount]);
 
   const appendPrint = (uri: string) => {
-    const nextIndex = artefacts.length;
-    setArtefacts((prev) => [...prev, { id: randomUUID(), text: "", imageUri: uri }]);
-    setEnteringIndex(nextIndex);
-    requestAnimationFrame(() => {
-      pagerRef.current?.jumpToIndex(nextIndex, true);
-      setActiveIndex(nextIndex);
+    const item: DraftPrint = { id: randomUUID(), text: "", imageUri: uri };
+    tryAppend(() => {
+      setArtefacts((prev) => {
+        if (prev.length >= MAX_ARTEFACTS_PER_ENTRY) {
+          return prev;
+        }
+        return [...prev, item];
+      });
     });
   };
 
-  const handlePick = async (source: PickPrintImageSource) => {
-    if (picking) {
-      return;
-    }
+  const {
+    picking,
+    mediaScreen,
+    setMediaScreen,
+    permissionSource,
+    errorMessage,
+    handlePick,
+    resetToMedia,
+  } = usePrintImagePickFlow({
+    onBeforePick: () => setBarOpen(false),
+    onNeedsAttention: () => setBarOpen(true),
+    onSuccess: (uri) => {
+      appendPrint(uri);
+    },
+  });
 
-    // Close bloom before system UI (same as CreateEntryButton).
-    setBarOpen(false);
-    setPicking(true);
-    const result = await pickPrintImage(source)
-      .catch(() => ({
-        status: "error" as const,
-        message: "Couldn’t get that image.",
-      }))
-      .finally(() => {
-        setPicking(false);
+  const { saving, submit } = useCreateEntrySave({
+    setSessionBusy: setCreateSessionBusy,
+    save: async () => {
+      if (artefacts.length === 0) {
+        throw new Error("Print entry needs at least one image.");
+      }
+      await savePrintEntry({
+        date,
+        title: title.trim() || "Untitled",
+        artefacts: artefacts.map((a) => ({ text: a.text, imageUri: a.imageUri })),
       });
-
-    if (result.status === "success") {
-      setMediaScreen("media");
-      appendPrint(result.uri);
-      return;
-    }
-
-    if (result.status === "cancelled") {
-      setMediaScreen("media");
-      return;
-    }
-
-    if (result.status === "permission_denied") {
-      setPermissionSource(result.source);
-      setMediaScreen("permission");
-      setBarOpen(true);
-      return;
-    }
-
-    setErrorMessage(result.message || "Couldn’t get that image.");
-    setMediaScreen("error");
-    setBarOpen(true);
-  };
-
-  const handleSubmit = async () => {
-    if (saving || artefacts.length === 0) {
-      return;
-    }
-
-    const resolvedTitle = title.trim() || "Untitled";
-    setSaving(true);
-    await savePrintEntry({
-      date,
-      title: resolvedTitle,
-      artefacts: artefacts.map((a) => ({ text: a.text, imageUri: a.imageUri })),
-    })
-      .then(() => {
-        bumpEntriesVersion();
-        onClose();
-      })
-      .finally(() => {
-        setSaving(false);
-      });
-  };
-
-  const handleBack = () => {
-    inputRefs.current[activeIndex]?.blur();
-  };
+    },
+    onSuccess: () => {
+      bumpEntriesVersion();
+      onClose();
+    },
+  });
 
   const updateText = (index: number, text: string) => {
-    setArtefacts((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, text } : item)),
-    );
+    setArtefacts((prev) => prev.map((item, i) => (i === index ? { ...item, text } : item)));
   };
 
   const addBloomPanel = (
@@ -207,9 +124,9 @@ const CreatePrintScreen = ({
       onPick={(source) => {
         void handlePick(source);
       }}
-      onBackToMedia={() => setMediaScreen("media")}
+      onBackToMedia={resetToMedia}
       onDismiss={() => {
-        setMediaScreen("media");
+        resetToMedia();
         setBarOpen(false);
       }}
     />
@@ -223,25 +140,28 @@ const CreatePrintScreen = ({
       title={title}
       onChangeTitle={setTitle}
       onClose={onClose}
-      onSubmit={handleSubmit}
+      onSubmit={submit}
       saving={saving}
       onBack={handleBack}
       activeArtefactIndex={activeIndex}
       artefactCount={artefacts.length}
       onPrevArtefact={handlePrev}
-      onNextArtefact={handleNext}
-      onAddArtefact={() => {}}
-      addBloomPanel={addBloomPanel}
-      addBloomContentKey={mediaScreen}
-      onAddBloomOpen={() => setMediaScreen("media")}
-      barOpen={barOpen}
-      onBarOpenChange={setBarOpen}
+      onNextArtefact={() => handleNext(artefacts.length)}
+      addConfig={{
+        kind: "bloom",
+        panel: addBloomPanel,
+        contentKey: mediaScreen,
+        forceAddPanel: mediaScreen === "permission" || mediaScreen === "error",
+        onOpen: () => setMediaScreen("media"),
+        barOpen,
+        onBarOpenChange: setBarOpen,
+      }}
     >
       <CreateArtefactPager
         ref={pagerRef}
         count={artefacts.length}
         pageKeys={artefacts.map((a) => a.id)}
-        scrollEnabled={!typeState}
+        scrollEnabled={!typeState && !saving}
         showScrollIndicator={!typeState}
         onActiveIndexChange={handleActiveIndexChange}
         enteringIndex={enteringIndex}
@@ -275,6 +195,7 @@ const CreatePrintScreen = ({
                 expandProgress={expandProgress}
                 keepExpandedOnBlurRef={keepExpandedOnBlurRef}
                 suppressArtefactFocusRef={suppressArtefactFocusRef}
+                editable={!saving}
                 textInputRef={(node) => {
                   inputRefs.current[index] = node;
                 }}

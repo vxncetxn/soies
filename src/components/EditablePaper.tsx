@@ -1,4 +1,5 @@
 import type { Ref, RefObject } from "react";
+
 import { useRef, useState } from "react";
 import {
   LayoutChangeEvent,
@@ -58,6 +59,8 @@ type EditablePaperProps = {
   keepExpandedOnBlurRef?: RefObject<boolean>;
   /** Set by the horizontal pager while a drag may steal the touch into focus. */
   suppressArtefactFocusRef?: RefObject<boolean>;
+  /** Locked while the entry is saving. */
+  editable?: boolean;
 };
 
 /**
@@ -121,6 +124,7 @@ const EditablePaper = ({
   textInputRef,
   keepExpandedOnBlurRef,
   suppressArtefactFocusRef,
+  editable = true,
 }: EditablePaperProps) => {
   const { width: windowWidth } = useWindowDimensions();
   const localInputRef = useRef<TextInput>(null);
@@ -275,6 +279,7 @@ const EditablePaper = ({
         onChangeText={handleChangeText}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        editable={editable}
         multiline
         // The outer ScrollView (in CreatePaperScreen) scrolls the sheet above
         // the keyboard; the input itself never scrolls (its content is clamped

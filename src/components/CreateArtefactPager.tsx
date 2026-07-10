@@ -17,6 +17,7 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -33,6 +34,9 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { ScrollIndicator } from "./ScrollIndicator";
+
+/** Mount active page ± this many neighbors (keeps Print image decode bounded). */
+const PAGE_WINDOW_RADIUS = 1;
 
 export type CreateArtefactPagerHandle = {
   jumpToIndex: (index: number, animated?: boolean) => void;
@@ -121,7 +125,10 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
     );
 
     const activeIndexRef = useRef(0);
+    const [windowCenter, setWindowCenter] = useState(0);
     const suppressClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** True while jumpToIndex drives scroll — must not arm drag-focus suppress. */
+    const programmaticScrollRef = useRef(false);
 
     const armFocusSuppress = useCallback(() => {
       if (!suppressArtefactFocusRef) {
@@ -137,6 +144,14 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
       }, 400);
     }, [suppressArtefactFocusRef]);
 
+    const finishScrollSettle = useCallback(() => {
+      if (programmaticScrollRef.current) {
+        programmaticScrollRef.current = false;
+        return;
+      }
+      armFocusSuppress();
+    }, [armFocusSuppress]);
+
     const publishActive = useCallback(
       (index: number) => {
         const clamped = Math.max(0, Math.min(Math.max(count - 1, 0), index));
@@ -144,14 +159,26 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
           return;
         }
         activeIndexRef.current = clamped;
+        setWindowCenter(clamped);
         // Parent update outside any setState updater to avoid render-phase warnings.
         onActiveIndexChange(clamped);
       },
       [count, onActiveIndexChange],
     );
 
+    const shouldMountPage = useCallback(
+      (index: number) => {
+        if (enteringIndex === index) {
+          return true;
+        }
+        return Math.abs(index - windowCenter) <= PAGE_WINDOW_RADIUS;
+      },
+      [enteringIndex, windowCenter],
+    );
+
     const onScroll = useAnimatedScrollHandler({
       onBeginDrag: () => {
+        // User finger drag only — programmatic jumps never hit this.
         runOnJS(armFocusSuppress)();
       },
       onScroll: (event) => {
@@ -160,18 +187,19 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
       onMomentumEnd: (event) => {
         const index = Math.round(event.contentOffset.x / PAGE_WIDTH);
         runOnJS(publishActive)(index);
-        runOnJS(armFocusSuppress)();
+        runOnJS(finishScrollSettle)();
       },
       onEndDrag: (event) => {
         const index = Math.round(event.contentOffset.x / PAGE_WIDTH);
         runOnJS(publishActive)(index);
-        runOnJS(armFocusSuppress)();
+        runOnJS(finishScrollSettle)();
       },
     });
 
     const jumpToIndex = useCallback(
       (index: number, animated = true) => {
         const clamped = Math.max(0, Math.min(Math.max(count - 1, 0), index));
+        programmaticScrollRef.current = animated;
         scrollRef.current?.scrollTo({
           x: clamped * PAGE_WIDTH,
           y: 0,
@@ -179,6 +207,9 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
         });
         scrollOffset.set(clamped * PAGE_WIDTH);
         publishActive(clamped);
+        if (!animated) {
+          programmaticScrollRef.current = false;
+        }
       },
       [PAGE_WIDTH, count, publishActive, scrollOffset, scrollRef],
     );
@@ -221,14 +252,16 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
               className="items-center"
             >
               <View style={{ width: EXPANDED_WIDTH, flex: 1 }}>
-                <EnteringWrap
-                  entering={enteringIndex === index}
-                  onEnteringComplete={
-                    enteringIndex === index ? onEnteringComplete : undefined
-                  }
-                >
-                  {renderPage(index)}
-                </EnteringWrap>
+                {shouldMountPage(index) ? (
+                  <EnteringWrap
+                    entering={enteringIndex === index}
+                    onEnteringComplete={enteringIndex === index ? onEnteringComplete : undefined}
+                  >
+                    {renderPage(index)}
+                  </EnteringWrap>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
               </View>
             </View>
           ))}

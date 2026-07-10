@@ -16,11 +16,13 @@ type CreateContextValue = {
   createDate: string;
   /** Pending picker URI while creating a Print; empty for Paper. */
   createImageUri: string;
-  openCreate: (
-    mode: Exclude<CreateMode, null>,
-    date: string,
-    options?: OpenCreateOptions,
-  ) => void;
+  /**
+   * True while a create screen is mid-save. Blocks hardware-back dismiss so a
+   * cancel cannot race an in-flight persist.
+   */
+  createSessionBusy: boolean;
+  setCreateSessionBusy: (busy: boolean) => void;
+  openCreate: (mode: Exclude<CreateMode, null>, date: string, options?: OpenCreateOptions) => void;
   closeCreate: () => void;
 };
 
@@ -67,10 +69,11 @@ const EntriesVersionProvider = ({ children }: PropsWithChildren) => {
 export const CreateProvider = ({ children }: PropsWithChildren) => {
   const createProgress = useSharedValue(0);
   const [create, setCreate] = useState<CreateState | null>(null);
+  const [createSessionBusy, setCreateSessionBusy] = useState(false);
 
   const createMode: CreateMode = create?.mode ?? null;
-  const createDate = create?.date ?? "";
-  const createImageUri = create?.imageUri ?? "";
+  const createDate: string = create?.date ?? "";
+  const createImageUri: string = create?.imageUri ?? "";
 
   const openCreate = (
     mode: Exclude<CreateMode, null>,
@@ -83,6 +86,7 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
+    setCreateSessionBusy(false);
     setCreate({
       mode,
       date,
@@ -95,6 +99,7 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
   };
 
   const closeCreate = () => {
+    setCreateSessionBusy(false);
     scheduleOnUI(() => {
       "worklet";
       createProgress.set(
@@ -117,6 +122,8 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
         createMode,
         createDate,
         createImageUri,
+        createSessionBusy,
+        setCreateSessionBusy,
         openCreate,
         closeCreate,
       }}

@@ -6,33 +6,21 @@
  * document-plus appends a blank page with entrance animation (no auto-focus).
  */
 import { randomUUID } from "expo-crypto";
-import { useCallback, useRef, useState } from "react";
-import {
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import Animated, {
-  type SharedValue,
-  useAnimatedProps,
-  useAnimatedReaction,
-  useSharedValue,
-  runOnJS,
-} from "react-native-reanimated";
+import Animated, { type SharedValue, useAnimatedProps } from "react-native-reanimated";
 
+import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { savePaperEntry } from "../data/savePaperEntry";
-import CreateArtefactPager, {
-  type CreateArtefactPagerHandle,
-} from "./CreateArtefactPager";
-import { useEntriesVersion } from "./CreateContext";
+import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
+import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
+import CreateArtefactPager from "./CreateArtefactPager";
+import { useCreateContext, useEntriesVersion } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePaper from "./EditablePaper";
 
 const PAPER_BOTTOM_GUTTER = 16;
-const CHROME_CROSSFADE_END = 0.5;
 
 type DraftPaper = { id: string; text: string };
 
@@ -44,6 +32,7 @@ type CreatePaperScreenProps = {
 
 const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) => {
   const { bumpEntriesVersion } = useEntriesVersion();
+  const { setCreateSessionBusy } = useCreateContext();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
   const { width: windowWidth } = useWindowDimensions();
 
@@ -51,35 +40,36 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   const EXPANDED_HEIGHT = (EXPANDED_WIDTH * 297) / 210;
 
   const [title, setTitle] = useState("");
-  const [artefacts, setArtefacts] = useState<DraftPaper[]>(() => [
-    { id: randomUUID(), text: "" },
-  ]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [enteringIndex, setEnteringIndex] = useState<number | null>(null);
-  const [typeState, setTypeState] = useState(false);
-
-  const expandProgress = useSharedValue(0);
-  const pagerRef = useRef<CreateArtefactPagerHandle>(null);
-  const keepExpandedOnBlurRef = useRef(false);
-  const suppressArtefactFocusRef = useRef(false);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
+  const [artefacts, setArtefacts] = useState<DraftPaper[]>(() => [{ id: randomUUID(), text: "" }]);
   const scrollRefs = useRef<(ScrollView | null)[]>([]);
 
-  useAnimatedReaction(
-    () => expandProgress.get(),
-    (v, prev) => {
-      if (prev === null) {
-        return;
-      }
-      if (
-        (prev <= CHROME_CROSSFADE_END && v > CHROME_CROSSFADE_END) ||
-        (prev > CHROME_CROSSFADE_END && v <= CHROME_CROSSFADE_END)
-      ) {
-        runOnJS(setTypeState)(v > CHROME_CROSSFADE_END);
-      }
-    },
-  );
+  const resetVerticalScroll = useCallback((index: number) => {
+    scrollRefs.current[index]?.scrollTo({ y: 0, animated: false });
+  }, []);
+
+  const {
+    activeIndex,
+    enteringIndex,
+    setEnteringIndex,
+    typeState,
+    expandProgress,
+    pagerRef,
+    keepExpandedOnBlurRef,
+    suppressArtefactFocusRef,
+    inputRefs,
+    handleActiveIndexChange,
+    handlePrev,
+    handleNext,
+    handleBack,
+    tryAppend,
+    syncArtefactCount,
+  } = useCreateArtefactAuthoring({
+    onActiveIndexChange: resetVerticalScroll,
+  });
+
+  useEffect(() => {
+    syncArtefactCount(artefacts.length);
+  }, [artefacts.length, syncArtefactCount]);
 
   const scrollAnimatedProps = useAnimatedProps(() => {
     const inset = Math.max(0, -keyboardHeight.get()) + PAPER_BOTTOM_GUTTER;
@@ -89,83 +79,34 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
     };
   });
 
-  const resetVerticalScroll = useCallback((index: number) => {
-    scrollRefs.current[index]?.scrollTo({ y: 0, animated: false });
-  }, []);
-
-  const handleActiveIndexChange = useCallback(
-    (index: number) => {
-      setActiveIndex(index);
-      resetVerticalScroll(index);
-    },
-    [resetVerticalScroll],
-  );
-
-  const focusArtefact = useCallback((index: number) => {
-    keepExpandedOnBlurRef.current = true;
-    pagerRef.current?.jumpToIndex(index, true);
-    setActiveIndex(index);
-    resetVerticalScroll(index);
-    inputRefs.current[index]?.focus();
-    requestAnimationFrame(() => {
-      keepExpandedOnBlurRef.current = false;
-    });
-  }, [resetVerticalScroll]);
-
-  const handlePrev = () => {
-    if (activeIndex <= 0) {
-      return;
-    }
-    focusArtefact(activeIndex - 1);
-  };
-
-  const handleNext = () => {
-    if (activeIndex >= artefacts.length - 1) {
-      return;
-    }
-    focusArtefact(activeIndex + 1);
-  };
-
   const handleAddArtefact = () => {
-    const nextIndex = artefacts.length;
-    setArtefacts((prev) => [...prev, { id: randomUUID(), text: "" }]);
-    setEnteringIndex(nextIndex);
-    requestAnimationFrame(() => {
-      pagerRef.current?.jumpToIndex(nextIndex, true);
-      setActiveIndex(nextIndex);
-      resetVerticalScroll(nextIndex);
+    const item: DraftPaper = { id: randomUUID(), text: "" };
+    tryAppend(() => {
+      setArtefacts((prev) => {
+        if (prev.length >= MAX_ARTEFACTS_PER_ENTRY) {
+          return prev;
+        }
+        return [...prev, item];
+      });
     });
   };
 
-  const handleSubmit = async () => {
-    if (saving) {
-      return;
-    }
-
-    const resolvedTitle = title.trim() || "Untitled";
-    setSaving(true);
-    await savePaperEntry({
-      date,
-      title: resolvedTitle,
-      artefacts: artefacts.map((a) => ({ text: a.text })),
-    })
-      .then(() => {
-        bumpEntriesVersion();
-        onClose();
-      })
-      .finally(() => {
-        setSaving(false);
-      });
-  };
-
-  const handleBack = () => {
-    inputRefs.current[activeIndex]?.blur();
-  };
+  const { saving, submit } = useCreateEntrySave({
+    setSessionBusy: setCreateSessionBusy,
+    save: () =>
+      savePaperEntry({
+        date,
+        title: title.trim() || "Untitled",
+        artefacts: artefacts.map((a) => ({ text: a.text })),
+      }),
+    onSuccess: () => {
+      bumpEntriesVersion();
+      onClose();
+    },
+  });
 
   const updateText = (index: number, text: string) => {
-    setArtefacts((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, text } : item)),
-    );
+    setArtefacts((prev) => prev.map((item, i) => (i === index ? { ...item, text } : item)));
   };
 
   return (
@@ -176,20 +117,20 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
       title={title}
       onChangeTitle={setTitle}
       onClose={onClose}
-      onSubmit={handleSubmit}
+      onSubmit={submit}
       saving={saving}
       onBack={handleBack}
       activeArtefactIndex={activeIndex}
       artefactCount={artefacts.length}
       onPrevArtefact={handlePrev}
-      onNextArtefact={handleNext}
-      onAddArtefact={handleAddArtefact}
+      onNextArtefact={() => handleNext(artefacts.length)}
+      addConfig={{ kind: "immediate", onAdd: handleAddArtefact }}
     >
       <CreateArtefactPager
         ref={pagerRef}
         count={artefacts.length}
         pageKeys={artefacts.map((a) => a.id)}
-        scrollEnabled={!typeState}
+        scrollEnabled={!typeState && !saving}
         showScrollIndicator={!typeState}
         onActiveIndexChange={handleActiveIndexChange}
         enteringIndex={enteringIndex}
@@ -228,6 +169,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
                   expandProgress={expandProgress}
                   keepExpandedOnBlurRef={keepExpandedOnBlurRef}
                   suppressArtefactFocusRef={suppressArtefactFocusRef}
+                  editable={!saving}
                   textInputRef={(node) => {
                     inputRefs.current[index] = node;
                   }}

@@ -1,3 +1,5 @@
+import type { Ref, RefObject } from "react";
+
 /**
  * EditablePrint — polaroid Print artefact for Create Print.
  *
@@ -16,7 +18,6 @@
  * on-screen gutter even when pin math said the gap was ~0.
  */
 import { Image } from "expo-image";
-import type { Ref, RefObject } from "react";
 import { useRef, useState } from "react";
 import {
   LayoutChangeEvent,
@@ -77,6 +78,8 @@ type EditablePrintProps = {
   keepExpandedOnBlurRef?: RefObject<boolean>;
   /** Set by the horizontal pager while a drag may steal the touch into focus. */
   suppressArtefactFocusRef?: RefObject<boolean>;
+  /** Locked while the entry is saving. */
+  editable?: boolean;
 };
 
 const EditablePrint = ({
@@ -87,6 +90,7 @@ const EditablePrint = ({
   textInputRef,
   keepExpandedOnBlurRef,
   suppressArtefactFocusRef,
+  editable = true,
 }: EditablePrintProps) => {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -176,6 +180,9 @@ const EditablePrint = ({
   };
 
   const focusCaption = () => {
+    if (!editable) {
+      return;
+    }
     localInputRef.current?.focus();
   };
 
@@ -185,11 +192,7 @@ const EditablePrint = ({
     const p = expandProgress.get();
     const scale = interpolate(p, [0, 1], [1, expandedScale]);
     const keyboardOpen = Math.max(0, -keyboardHeight.get());
-    const headerContent = interpolate(
-      p,
-      [0, 1],
-      [CREATE_HEADER_HEIGHT, EXPANDED_HEADER_HEIGHT],
-    );
+    const headerContent = interpolate(p, [0, 1], [CREATE_HEADER_HEIGHT, EXPANDED_HEADER_HEIGHT]);
     const contentTop = topPad + headerContent;
     const visualBottom = contentTop + BASE_HEIGHT * scale;
     const targetBottom = windowHeight - keyboardOpen - PRINT_BOTTOM_GUTTER;
@@ -202,9 +205,7 @@ const EditablePrint = ({
   });
 
   const scaleStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: interpolate(expandProgress.get(), [0, 1], [1, expandedScale]) },
-    ],
+    transform: [{ scale: interpolate(expandProgress.get(), [0, 1], [1, expandedScale]) }],
   }));
 
   return (
@@ -254,6 +255,7 @@ const EditablePrint = ({
               onChangeText={handleChangeText}
               onFocus={handleFocus}
               onBlur={handleBlur}
+              editable={editable}
               multiline
               scrollEnabled={false}
               placeholder="TAP TO START TYPING"

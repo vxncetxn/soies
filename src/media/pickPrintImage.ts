@@ -5,9 +5,9 @@
  * camera should replace the launch step here and still return the same
  * PickPrintImageResult so CreateEntryButton / openCreate stay unchanged.
  *
- * After a successful pick, the image is downscaled (never upscaled) so it
- * covers the expanded Print image frame at device pixel density — matching
- * what EditablePrint / Print.tsx display at their largest authoring size.
+ * After a successful pick, the image is downscaled (never upscaled) to cover
+ * the expanded Print frame, then center-cropped to the Print aspect so we do
+ * not keep pixels that `contentFit="cover"` would discard at display time.
  * Media is NOT copied into Documents/artefacts here; that happens on submit
  * via saveMediaFile (cancel must leave no orphan files).
  */
@@ -47,32 +47,49 @@ export function expandedPrintImagePixelSize(windowWidth?: number): {
   };
 }
 
-async function resizeToCoverExpandedFrame(
+/**
+ * Cover-scale (never upscale) then center-crop to the expanded Print frame.
+ */
+async function resizeAndCropToCoverExpandedFrame(
   uri: string,
   width: number,
   height: number,
 ): Promise<string> {
   const target = expandedPrintImagePixelSize();
-  // Cover scale: after resize both dimensions are ≥ the frame (contentFit cover).
   const scale = Math.max(target.width / width, target.height / height);
-  // Never upscale — keep the original if it's already smaller than the frame.
-  if (scale >= 1 || !Number.isFinite(scale)) {
+
+  // Already smaller than the frame on the covering axis — keep original
+  // (never upscale). Display still uses contentFit cover.
+  if (!Number.isFinite(scale) || scale >= 1) {
     return uri;
   }
 
-  const nextWidth = Math.max(1, Math.round(width * scale));
-  const nextHeight = Math.max(1, Math.round(height * scale));
+  const scaledWidth = Math.max(1, Math.round(width * scale));
+  const scaledHeight = Math.max(1, Math.round(height * scale));
+  const cropWidth = Math.min(target.width, scaledWidth);
+  const cropHeight = Math.min(target.height, scaledHeight);
+  const originX = Math.max(0, Math.round((scaledWidth - cropWidth) / 2));
+  const originY = Math.max(0, Math.round((scaledHeight - cropHeight) / 2));
+
   const result = await ImageManipulator.manipulateAsync(
     uri,
-    [{ resize: { width: nextWidth, height: nextHeight } }],
+    [
+      { resize: { width: scaledWidth, height: scaledHeight } },
+      {
+        crop: {
+          originX,
+          originY,
+          width: cropWidth,
+          height: cropHeight,
+        },
+      },
+    ],
     { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
   );
   return result.uri;
 }
 
-export async function pickPrintImage(
-  source: PickPrintImageSource,
-): Promise<PickPrintImageResult> {
+export async function pickPrintImage(source: PickPrintImageSource): Promise<PickPrintImageResult> {
   try {
     if (source === "camera") {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -103,7 +120,7 @@ export async function pickPrintImage(
     }
 
     const asset = picked.assets[0];
-    const uri = await resizeToCoverExpandedFrame(
+    const uri = await resizeAndCropToCoverExpandedFrame(
       asset.uri,
       asset.width || expandedPrintImagePixelSize().width,
       asset.height || expandedPrintImagePixelSize().height,
@@ -111,8 +128,7 @@ export async function pickPrintImage(
 
     return { status: "success", uri };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Couldn’t get that image.";
+    const message = error instanceof Error ? error.message : "Couldn’t get that image.";
     return { status: "error", message };
   }
 }

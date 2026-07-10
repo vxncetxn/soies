@@ -49,20 +49,12 @@ import { Pressable, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
-import {
-  pickPrintImage,
-  type PickPrintImageSource,
-} from "../media/pickPrintImage";
+import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { todayISO } from "../utils/date";
 import BloomButton from "./BloomButton";
 import { useCreateContext } from "./CreateContext";
 import { Icon } from "./Icon";
-import {
-  PrintMediaBloomPanel,
-  type PrintMediaBloomScreen,
-} from "./PrintMediaBloomPanel";
-
-type CreateMenuScreen = "main" | PrintMediaBloomScreen;
+import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
 
 const TRIGGER_ICON_SIZE = 24;
 const TRIGGER_ICON_COLOR = "#79716B";
@@ -72,52 +64,32 @@ const CreateEntryButton = () => {
   const effectiveDate = date ?? todayISO();
   const { openCreate } = useCreateContext();
   const [open, setOpen] = useState(false);
-  const [screen, setScreen] = useState<CreateMenuScreen>("main");
-  const [permissionSource, setPermissionSource] =
-    useState<PickPrintImageSource>("camera");
-  const [errorMessage, setErrorMessage] = useState("Couldn’t get that image.");
-  const [picking, setPicking] = useState(false);
+  /** `main` = Paper/Print chooser; otherwise mirrors pick-flow media screen. */
+  const [onMainMenu, setOnMainMenu] = useState(true);
   const chromeFadeStyle = useHomeChromeFade();
 
-  const handlePick = async (source: PickPrintImageSource) => {
-    if (picking) {
-      return;
-    }
-
-    setOpen(false);
-    setPicking(true);
-
-    const result = await pickPrintImage(source)
-      .catch(() => ({
-        status: "error" as const,
-        message: "Couldn’t get that image.",
-      }))
-      .finally(() => {
-        setPicking(false);
-      });
-
-    if (result.status === "success") {
-      openCreate("print", effectiveDate, { imageUri: result.uri });
-      setScreen("main");
-      return;
-    }
-
-    if (result.status === "cancelled") {
-      setScreen("main");
-      return;
-    }
-
-    if (result.status === "permission_denied") {
-      setPermissionSource(result.source);
-      setScreen("permission");
+  const {
+    picking,
+    mediaScreen,
+    setMediaScreen,
+    permissionSource,
+    errorMessage,
+    handlePick,
+    resetToMedia,
+  } = usePrintImagePickFlow({
+    onBeforePick: () => setOpen(false),
+    onNeedsAttention: () => {
+      setOnMainMenu(false);
       setOpen(true);
-      return;
-    }
+    },
+    onSuccess: (uri) => {
+      openCreate("print", effectiveDate, { imageUri: uri });
+      setOnMainMenu(true);
+      resetToMedia();
+    },
+  });
 
-    setErrorMessage(result.message || "Couldn’t get that image.");
-    setScreen("error");
-    setOpen(true);
-  };
+  const contentKey = onMainMenu ? "main" : mediaScreen;
 
   const mainNode = (
     <View className="py-2">
@@ -133,7 +105,10 @@ const CreateEntryButton = () => {
         <Text className="text-base text-primary">Paper</Text>
       </Pressable>
       <Pressable
-        onPress={() => setScreen("media")}
+        onPress={() => {
+          setMediaScreen("media");
+          setOnMainMenu(false);
+        }}
         accessibilityRole="button"
         accessibilityLabel="Choose Print"
         className="px-4 py-3"
@@ -143,23 +118,31 @@ const CreateEntryButton = () => {
     </View>
   );
 
-  const panelNode =
-    screen === "main" ? (
-      mainNode
-    ) : (
-      <PrintMediaBloomPanel
-        screen={screen}
-        picking={picking}
-        permissionSource={permissionSource}
-        errorMessage={errorMessage}
-        onPick={(source) => {
-          void handlePick(source);
-        }}
-        onBackToMedia={() => setScreen("media")}
-        onDismiss={() => setOpen(false)}
-        onBackToParent={screen === "media" ? () => setScreen("main") : undefined}
-      />
-    );
+  const panelNode = onMainMenu ? (
+    mainNode
+  ) : (
+    <PrintMediaBloomPanel
+      screen={mediaScreen}
+      picking={picking}
+      permissionSource={permissionSource}
+      errorMessage={errorMessage}
+      onPick={(source) => {
+        void handlePick(source);
+      }}
+      onBackToMedia={() => {
+        resetToMedia();
+      }}
+      onDismiss={() => setOpen(false)}
+      onBackToParent={
+        mediaScreen === "media"
+          ? () => {
+              setOnMainMenu(true);
+              resetToMedia();
+            }
+          : undefined
+      }
+    />
+  );
 
   return (
     <Animated.View
@@ -171,8 +154,11 @@ const CreateEntryButton = () => {
         variant="menu"
         open={open}
         onOpenChange={setOpen}
-        onClose={() => setScreen("main")}
-        contentKey={screen}
+        onClose={() => {
+          setOnMainMenu(true);
+          resetToMedia();
+        }}
+        contentKey={contentKey}
         panelNode={panelNode}
         accessibilityRole="button"
         accessibilityLabel="Create entry"

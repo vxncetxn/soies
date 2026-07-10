@@ -108,9 +108,9 @@ not enough for Info.plist changes. Until then, rely on the Metro console scrape.
 
 ## Common failures
 
-| Symptom | Cause | Fix |
-|---------|--------|-----|
-| Empty log, no Metro `AGENT_DEBUG` lines | Bundle not reloaded / code path not hit | Reload app; add mount heartbeat log |
-| Metro shows `AGENT_DEBUG` but log empty | Scrape not running / wrong terminal file | Start scrape-metro.mjs on the Expo terminal |
-| `curl` to LAN:7651 fails | Relay dead / wrong IP / firewall | Restart relay; re-check `en0` IP |
-| fetch fails, console works | ATS blocking HTTP | Use scrape until native rebuild with `NSAllowsLocalNetworking` |
+| Symptom                                 | Cause                                    | Fix                                                            |
+| --------------------------------------- | ---------------------------------------- | -------------------------------------------------------------- |
+| Empty log, no Metro `AGENT_DEBUG` lines | Bundle not reloaded / code path not hit  | Reload app; add mount heartbeat log                            |
+| Metro shows `AGENT_DEBUG` but log empty | Scrape not running / wrong terminal file | Start scrape-metro.mjs on the Expo terminal                    |
+| `curl` to LAN:7651 fails                | Relay dead / wrong IP / firewall         | Restart relay; re-check `en0` IP                               |
+| fetch fails, console works              | ATS blocking HTTP                        | Use scrape until native rebuild with `NSAllowsLocalNetworking` |
