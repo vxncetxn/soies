@@ -4,8 +4,17 @@
  * It's a thin wrapper around `BloomButton` (variant="menu"): a round plus
  * trigger that stays inline (floating at the bottom-right of the screen,
  * levelled with the tab bar) and, on tap, a separate frosted panel blooms
- * upward into a create menu. Tapping "Paper" closes the bloom and opens the
- * Create overlay (see `CreateContext.openCreate`); "Print" is a stub for now.
+ * upward into a create menu.
+ *
+ * Flow:
+ *   Paper → close bloom → openCreate("paper")
+ *   Print → bloom cross-fades to Take picture / Camera roll
+ *     success → close bloom → openCreate("print", { imageUri })
+ *     system cancel → quiet Home (bloom already closed for the system UI)
+ *     permission denied / hard error → bloom alert panel with CTAs
+ *
+ * Image acquisition lives in `pickPrintImage` (system picker for v1; seam for
+ * a future in-app camera). Create only opens after a URI exists.
  *
  * Positioning:
  *   The trigger is absolutely positioned `bottom-5 right-5` (20px from the
@@ -36,16 +45,20 @@
  */
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
+import {
+  pickPrintImage,
+  type PickPrintImageSource,
+} from "../media/pickPrintImage";
 import { todayISO } from "../utils/date";
 import BloomButton from "./BloomButton";
 import { useCreateContext } from "./CreateContext";
 import { Icon } from "./Icon";
 
-type CreateMenuScreen = "main" | "print";
+type CreateMenuScreen = "main" | "print" | "permission" | "error";
 
 // Trigger sizing: p-2 (8px) around a 24px icon → 40px square. The icon size/
 // colour match the tab bar triggers so the two controls read as a set.
@@ -61,7 +74,53 @@ const CreateEntryButton = () => {
   const { openCreate } = useCreateContext();
   const [open, setOpen] = useState(false);
   const [screen, setScreen] = useState<CreateMenuScreen>("main");
+  const [permissionSource, setPermissionSource] =
+    useState<PickPrintImageSource>("camera");
+  const [errorMessage, setErrorMessage] = useState("Couldn’t get that image.");
+  const [picking, setPicking] = useState(false);
   const chromeFadeStyle = useHomeChromeFade();
+
+  const handlePick = async (source: PickPrintImageSource) => {
+    if (picking) {
+      return;
+    }
+
+    // Close the bloom before presenting system UI so Home is clean behind the
+    // camera/library. On deny/error we re-open already on the alert screen.
+    setOpen(false);
+    setPicking(true);
+
+    const result = await pickPrintImage(source)
+      .catch(() => ({
+        status: "error" as const,
+        message: "Couldn’t get that image.",
+      }))
+      .finally(() => {
+        setPicking(false);
+      });
+
+    if (result.status === "success") {
+      openCreate("print", effectiveDate, { imageUri: result.uri });
+      setScreen("main");
+      return;
+    }
+
+    if (result.status === "cancelled") {
+      setScreen("main");
+      return;
+    }
+
+    if (result.status === "permission_denied") {
+      setPermissionSource(result.source);
+      setScreen("permission");
+      setOpen(true);
+      return;
+    }
+
+    setErrorMessage(result.message || "Couldn’t get that image.");
+    setScreen("error");
+    setOpen(true);
+  };
 
   const mainNode = (
     <View className="py-2">
@@ -95,12 +154,93 @@ const CreateEntryButton = () => {
         accessibilityLabel="Back to main menu"
         className="px-4 py-3"
       >
-        <Text className="text-base text-primary">‹ Print coming soon</Text>
+        <Text className="text-base text-primary">‹ Back</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => {
+          void handlePick("camera");
+        }}
+        disabled={picking}
+        accessibilityRole="button"
+        accessibilityLabel="Take picture"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">Take picture</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => {
+          void handlePick("library");
+        }}
+        disabled={picking}
+        accessibilityRole="button"
+        accessibilityLabel="Camera roll"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">Camera roll</Text>
       </Pressable>
     </View>
   );
 
-  const panelNode = screen === "print" ? printNode : mainNode;
+  const permissionMessage =
+    permissionSource === "camera"
+      ? "Camera access is needed to take a picture."
+      : "Photo access is needed to choose from Camera roll.";
+
+  const permissionNode = (
+    <View className="py-2">
+      <Text className="px-4 py-3 text-base text-primary">{permissionMessage}</Text>
+      <Pressable
+        onPress={() => {
+          setOpen(false);
+          void Linking.openSettings();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Open Settings"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">Open Settings</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => setOpen(false)}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-secondary">OK</Text>
+      </Pressable>
+    </View>
+  );
+
+  const errorNode = (
+    <View className="py-2">
+      <Text className="px-4 py-3 text-base text-primary">{errorMessage}</Text>
+      <Pressable
+        onPress={() => setScreen("print")}
+        accessibilityRole="button"
+        accessibilityLabel="Try again"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-primary">Try again</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => setOpen(false)}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss"
+        className="px-4 py-3"
+      >
+        <Text className="text-base text-secondary">OK</Text>
+      </Pressable>
+    </View>
+  );
+
+  const panelNode =
+    screen === "print"
+      ? printNode
+      : screen === "permission"
+        ? permissionNode
+        : screen === "error"
+          ? errorNode
+          : mainNode;
 
   return (
     // Absolute, bottom-right, levelled with the tab bar. pointerEvents box-none

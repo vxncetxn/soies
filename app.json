@@ -33,14 +33,27 @@
       "expo-image",
       "expo-asset",
       "expo-widgets",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow soies to access your photos to create Print entries.",
+          "cameraPermission": "Allow soies to use the camera to create Print entries.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "name": "soies",
     "slug": "soies",
     "ios": {
       "bundleIdentifier": "com.anonymous.soies",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow soies to use the camera to create Print entries.",
+        "NSPhotoLibraryUsageDescription": "Allow soies to access your photos to create Print entries.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "extra": {
@@ -50,7 +63,12 @@
       }
     },
     "android": {
-      "package": "com.anonymous.soies"
+      "package": "com.anonymous.soies",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
     },
     "experiments": {
       "reactCompiler": true

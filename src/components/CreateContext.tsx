@@ -4,13 +4,23 @@ import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import { CREATE_SPRING } from "../constants/animation";
 
-export type CreateMode = "paper" | null;
+export type CreateMode = "paper" | "print" | null;
+
+type OpenCreateOptions = {
+  imageUri: string;
+};
 
 type CreateContextValue = {
   createProgress: SharedValue<number>;
   createMode: CreateMode;
   createDate: string;
-  openCreate: (mode: Exclude<CreateMode, null>, date: string) => void;
+  /** Pending picker URI while creating a Print; empty for Paper. */
+  createImageUri: string;
+  openCreate: (
+    mode: Exclude<CreateMode, null>,
+    date: string,
+    options?: OpenCreateOptions,
+  ) => void;
   closeCreate: () => void;
 };
 
@@ -22,11 +32,14 @@ type EntriesVersionContextValue = {
 const CreateContext = createContext<CreateContextValue | null>(null);
 const EntriesVersionContext = createContext<EntriesVersionContextValue | null>(null);
 
-// One open create session: mode and date are set together on open and cleared
-// together on close, so a single object avoids the two-states-that-must-move-
-// in-lockstep coupling. `createMode`/`createDate` are derived from it for the
-// context API below (derive, don't duplicate state).
-type CreateState = { mode: Exclude<CreateMode, null>; date: string };
+// One open create session: mode, date, and optional imageUri move together on
+// open/close so a single object avoids lockstep coupling. Derived fields below
+// keep the context API flat for consumers.
+type CreateState = {
+  mode: Exclude<CreateMode, null>;
+  date: string;
+  imageUri?: string;
+};
 
 /**
  * Provides the create *reload signal* on its own context so only the screens
@@ -57,9 +70,24 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
 
   const createMode: CreateMode = create?.mode ?? null;
   const createDate = create?.date ?? "";
+  const createImageUri = create?.imageUri ?? "";
 
-  const openCreate = (mode: Exclude<CreateMode, null>, date: string) => {
-    setCreate({ mode, date });
+  const openCreate = (
+    mode: Exclude<CreateMode, null>,
+    date: string,
+    options?: OpenCreateOptions,
+  ) => {
+    // Print create is gated on an acquired image — never open an empty Print
+    // session (would fade Home chrome into a blank overlay).
+    if (mode === "print" && !options?.imageUri) {
+      return;
+    }
+
+    setCreate({
+      mode,
+      date,
+      imageUri: mode === "print" ? options?.imageUri : undefined,
+    });
     scheduleOnUI(() => {
       "worklet";
       createProgress.set(withSpring(1, CREATE_SPRING));
@@ -84,7 +112,14 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
 
   return (
     <CreateContext.Provider
-      value={{ createProgress, createMode, createDate, openCreate, closeCreate }}
+      value={{
+        createProgress,
+        createMode,
+        createDate,
+        createImageUri,
+        openCreate,
+        closeCreate,
+      }}
     >
       <EntriesVersionProvider>{children}</EntriesVersionProvider>
     </CreateContext.Provider>
