@@ -1,4 +1,5 @@
-import { type RefObject, useState } from "react";
+import type { Ref, RefObject } from "react";
+import { useRef, useState } from "react";
 import {
   LayoutChangeEvent,
   NativeSyntheticEvent,
@@ -29,6 +30,17 @@ const PAPER_FONT_SIZE = 16;
 // cap keys off the mirror's measured textBottom/last.height instead.
 const INPUT_LINE_HEIGHT = PAPER_FONT_SIZE * 1.4;
 
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (!ref) {
+    return;
+  }
+  if (typeof ref === "function") {
+    ref(value);
+    return;
+  }
+  ref.current = value;
+}
+
 type EditablePaperProps = {
   value: string;
   onChangeText: (text: string) => void;
@@ -38,7 +50,14 @@ type EditablePaperProps = {
   expandProgress: SharedValue<number>;
   // Ref to the inner TextInput so the expanded header's back button can blur it
   // (which collapses the sheet and dismisses the keyboard via onFocus/onBlur).
-  textInputRef: RefObject<TextInput | null>;
+  textInputRef: Ref<TextInput | null>;
+  /**
+   * When true, blur must not collapse Type state — used while Prev/Next moves
+   * focus to another artefact without dismissing the keyboard.
+   */
+  keepExpandedOnBlurRef?: RefObject<boolean>;
+  /** Set by the horizontal pager while a drag may steal the touch into focus. */
+  suppressArtefactFocusRef?: RefObject<boolean>;
 };
 
 /**
@@ -100,8 +119,11 @@ const EditablePaper = ({
   onChangeText,
   expandProgress,
   textInputRef,
+  keepExpandedOnBlurRef,
+  suppressArtefactFocusRef,
 }: EditablePaperProps) => {
   const { width: windowWidth } = useWindowDimensions();
+  const localInputRef = useRef<TextInput>(null);
 
   // Collapsed/expanded widths mirror ArtefactWrapper exactly, so the sheet
   // matches a collapsed artefact at rest and an expanded artefact when focused.
@@ -195,12 +217,22 @@ const EditablePaper = ({
   };
 
   // Focus blooms the sheet to the expanded artefact size; blur collapses it
-  // back. Same spring as the Stack expand so the motion feels identical.
+  // back — unless the parent is transferring focus to another artefact (Prev/Next).
   const handleFocus = () => {
+    // Horizontal pager drag ended on the input — reject accidental Type entry.
+    if (suppressArtefactFocusRef?.current) {
+      queueMicrotask(() => {
+        localInputRef.current?.blur();
+      });
+      return;
+    }
     expandProgress.set(withSpring(1, SPRING_CONFIG));
   };
 
   const handleBlur = () => {
+    if (keepExpandedOnBlurRef?.current) {
+      return;
+    }
     expandProgress.set(withSpring(0, SPRING_CONFIG));
   };
 
@@ -235,7 +267,10 @@ const EditablePaper = ({
       </Text>
 
       <TextInput
-        ref={textInputRef}
+        ref={(node) => {
+          localInputRef.current = node;
+          assignRef(textInputRef, node);
+        }}
         value={value}
         onChangeText={handleChangeText}
         onFocus={handleFocus}

@@ -11,6 +11,8 @@ import BloomPanel, { useBloomOriginFade } from "./BloomPanel";
 export type BloomBarSlot = {
   node: ReactNode;
   onPress?: () => void;
+  /** When true, tapping opens the bloom panel (in addition to onPress). */
+  opensPanel?: boolean;
   accessibilityLabel?: string;
   accessibilityRole?: AccessibilityRole;
 };
@@ -58,7 +60,13 @@ const BloomBar = ({
         {slots.map((slot, index) => (
           <Pressable
             key={index}
-            onPress={index === bloomTriggerIndex ? () => onOpenChange(true) : slot.onPress}
+            onPress={() => {
+              const opens = index === bloomTriggerIndex || slot.opensPanel;
+              slot.onPress?.();
+              if (opens) {
+                onOpenChange(true);
+              }
+            }}
             accessibilityRole={slot.accessibilityRole ?? "button"}
             accessibilityLabel={slot.accessibilityLabel}
             className="p-1"

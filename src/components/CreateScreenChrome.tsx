@@ -4,15 +4,13 @@
  * Owns the create-screen chrome that both entry types share:
  *   - Stage-2 enter fade (`createProgress`)
  *   - Type label + title field (idle ellipsis / focus wrap + dark blur)
- *   - Header cross-fade between create header and expanded Back · 1/1 · Prev/Next
+ *   - Header cross-fade between create header and expanded Back · n/N · Prev/Next
  *   - Bottom Cancel / BloomBar / Submit (fade out when artefact is expanded;
  *     stay put on title focus so the keyboard covers them)
+ *   - document-plus add (immediate or bloom media) + max-cap Tooltip
  *
- * The artefact editor (EditablePaper / EditablePrint) is passed as `children`
- * inside the paper-slide region. Paper wraps children in a ScrollView itself;
- * Print does not — chrome stays agnostic to that layout difference.
- *
- * Behavior must stay identical to the pre-extract CreatePaperScreen chrome.
+ * The artefact editor (pager + EditablePaper / EditablePrint) is passed as
+ * `children` inside the paper-slide region.
  */
 import { BlurTargetView, BlurView } from "expo-blur";
 import { type ReactNode, useRef, useState } from "react";
@@ -37,8 +35,10 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CREATE_HOME_EXIT_END } from "../constants/animation";
+import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import BloomBar from "./BloomBar";
 import { Icon } from "./Icon";
+import Tooltip from "./Tooltip";
 
 const CONTROL_ICON_COLOR = "#79716B";
 const CONTROL_ICON_SIZE = 24;
@@ -62,6 +62,23 @@ export type CreateScreenChromeProps = {
   saving: boolean;
   /** Expanded-header Back — typically blurs the artefact TextInput. */
   onBack: () => void;
+  /** 0-based active artefact index. */
+  activeArtefactIndex: number;
+  artefactCount: number;
+  onPrevArtefact: () => void;
+  onNextArtefact: () => void;
+  /** Paper: append blank. Ignored when `addBloomPanel` is set (Print). */
+  onAddArtefact: () => void;
+  /**
+   * When set, document-plus opens the bloom with this panel (Print media pick).
+   * Parent owns pick/alert state and passes the panel node.
+   */
+  addBloomPanel?: ReactNode;
+  addBloomContentKey?: string | number;
+  onAddBloomOpen?: () => void;
+  /** Optional controlled bloom open (Print pick closes before system UI). */
+  barOpen?: boolean;
+  onBarOpenChange?: (open: boolean) => void;
   children: ReactNode;
 };
 
@@ -75,17 +92,44 @@ const CreateScreenChrome = ({
   onSubmit,
   saving,
   onBack,
+  activeArtefactIndex,
+  artefactCount,
+  onPrevArtefact,
+  onNextArtefact,
+  onAddArtefact,
+  addBloomPanel,
+  addBloomContentKey,
+  onAddBloomOpen,
+  barOpen: barOpenProp,
+  onBarOpenChange,
   children,
 }: CreateScreenChromeProps) => {
   const insets = useSafeAreaInsets();
   const createBlurTargetRef = useRef<View>(null);
   const topPad = insets.top + 12;
 
-  const [barOpen, setBarOpen] = useState(false);
+  const [barOpenInternal, setBarOpenInternal] = useState(false);
+  const barOpen = barOpenProp ?? barOpenInternal;
+  const setBarOpen = onBarOpenChange ?? setBarOpenInternal;
+  const [barScreen, setBarScreen] = useState<"menu" | "add">("menu");
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
+  const [maxTooltipVisible, setMaxTooltipVisible] = useState(false);
   const titleInputRef = useRef<TextInput>(null);
   const titleFocusProgress = useSharedValue(0);
+
+  const atMax = artefactCount >= MAX_ARTEFACTS_PER_ENTRY;
+  const canPrev = activeArtefactIndex > 0;
+  const canNext = activeArtefactIndex < artefactCount - 1;
+  const counterLabel = `${activeArtefactIndex + 1}/${artefactCount}`;
+
+  // Permission/error reopen: parent sets barOpen + content key after picker;
+  // barScreen may still be "menu" from the close-before-picker path.
+  const showAddBloomPanel =
+    Boolean(addBloomPanel) &&
+    (barScreen === "add" ||
+      addBloomContentKey === "permission" ||
+      addBloomContentKey === "error");
 
   useAnimatedReaction(
     () => expandProgress.get(),
@@ -168,11 +212,31 @@ const CreateScreenChrome = ({
     dismissTitleFocus();
   };
 
+  const handleDocumentPlus = () => {
+    if (atMax) {
+      setMaxTooltipVisible(true);
+      return;
+    }
+    if (addBloomPanel) {
+      setBarScreen("add");
+      onAddBloomOpen?.();
+      return;
+    }
+    onAddArtefact();
+  };
+
   const barMenuNode = (
     <View className="py-2">
       <Text className="px-4 py-3 text-base text-secondary">More options coming soon</Text>
     </View>
   );
+
+  const panelNode =
+    showAddBloomPanel && addBloomPanel ? addBloomPanel : barMenuNode;
+  const contentKey =
+    showAddBloomPanel && addBloomContentKey != null
+      ? addBloomContentKey
+      : barScreen;
 
   return (
     <Animated.View style={[screenEnterStyle, { flex: 1 }]} className="bg-background">
@@ -205,40 +269,56 @@ const CreateScreenChrome = ({
             <Icon name="x-mark" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
           </Pressable>
 
-          <BloomBar
-            slots={[
-              {
-                node: (
-                  <Icon name="line-squiggle" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
-                ),
-                onPress: () => {},
-                accessibilityLabel: "Drawing tools",
-              },
-              {
-                node: (
-                  <Icon name="document-plus" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
-                ),
-                onPress: () => {},
-                accessibilityLabel: "Add page",
-              },
-              {
-                node: (
-                  <Icon
-                    name="ellipsis-horizontal-circle"
-                    size={CONTROL_ICON_SIZE}
-                    color={CONTROL_ICON_COLOR}
-                  />
-                ),
-                accessibilityLabel: "More options",
-              },
-            ]}
-            bloomTriggerIndex={2}
-            open={barOpen}
-            onOpenChange={setBarOpen}
-            panelNode={barMenuNode}
-            portalHostName="create"
-            originOffset={{ x: insets.left, y: insets.top }}
-          />
+          <View className="relative">
+            <BloomBar
+              slots={[
+                {
+                  node: (
+                    <Icon name="line-squiggle" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+                  ),
+                  onPress: () => {},
+                  accessibilityLabel: "Drawing tools",
+                },
+                {
+                  node: (
+                    <Icon name="document-plus" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+                  ),
+                  onPress: handleDocumentPlus,
+                  opensPanel: Boolean(addBloomPanel) && !atMax,
+                  accessibilityLabel: "Add page",
+                },
+                {
+                  node: (
+                    <Icon
+                      name="ellipsis-horizontal-circle"
+                      size={CONTROL_ICON_SIZE}
+                      color={CONTROL_ICON_COLOR}
+                    />
+                  ),
+                  onPress: () => setBarScreen("menu"),
+                  accessibilityLabel: "More options",
+                },
+              ]}
+              bloomTriggerIndex={2}
+              open={barOpen}
+              onOpenChange={(open) => {
+                setBarOpen(open);
+                if (!open) {
+                  setBarScreen("menu");
+                }
+              }}
+              panelNode={panelNode}
+              contentKey={contentKey}
+              portalHostName="create"
+              originOffset={{ x: insets.left, y: insets.top }}
+            />
+            <Tooltip
+              visible={maxTooltipVisible}
+              message="Maximum of 5 per entry."
+              onDismiss={() => setMaxTooltipVisible(false)}
+              style={styles.maxTooltip}
+            />
+          </View>
 
           <Pressable
             onPress={onSubmit}
@@ -358,11 +438,37 @@ const CreateScreenChrome = ({
               className="items-center justify-center"
               pointerEvents="none"
             >
-              <Text className="font-mono text-sm text-secondary">1/1</Text>
+              <Text className="font-mono text-sm text-secondary">{counterLabel}</Text>
             </View>
             <View className="flex-row items-center" style={{ gap: 24 }}>
-              <Text className="font-sans-medium text-base text-secondary">Prev</Text>
-              <Text className="font-sans-medium text-base text-primary">Next</Text>
+              <Pressable
+                onPress={onPrevArtefact}
+                disabled={!canPrev}
+                accessibilityRole="button"
+                accessibilityLabel="Previous artefact"
+                accessibilityState={{ disabled: !canPrev }}
+                hitSlop={8}
+              >
+                <Text
+                  className={`font-sans-medium text-base ${canPrev ? "text-secondary" : "text-controls-border"}`}
+                >
+                  Prev
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={onNextArtefact}
+                disabled={!canNext}
+                accessibilityRole="button"
+                accessibilityLabel="Next artefact"
+                accessibilityState={{ disabled: !canNext }}
+                hitSlop={8}
+              >
+                <Text
+                  className={`font-sans-medium text-base ${canNext ? "text-primary" : "text-controls-border"}`}
+                >
+                  Next
+                </Text>
+              </Pressable>
             </View>
           </View>
         </Animated.View>
@@ -387,6 +493,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  maxTooltip: {
+    bottom: "100%",
+    alignSelf: "center",
+    marginBottom: 8,
   },
   titleInput: {
     padding: 0,

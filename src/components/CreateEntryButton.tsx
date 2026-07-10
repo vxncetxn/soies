@@ -45,7 +45,7 @@
  */
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
@@ -57,17 +57,16 @@ import { todayISO } from "../utils/date";
 import BloomButton from "./BloomButton";
 import { useCreateContext } from "./CreateContext";
 import { Icon } from "./Icon";
+import {
+  PrintMediaBloomPanel,
+  type PrintMediaBloomScreen,
+} from "./PrintMediaBloomPanel";
 
-type CreateMenuScreen = "main" | "print" | "permission" | "error";
+type CreateMenuScreen = "main" | PrintMediaBloomScreen;
 
-// Trigger sizing: p-2 (8px) around a 24px icon → 40px square. The icon size/
-// colour match the tab bar triggers so the two controls read as a set.
 const TRIGGER_ICON_SIZE = 24;
 const TRIGGER_ICON_COLOR = "#79716B";
 
-/**
- * CreateEntryButton — see file header for the big picture.
- */
 const CreateEntryButton = () => {
   const { date } = useLocalSearchParams<{ date?: string }>();
   const effectiveDate = date ?? todayISO();
@@ -85,8 +84,6 @@ const CreateEntryButton = () => {
       return;
     }
 
-    // Close the bloom before presenting system UI so Home is clean behind the
-    // camera/library. On deny/error we re-open already on the alert screen.
     setOpen(false);
     setPicking(true);
 
@@ -136,7 +133,7 @@ const CreateEntryButton = () => {
         <Text className="text-base text-primary">Paper</Text>
       </Pressable>
       <Pressable
-        onPress={() => setScreen("print")}
+        onPress={() => setScreen("media")}
         accessibilityRole="button"
         accessibilityLabel="Choose Print"
         className="px-4 py-3"
@@ -146,105 +143,25 @@ const CreateEntryButton = () => {
     </View>
   );
 
-  const printNode = (
-    <View className="py-2">
-      <Pressable
-        onPress={() => setScreen("main")}
-        accessibilityRole="button"
-        accessibilityLabel="Back to main menu"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-primary">‹ Back</Text>
-      </Pressable>
-      <Pressable
-        onPress={() => {
-          void handlePick("camera");
-        }}
-        disabled={picking}
-        accessibilityRole="button"
-        accessibilityLabel="Take picture"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-primary">Take picture</Text>
-      </Pressable>
-      <Pressable
-        onPress={() => {
-          void handlePick("library");
-        }}
-        disabled={picking}
-        accessibilityRole="button"
-        accessibilityLabel="Camera roll"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-primary">Camera roll</Text>
-      </Pressable>
-    </View>
-  );
-
-  const permissionMessage =
-    permissionSource === "camera"
-      ? "Camera access is needed to take a picture."
-      : "Photo access is needed to choose from Camera roll.";
-
-  const permissionNode = (
-    <View className="py-2">
-      <Text className="px-4 py-3 text-base text-primary">{permissionMessage}</Text>
-      <Pressable
-        onPress={() => {
-          setOpen(false);
-          void Linking.openSettings();
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Open Settings"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-primary">Open Settings</Text>
-      </Pressable>
-      <Pressable
-        onPress={() => setOpen(false)}
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-secondary">OK</Text>
-      </Pressable>
-    </View>
-  );
-
-  const errorNode = (
-    <View className="py-2">
-      <Text className="px-4 py-3 text-base text-primary">{errorMessage}</Text>
-      <Pressable
-        onPress={() => setScreen("print")}
-        accessibilityRole="button"
-        accessibilityLabel="Try again"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-primary">Try again</Text>
-      </Pressable>
-      <Pressable
-        onPress={() => setOpen(false)}
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss"
-        className="px-4 py-3"
-      >
-        <Text className="text-base text-secondary">OK</Text>
-      </Pressable>
-    </View>
-  );
-
   const panelNode =
-    screen === "print"
-      ? printNode
-      : screen === "permission"
-        ? permissionNode
-        : screen === "error"
-          ? errorNode
-          : mainNode;
+    screen === "main" ? (
+      mainNode
+    ) : (
+      <PrintMediaBloomPanel
+        screen={screen}
+        picking={picking}
+        permissionSource={permissionSource}
+        errorMessage={errorMessage}
+        onPick={(source) => {
+          void handlePick(source);
+        }}
+        onBackToMedia={() => setScreen("media")}
+        onDismiss={() => setOpen(false)}
+        onBackToParent={screen === "media" ? () => setScreen("main") : undefined}
+      />
+    );
 
   return (
-    // Absolute, bottom-right, levelled with the tab bar. pointerEvents box-none
-    // so only the trigger (not the wrapper's empty area) captures taps.
     <Animated.View
       style={chromeFadeStyle}
       pointerEvents="box-none"
@@ -260,10 +177,6 @@ const CreateEntryButton = () => {
         accessibilityRole="button"
         accessibilityLabel="Create entry"
       >
-        {/* Trigger content: a plus icon centred in 8px of padding. The padding
-            lives on this inner View (not the BloomButton wrapper) so the
-            Pressable's hit area matches the visible 40px button, and the icon
-            stays centred (items-center/justify-center) within it. */}
         <View className="flex items-center justify-center p-2">
           <Icon name="plus" size={TRIGGER_ICON_SIZE} color={TRIGGER_ICON_COLOR} />
         </View>

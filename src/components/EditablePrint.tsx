@@ -16,7 +16,8 @@
  * on-screen gutter even when pin math said the gap was ~0.
  */
 import { Image } from "expo-image";
-import { type RefObject, useState } from "react";
+import type { Ref, RefObject } from "react";
+import { useRef, useState } from "react";
 import {
   LayoutChangeEvent,
   NativeSyntheticEvent,
@@ -52,12 +53,30 @@ const PRINT_BOTTOM_GUTTER = 16;
 const CREATE_HEADER_HEIGHT = 84;
 const EXPANDED_HEADER_HEIGHT = 44;
 
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (!ref) {
+    return;
+  }
+  if (typeof ref === "function") {
+    ref(value);
+    return;
+  }
+  ref.current = value;
+}
+
 type EditablePrintProps = {
   imageUri: string;
   value: string;
   onChangeText: (text: string) => void;
   expandProgress: SharedValue<number>;
-  textInputRef: RefObject<TextInput | null>;
+  textInputRef: Ref<TextInput | null>;
+  /**
+   * When true, blur must not collapse Type state — used while Prev/Next moves
+   * focus to another artefact without dismissing the keyboard.
+   */
+  keepExpandedOnBlurRef?: RefObject<boolean>;
+  /** Set by the horizontal pager while a drag may steal the touch into focus. */
+  suppressArtefactFocusRef?: RefObject<boolean>;
 };
 
 const EditablePrint = ({
@@ -66,11 +85,14 @@ const EditablePrint = ({
   onChangeText,
   expandProgress,
   textInputRef,
+  keepExpandedOnBlurRef,
+  suppressArtefactFocusRef,
 }: EditablePrintProps) => {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
   const topPad = insets.top + 12;
+  const localInputRef = useRef<TextInput>(null);
 
   // Print collapsed width matches ArtefactWrapper: same height as A4 paper deck,
   // width = (53/86) × that height.
@@ -137,17 +159,28 @@ const EditablePrint = ({
   };
 
   const handleFocus = () => {
+    if (suppressArtefactFocusRef?.current) {
+      queueMicrotask(() => {
+        localInputRef.current?.blur();
+      });
+      return;
+    }
     expandProgress.set(withSpring(1, SPRING_CONFIG));
   };
 
   const handleBlur = () => {
+    if (keepExpandedOnBlurRef?.current) {
+      return;
+    }
     expandProgress.set(withSpring(0, SPRING_CONFIG));
   };
 
   const focusCaption = () => {
-    textInputRef.current?.focus();
+    localInputRef.current?.focus();
   };
 
+  // Pin every page from expandProgress so Prev/Next keeps cards aligned while
+  // scrolling (gating on active index dropped the outgoing print mid-transition).
   const pinStyle = useAnimatedStyle(() => {
     const p = expandProgress.get();
     const scale = interpolate(p, [0, 1], [1, expandedScale]);
@@ -213,7 +246,10 @@ const EditablePrint = ({
             </Text>
 
             <TextInput
-              ref={textInputRef}
+              ref={(node) => {
+                localInputRef.current = node;
+                assignRef(textInputRef, node);
+              }}
               value={value}
               onChangeText={handleChangeText}
               onFocus={handleFocus}

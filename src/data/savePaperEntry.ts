@@ -1,5 +1,6 @@
 import { randomUUID } from "expo-crypto";
 
+import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { withTransaction } from "../db/executor";
 import { insertArtefact } from "../db/repositories/artefacts";
 import { getNextSortOrder, insertEntry } from "../db/repositories/entries";
@@ -8,10 +9,16 @@ import { invalidateEntriesCache } from "./entriesCache";
 export async function savePaperEntry(params: {
   date: string;
   title: string;
-  text: string;
+  artefacts: { text: string }[];
 }): Promise<void> {
+  const count = params.artefacts.length;
+  if (count < 1 || count > MAX_ARTEFACTS_PER_ENTRY) {
+    throw new Error(
+      `Paper entry must have 1–${MAX_ARTEFACTS_PER_ENTRY} artefacts (got ${count})`,
+    );
+  }
+
   const entryId = randomUUID();
-  const artefactId = randomUUID();
   const now = Date.now();
 
   await withTransaction(undefined, async (tx) => {
@@ -34,18 +41,20 @@ export async function savePaperEntry(params: {
       tx,
     );
 
-    await insertArtefact(
-      {
-        id: artefactId,
-        entryId,
-        type: "paper",
-        sortOrder: 0,
-        data: JSON.stringify({ text: params.text }),
-        createdAt: now,
-        updatedAt: now,
-      },
-      tx,
-    );
+    for (let i = 0; i < params.artefacts.length; i++) {
+      await insertArtefact(
+        {
+          id: randomUUID(),
+          entryId,
+          type: "paper",
+          sortOrder: i,
+          data: JSON.stringify({ text: params.artefacts[i].text }),
+          createdAt: now,
+          updatedAt: now,
+        },
+        tx,
+      );
+    }
   });
 
   invalidateEntriesCache(params.date);

@@ -1,5 +1,6 @@
 import { randomUUID } from "expo-crypto";
 
+import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { withTransaction } from "../db/executor";
 import { insertArtefact } from "../db/repositories/artefacts";
 import { getNextSortOrder, insertEntry } from "../db/repositories/entries";
@@ -19,15 +20,27 @@ function extensionFromUri(uri: string): string {
 export async function savePrintEntry(params: {
   date: string;
   title: string;
-  text: string;
-  /** Temp / picker URI — copied into Documents/artefacts on save. */
-  imageUri: string;
+  artefacts: { text: string; imageUri: string }[];
 }): Promise<void> {
+  const count = params.artefacts.length;
+  if (count < 1 || count > MAX_ARTEFACTS_PER_ENTRY) {
+    throw new Error(
+      `Print entry must have 1–${MAX_ARTEFACTS_PER_ENTRY} artefacts (got ${count})`,
+    );
+  }
+
   const entryId = randomUUID();
-  const artefactId = randomUUID();
   const now = Date.now();
-  const ext = extensionFromUri(params.imageUri);
-  const imagePath = await saveMediaFile(params.imageUri, artefactId, ext);
+
+  // Copy media before the DB transaction so a failed copy doesn't leave a
+  // half-written entry. Each artefact gets its own id / file.
+  const prepared: { id: string; text: string; imagePath: string }[] = [];
+  for (const artefact of params.artefacts) {
+    const id = randomUUID();
+    const ext = extensionFromUri(artefact.imageUri);
+    const imagePath = await saveMediaFile(artefact.imageUri, id, ext);
+    prepared.push({ id, text: artefact.text, imagePath });
+  }
 
   await withTransaction(undefined, async (tx) => {
     const sortOrder = await getNextSortOrder(params.date, tx);
@@ -45,18 +58,21 @@ export async function savePrintEntry(params: {
       tx,
     );
 
-    await insertArtefact(
-      {
-        id: artefactId,
-        entryId,
-        type: "print",
-        sortOrder: 0,
-        data: JSON.stringify({ text: params.text, imagePath }),
-        createdAt: now,
-        updatedAt: now,
-      },
-      tx,
-    );
+    for (let i = 0; i < prepared.length; i++) {
+      const artefact = prepared[i];
+      await insertArtefact(
+        {
+          id: artefact.id,
+          entryId,
+          type: "print",
+          sortOrder: i,
+          data: JSON.stringify({ text: artefact.text, imagePath: artefact.imagePath }),
+          createdAt: now,
+          updatedAt: now,
+        },
+        tx,
+      );
+    }
   });
 
   invalidateEntriesCache(params.date);
