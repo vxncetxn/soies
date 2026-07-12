@@ -244,11 +244,14 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
           onScroll={onScroll}
           keyboardShouldPersistTaps="handled"
           style={{ flex: 1 }}
+          // Horizontal ScrollView defaults can vertically center short pages —
+          // stretch so Print/Paper Scribble slots sit under the header.
+          contentContainerStyle={{ flexGrow: 1 }}
         >
           {Array.from({ length: count }, (_, index) => (
             <View
               key={pageKeys?.[index] ?? String(index)}
-              style={{ width: PAGE_WIDTH, flex: 1 }}
+              style={{ width: PAGE_WIDTH, height: "100%" }}
               className="items-center"
             >
               <View style={{ width: EXPANDED_WIDTH, flex: 1 }}>

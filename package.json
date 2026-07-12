@@ -59,6 +59,7 @@
     "react-native-pulsar": "^1.6.1",
     "react-native-reanimated": "^4.5.0",
     "react-native-safe-area-context": "^5.7.0",
+    "react-native-signature-ink": "file:vendor/react-native-signature-ink",
     "react-native-teleport": "^1.1.9",
     "react-native-vision-camera": "^5.0.11",
     "react-native-worklets": "^0.10.0",

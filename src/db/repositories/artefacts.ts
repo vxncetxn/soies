@@ -1,5 +1,7 @@
 import type { Artefact } from "../../data/entries";
 
+import { parseAnnotations } from "../../data/ink";
+import { inkOverlayUriForArtefact } from "../../storage/files";
 import { getDatabase } from "../client";
 import { type DbExecutor, withTransaction } from "../executor";
 import {
@@ -17,6 +19,7 @@ export type ArtefactRow = {
   type: string;
   sort_order: number;
   data: string;
+  annotations: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -28,15 +31,31 @@ export type InsertArtefactInput = {
   type: string;
   sortOrder: number;
   data: string;
+  /** Opaque Ink JSON (ADR-0008); null when the artefact has no Ink. */
+  annotations?: string | null;
   createdAt: number;
   updatedAt: number;
 };
+
+function inkFieldsFromAnnotations(artefactId: string, annotations: string | null) {
+  const document = parseAnnotations(annotations);
+  if (!document) {
+    return {};
+  }
+  return {
+    ink: document,
+    inkOverlayPath: inkOverlayUriForArtefact(artefactId),
+  };
+}
 
 export function mapArtefactRow(row: ArtefactRow): Artefact {
   if (row.type === "paper") {
     try {
       const parsed = JSON.parse(row.data) as { text?: string };
-      return { text: parsed.text ?? "" };
+      return {
+        text: parsed.text ?? "",
+        ...inkFieldsFromAnnotations(row.id, row.annotations),
+      };
     } catch {
       return { text: "" };
     }
@@ -48,6 +67,7 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
       return {
         text: parsed.text ?? "",
         imagePath: parsed.imagePath ?? "",
+        ...inkFieldsFromAnnotations(row.id, row.annotations),
       };
     } catch {
       return { text: "", imagePath: "" };
@@ -63,14 +83,15 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
 export async function insertArtefact(input: InsertArtefactInput, tx?: DbExecutor): Promise<void> {
   await withTransaction(tx, async (db) => {
     await db.execute(
-      `INSERT INTO artefacts (id, entry_id, type, sort_order, data, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO artefacts (id, entry_id, type, sort_order, data, annotations, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.id,
         input.entryId,
         input.type,
         input.sortOrder,
         input.data,
+        input.annotations ?? null,
         input.createdAt,
         input.updatedAt,
       ],
@@ -169,7 +190,7 @@ export async function restoreArtefact(
 export async function getArtefactsForEntry(entryId: string): Promise<ArtefactRow[]> {
   const db = await getDatabase();
   const result = await db.execute(
-    `SELECT id, entry_id, type, sort_order, data, created_at, updated_at, deleted_at
+    `SELECT id, entry_id, type, sort_order, data, annotations, created_at, updated_at, deleted_at
      FROM artefacts
      WHERE entry_id = ? AND deleted_at IS NULL
      ORDER BY sort_order`,
@@ -196,7 +217,7 @@ export async function getArtefactsForEntries(
   const db = tx ?? (await getDatabase());
   const placeholders = entryIds.map(() => "?").join(", ");
   const result = await db.execute(
-    `SELECT id, entry_id, type, sort_order, data, created_at, updated_at, deleted_at
+    `SELECT id, entry_id, type, sort_order, data, annotations, created_at, updated_at, deleted_at
      FROM artefacts
      WHERE entry_id IN (${placeholders}) AND deleted_at IS NULL
      ORDER BY entry_id, sort_order`,

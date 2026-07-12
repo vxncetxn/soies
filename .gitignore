@@ -48,5 +48,9 @@ app-example
 
 # Local pnpm store (used when global store is unwritable)
 .pnpm-store/
-vendor/
 .pnpm-home/
+
+# Vendored forks — ignore everything except packages we deliberately track
+vendor/*
+!vendor/react-native-signature-ink/
+!vendor/react-native-signature-ink/**

@@ -95,6 +95,7 @@ export async function getGallery(): Promise<GalleryArtefact[]> {
        a.type,
        a.sort_order AS artefact_sort_order,
        a.data,
+       a.annotations,
        a.created_at AS artefact_created_at,
        a.updated_at AS artefact_updated_at,
        e.title AS entry_title
@@ -114,6 +115,7 @@ export async function getGallery(): Promise<GalleryArtefact[]> {
       type: String(row.type),
       sort_order: Number(row.artefact_sort_order),
       data: String(row.data),
+      annotations: row.annotations == null ? null : String(row.annotations),
       created_at: Number(row.artefact_created_at),
       updated_at: Number(row.artefact_updated_at),
       deleted_at: null,

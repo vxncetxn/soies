@@ -1,10 +1,18 @@
+import type { InkDocument } from "./ink";
+
 export type PaperArtefact = {
   text: string;
+  /** Parsed Ink strokes when present (ADR-0008). */
+  ink?: InkDocument;
+  /** File URI for the Ink overlay PNG cache. */
+  inkOverlayPath?: string;
 };
 
 export type PrintArtefact = {
   text: string;
   imagePath: string;
+  ink?: InkDocument;
+  inkOverlayPath?: string;
 };
 
 export type UnknownArtefact = {

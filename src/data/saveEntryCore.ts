@@ -9,15 +9,16 @@ import { invalidateEntriesCache } from "./entriesCache";
 /**
  * Shared transactional persistence for a new Paper/Print entry.
  *
- * Callers prepare artefact rows (ids + JSON `data`) first — Print copies media
- * before this so a failed copy never leaves a half-written entry. Cap is
- * enforced here as a save-path guard (ADR-0007); the DB stays unconstrained.
+ * Callers prepare artefact rows (ids + JSON `data` + optional Ink `annotations`)
+ * first — Print copies media before this so a failed copy never leaves a
+ * half-written entry. Cap is enforced here as a save-path guard (ADR-0007);
+ * the DB stays unconstrained.
  */
 export async function persistNewEntry(params: {
   date: string;
   title: string;
   type: "paper" | "print";
-  artefacts: { id: string; data: string }[];
+  artefacts: { id: string; data: string; annotations?: string | null }[];
 }): Promise<void> {
   const count = params.artefacts.length;
   if (count < 1 || count > MAX_ARTEFACTS_PER_ENTRY) {
@@ -56,6 +57,7 @@ export async function persistNewEntry(params: {
           type: params.type,
           sortOrder: i,
           data: artefact.data,
+          annotations: artefact.annotations ?? null,
           createdAt: now,
           updatedAt: now,
         },

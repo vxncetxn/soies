@@ -42,7 +42,7 @@ import Print from "./Print";
 function renderArtefactContent(artefact: Artefact, index: number): ReactNode {
   if (isPrintArtefact(artefact)) {
     return (
-      <Print key={index} imagePath={artefact.imagePath}>
+      <Print key={index} imagePath={artefact.imagePath} inkOverlayPath={artefact.inkOverlayPath}>
         {artefact.text}
       </Print>
     );
@@ -56,7 +56,11 @@ function renderArtefactContent(artefact: Artefact, index: number): ReactNode {
     );
   }
 
-  return <Paper key={index}>{artefact.text}</Paper>;
+  return (
+    <Paper key={index} inkOverlayPath={artefact.inkOverlayPath}>
+      {artefact.text}
+    </Paper>
+  );
 }
 
 /**

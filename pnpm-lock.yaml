@@ -131,6 +131,9 @@ importers:
       react-native-safe-area-context:
         specifier: ^5.7.0
         version: 5.7.0(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)
+      react-native-signature-ink:
+        specifier: file:vendor/react-native-signature-ink
+        version: file:vendor/react-native-signature-ink(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)
       react-native-teleport:
         specifier: ^1.1.9
         version: 1.1.9(react-dom@19.2.3(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)
@@ -3277,6 +3280,12 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '>=0.82.0'
+
+  react-native-signature-ink@file:vendor/react-native-signature-ink:
+    resolution: {directory: vendor/react-native-signature-ink, type: directory}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
 
   react-native-teleport@1.1.9:
     resolution: {integrity: sha512-Mn2M24KyDCZPNP9XaqPZVtOcNA4eY2+VDVlDUGA+u7CgbhgkW+8TZZoxbD1yYf6MNs/qwsQw5my8+gEQzsOQlA==}
@@ -7355,6 +7364,11 @@ snapshots:
       react-freeze: 1.0.4(react@19.2.3)
       react-native: 0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3)
       warn-once: 0.1.1
+
+  react-native-signature-ink@file:vendor/react-native-signature-ink(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3):
+    dependencies:
+      react: 19.2.3
+      react-native: 0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3)
 
   react-native-teleport@1.1.9(react-dom@19.2.3(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3):
     dependencies:

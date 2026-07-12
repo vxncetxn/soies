@@ -5,8 +5,10 @@
  *   - Stage-2 enter fade (`createProgress`)
  *   - Type label + title field (idle ellipsis / focus wrap + dark blur)
  *   - Header cross-fade between create header and expanded Back · n/N · Prev/Next
+ *     (Scribble: Back · Save, no pager nav)
  *   - Bottom Cancel / BloomBar / Submit (fade out when artefact is expanded;
  *     stay put on title focus so the keyboard covers them)
+ *   - Scribble tool strip while drawing
  *   - document-plus add via discriminated `addConfig` + max-cap Tooltip
  *
  * The artefact editor (pager + EditablePaper / EditablePrint) is passed as
@@ -67,7 +69,7 @@ export type CreateAddConfig =
 
 export type CreateScreenChromeProps = {
   progress: SharedValue<number>;
-  /** 0 = default, 1 = artefact Type state — drives header/controls cross-fade. */
+  /** 0 = default, 1 = artefact Type/Scribble — drives header/controls cross-fade. */
   expandProgress: SharedValue<number>;
   typeLabel: "PAPER" | "PRINT";
   title: string;
@@ -75,7 +77,7 @@ export type CreateScreenChromeProps = {
   onClose: () => void;
   onSubmit: () => void;
   saving: boolean;
-  /** Expanded-header Back — typically blurs the artefact TextInput. */
+  /** Expanded-header Back — blurs Type input or exits Scribble. */
   onBack: () => void;
   /** 0-based active artefact index. */
   activeArtefactIndex: number;
@@ -83,6 +85,13 @@ export type CreateScreenChromeProps = {
   onPrevArtefact: () => void;
   onNextArtefact: () => void;
   addConfig: CreateAddConfig;
+  /** Enter Scribble from Default (BloomBar squiggle). */
+  onEnterScribble: () => void;
+  /** When true, expanded header shows Back + Save (no Prev/Next). */
+  scribbleActive: boolean;
+  onScribbleSave: () => void;
+  /** Tool strip rendered above the faded bottom controls while Scribbling. */
+  scribbleTools?: ReactNode;
   children: ReactNode;
 };
 
@@ -101,6 +110,10 @@ const CreateScreenChrome = ({
   onPrevArtefact,
   onNextArtefact,
   addConfig,
+  onEnterScribble,
+  scribbleActive,
+  onScribbleSave,
+  scribbleTools,
   children,
 }: CreateScreenChromeProps) => {
   const insets = useSafeAreaInsets();
@@ -279,8 +292,8 @@ const CreateScreenChrome = ({
                       color={CONTROL_ICON_COLOR}
                     />
                   ),
-                  onPress: () => {},
-                  accessibilityLabel: "Drawing tools",
+                  onPress: onEnterScribble,
+                  accessibilityLabel: "Scribble",
                 },
                 {
                   node: (
@@ -345,6 +358,20 @@ const CreateScreenChrome = ({
           </Pressable>
         </Animated.View>
       </BlurTargetView>
+
+      {scribbleActive && scribbleTools ? (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: insets.bottom + 20,
+          }}
+        >
+          {scribbleTools}
+        </View>
+      ) : null}
 
       <Animated.View
         style={[StyleSheet.absoluteFill, titleFocusBackdropStyle]}
@@ -438,7 +465,7 @@ const CreateScreenChrome = ({
             <Pressable
               onPress={onBack}
               accessibilityRole="button"
-              accessibilityLabel="Back to create form"
+              accessibilityLabel={scribbleActive ? "Back to create form" : "Back to create form"}
               hitSlop={8}
             >
               <View style={styles.backIconFlip}>
@@ -450,38 +477,51 @@ const CreateScreenChrome = ({
               className="items-center justify-center"
               pointerEvents="none"
             >
-              <Text className="font-mono text-sm text-secondary">{counterLabel}</Text>
+              <Text className="font-mono text-sm text-secondary">
+                {scribbleActive ? "Scribble" : counterLabel}
+              </Text>
             </View>
-            <View className="flex-row items-center" style={{ gap: 24 }}>
+            {scribbleActive ? (
               <Pressable
-                onPress={onPrevArtefact}
-                disabled={!canPrev}
+                onPress={onScribbleSave}
                 accessibilityRole="button"
-                accessibilityLabel="Previous artefact"
-                accessibilityState={{ disabled: !canPrev }}
+                accessibilityLabel="Save ink"
                 hitSlop={8}
               >
-                <Text
-                  className={`font-sans-medium text-base ${canPrev ? "text-secondary" : "text-controls-border"}`}
-                >
-                  Prev
-                </Text>
+                <Text className="font-sans-medium text-base text-primary">Save</Text>
               </Pressable>
-              <Pressable
-                onPress={onNextArtefact}
-                disabled={!canNext}
-                accessibilityRole="button"
-                accessibilityLabel="Next artefact"
-                accessibilityState={{ disabled: !canNext }}
-                hitSlop={8}
-              >
-                <Text
-                  className={`font-sans-medium text-base ${canNext ? "text-primary" : "text-controls-border"}`}
+            ) : (
+              <View className="flex-row items-center" style={{ gap: 24 }}>
+                <Pressable
+                  onPress={onPrevArtefact}
+                  disabled={!canPrev}
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous artefact"
+                  accessibilityState={{ disabled: !canPrev }}
+                  hitSlop={8}
                 >
-                  Next
-                </Text>
-              </Pressable>
-            </View>
+                  <Text
+                    className={`font-sans-medium text-base ${canPrev ? "text-secondary" : "text-controls-border"}`}
+                  >
+                    Prev
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={onNextArtefact}
+                  disabled={!canNext}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next artefact"
+                  accessibilityState={{ disabled: !canNext }}
+                  hitSlop={8}
+                >
+                  <Text
+                    className={`font-sans-medium text-base ${canNext ? "text-primary" : "text-controls-border"}`}
+                  >
+                    Next
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         </Animated.View>
       </Animated.View>

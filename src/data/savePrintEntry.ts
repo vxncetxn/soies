@@ -1,7 +1,15 @@
 import { randomUUID } from "expo-crypto";
 
+import type { DraftInk } from "./ink";
+
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
-import { deleteMediaFile, saveMediaFile } from "../storage/files";
+import {
+  deleteInkOverlayFile,
+  deleteMediaFile,
+  saveInkOverlayFile,
+  saveMediaFile,
+} from "../storage/files";
+import { serializeAnnotations } from "./ink";
 import { persistNewEntry } from "./saveEntryCore";
 
 function extensionFromUri(uri: string): string {
@@ -17,7 +25,7 @@ function extensionFromUri(uri: string): string {
 export async function savePrintEntry(params: {
   date: string;
   title: string;
-  artefacts: { text: string; imageUri: string }[];
+  artefacts: { text: string; imageUri: string; ink?: DraftInk | null }[];
 }): Promise<void> {
   const count = params.artefacts.length;
   if (count < 1 || count > MAX_ARTEFACTS_PER_ENTRY) {
@@ -26,13 +34,23 @@ export async function savePrintEntry(params: {
 
   // Copy media before the DB transaction so a failed copy doesn't leave a
   // half-written entry. Track paths so any later failure can delete orphans.
-  const prepared: { id: string; text: string; imagePath: string }[] = [];
+  const prepared: {
+    id: string;
+    text: string;
+    imagePath: string;
+    annotations: string | null;
+  }[] = [];
   try {
     for (const artefact of params.artefacts) {
       const id = randomUUID();
       const ext = extensionFromUri(artefact.imageUri);
       const imagePath = await saveMediaFile(artefact.imageUri, id, ext);
-      prepared.push({ id, text: artefact.text, imagePath });
+      let annotations: string | null = null;
+      if (artefact.ink && artefact.ink.document.strokes.length > 0) {
+        annotations = serializeAnnotations(artefact.ink.document);
+        await saveInkOverlayFile(artefact.ink.overlayUri, id);
+      }
+      prepared.push({ id, text: artefact.text, imagePath, annotations });
     }
 
     await persistNewEntry({
@@ -45,10 +63,16 @@ export async function savePrintEntry(params: {
           text: artefact.text,
           imagePath: artefact.imagePath,
         }),
+        annotations: artefact.annotations,
       })),
     });
   } catch (error) {
-    await Promise.allSettled(prepared.map((artefact) => deleteMediaFile(artefact.imagePath)));
+    await Promise.allSettled(
+      prepared.map(async (artefact) => {
+        await deleteMediaFile(artefact.imagePath);
+        await deleteInkOverlayFile(artefact.id);
+      }),
+    );
     throw error;
   }
 }

@@ -79,7 +79,13 @@ const MIGRATION_V1: Migration = {
   ],
 };
 
-const MIGRATIONS: Migration[] = [MIGRATION_V1];
+/** Opaque Ink JSON column (ADR-0008); nullable for artefacts without Ink. */
+const MIGRATION_V2: Migration = {
+  version: 2,
+  statements: ["ALTER TABLE artefacts ADD COLUMN annotations TEXT"],
+};
+
+const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2];
 
 export async function runMigrations(db: DB): Promise<void> {
   const versionResult = await db.execute("PRAGMA user_version");

@@ -1,4 +1,4 @@
-import type { Ref, RefObject } from "react";
+import type { ReactNode, Ref, RefObject } from "react";
 
 import { useRef, useState } from "react";
 import {
@@ -20,6 +20,7 @@ import Animated, {
 import { SPRING_CONFIG } from "../constants/animation";
 import { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
 import { deckClassName } from "./CollapsedDeck";
+import InkOverlay from "./InkOverlay";
 
 const PAPER_PADDING = 24;
 const PAPER_FONT_FAMILY = "ABCStefan-Simple-Trial";
@@ -61,6 +62,12 @@ type EditablePaperProps = {
   suppressArtefactFocusRef?: RefObject<boolean>;
   /** Locked while the entry is saving. */
   editable?: boolean;
+  /** Committed Ink fallback for pager pages that do not own the live canvas. */
+  inkOverlayUri?: string | null;
+  /** When true, TextInput ignores focus (Scribble owns the expand). */
+  scribbleActive?: boolean;
+  /** Mounted pager page's native canvas; it persists across Default and Scribble. */
+  scribbleCanvas?: ReactNode;
 };
 
 /**
@@ -125,6 +132,9 @@ const EditablePaper = ({
   keepExpandedOnBlurRef,
   suppressArtefactFocusRef,
   editable = true,
+  inkOverlayUri = null,
+  scribbleActive = false,
+  scribbleCanvas = null,
 }: EditablePaperProps) => {
   const { width: windowWidth } = useWindowDimensions();
   const localInputRef = useRef<TextInput>(null);
@@ -223,6 +233,12 @@ const EditablePaper = ({
   // Focus blooms the sheet to the expanded artefact size; blur collapses it
   // back — unless the parent is transferring focus to another artefact (Prev/Next).
   const handleFocus = () => {
+    if (scribbleActive) {
+      queueMicrotask(() => {
+        localInputRef.current?.blur();
+      });
+      return;
+    }
     // Horizontal pager drag ended on the input — reject accidental Type entry.
     if (suppressArtefactFocusRef?.current) {
       queueMicrotask(() => {
@@ -279,7 +295,7 @@ const EditablePaper = ({
         onChangeText={handleChangeText}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        editable={editable}
+        editable={editable && !scribbleActive}
         multiline
         // The outer ScrollView (in CreatePaperScreen) scrolls the sheet above
         // the keyboard; the input itself never scrolls (its content is clamped
@@ -296,6 +312,8 @@ const EditablePaper = ({
         className="h-full w-full p-6 font-paper text-base text-primary"
         style={styles.input}
       />
+      {scribbleCanvas == null && inkOverlayUri ? <InkOverlay uri={inkOverlayUri} /> : null}
+      {scribbleCanvas}
     </Animated.View>
   );
 };

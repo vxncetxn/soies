@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["uniwind-types.d.ts", ".cursor", "docs"],
+  "ignorePatterns": ["uniwind-types.d.ts", ".cursor", "docs", "vendor"],
   "sortImports": {
     "groups": [
       "type-import",

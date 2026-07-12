@@ -1,4 +1,4 @@
-import type { Ref, RefObject } from "react";
+import type { ReactNode, Ref, RefObject } from "react";
 
 /**
  * EditablePrint — polaroid Print artefact for Create Print.
@@ -18,7 +18,7 @@ import type { Ref, RefObject } from "react";
  * on-screen gutter even when pin math said the gap was ~0.
  */
 import { Image } from "expo-image";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutChangeEvent,
   NativeSyntheticEvent,
@@ -35,6 +35,7 @@ import Animated, {
   type SharedValue,
   interpolate,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,6 +43,7 @@ import { withUniwind } from "uniwind";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
+import InkOverlay from "./InkOverlay";
 
 const StyledImage = withUniwind(Image);
 
@@ -80,6 +82,11 @@ type EditablePrintProps = {
   suppressArtefactFocusRef?: RefObject<boolean>;
   /** Locked while the entry is saving. */
   editable?: boolean;
+  /** Committed Ink fallback for pager pages that do not own the live canvas. */
+  inkOverlayUri?: string | null;
+  scribbleActive?: boolean;
+  /** Mounted pager page's native canvas; it persists across Default and Scribble. */
+  scribbleCanvas?: ReactNode;
 };
 
 const EditablePrint = ({
@@ -91,6 +98,9 @@ const EditablePrint = ({
   keepExpandedOnBlurRef,
   suppressArtefactFocusRef,
   editable = true,
+  inkOverlayUri = null,
+  scribbleActive = false,
+  scribbleCanvas = null,
 }: EditablePrintProps) => {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -163,6 +173,12 @@ const EditablePrint = ({
   };
 
   const handleFocus = () => {
+    if (scribbleActive) {
+      queueMicrotask(() => {
+        localInputRef.current?.blur();
+      });
+      return;
+    }
     if (suppressArtefactFocusRef?.current) {
       queueMicrotask(() => {
         localInputRef.current?.blur();
@@ -180,15 +196,24 @@ const EditablePrint = ({
   };
 
   const focusCaption = () => {
-    if (!editable) {
+    if (!editable || scribbleActive) {
       return;
     }
     localInputRef.current?.focus();
   };
 
-  // Pin every page from expandProgress so Prev/Next keeps cards aligned while
-  // scrolling (gating on active index dropped the outgoing print mid-transition).
+  // One animated style for both modes — switching between two useAnimatedStyle
+  // results left Type-mode translateY stuck on the native view.
+  const scribbleModeSV = useSharedValue(scribbleActive ? 1 : 0);
+
+  useEffect(() => {
+    scribbleModeSV.set(scribbleActive ? 1 : 0);
+  }, [scribbleActive, scribbleModeSV]);
+
   const pinStyle = useAnimatedStyle(() => {
+    if (scribbleModeSV.get() === 1) {
+      return { transform: [{ translateY: 0 }] };
+    }
     const p = expandProgress.get();
     const scale = interpolate(p, [0, 1], [1, expandedScale]);
     const keyboardOpen = Math.max(0, -keyboardHeight.get());
@@ -198,10 +223,7 @@ const EditablePrint = ({
     const targetBottom = windowHeight - keyboardOpen - PRINT_BOTTOM_GUTTER;
     const pinTranslate = targetBottom - visualBottom;
     const translateY = interpolate(p, [0, 1], [0, pinTranslate], "clamp");
-
-    return {
-      transform: [{ translateY }],
-    };
+    return { transform: [{ translateY }] };
   });
 
   const scaleStyle = useAnimatedStyle(() => ({
@@ -255,7 +277,7 @@ const EditablePrint = ({
               onChangeText={handleChangeText}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              editable={editable}
+              editable={editable && !scribbleActive}
               multiline
               scrollEnabled={false}
               placeholder="TAP TO START TYPING"
@@ -267,6 +289,8 @@ const EditablePrint = ({
             />
           </View>
         </Pressable>
+        {scribbleCanvas == null && inkOverlayUri ? <InkOverlay uri={inkOverlayUri} /> : null}
+        {scribbleCanvas}
       </Animated.View>
     </Animated.View>
   );

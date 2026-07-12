@@ -35,3 +35,15 @@ _Avoid_: Hard delete, purge
 **Undo**:
 Reversing a tombstone by clearing `deleted_at` before the undo window closes.
 _Avoid_: Restore, revert
+
+**Type**:
+Expanded create mode for editing artefact text (keyboard focus blooms the card).
+_Avoid_: Edit mode, focus mode
+
+**Scribble**:
+Expanded create mode for drawing Ink on the current artefact.
+_Avoid_: Annotate mode, draw mode, drawing tools
+
+**Ink**:
+Durable strokes plus a display overlay belonging to one artefact.
+_Avoid_: Annotation (UI sense), scribble (for the data), drawing
