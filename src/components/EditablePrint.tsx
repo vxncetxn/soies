@@ -34,6 +34,7 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, {
   type SharedValue,
   interpolate,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -172,6 +173,23 @@ const EditablePrint = ({
     onChangeText(next);
   };
 
+  // Pin translate lives on the UI thread. Shared values must be declared before
+  // focus/blur handlers so closures always bind the same instances.
+  const scribbleModeSV = useSharedValue(scribbleActive ? 1 : 0);
+  const pinY = useSharedValue(0);
+  /** 1 = collapsing: ignore live keyboard pin; pinY springs to 0. */
+  const isCollapsingSV = useSharedValue(0);
+
+  const beginCollapsePin = () => {
+    "worklet";
+    if (isCollapsingSV.get() === 1) {
+      return;
+    }
+    isCollapsingSV.set(1);
+    // Spring from the current (pre-jump) pinY — do not recompute against kb=0.
+    pinY.set(withSpring(0, SPRING_CONFIG));
+  };
+
   const handleFocus = () => {
     if (scribbleActive) {
       queueMicrotask(() => {
@@ -185,6 +203,7 @@ const EditablePrint = ({
       });
       return;
     }
+    isCollapsingSV.set(0);
     expandProgress.set(withSpring(1, SPRING_CONFIG));
   };
 
@@ -192,6 +211,10 @@ const EditablePrint = ({
     if (keepExpandedOnBlurRef?.current) {
       return;
     }
+    // JS blur is often AFTER keyboardHeight already hit 0 on the UI thread.
+    // beginCollapsePin is also triggered from the pin reaction on kb drop.
+    isCollapsingSV.set(1);
+    pinY.set(withSpring(0, SPRING_CONFIG));
     expandProgress.set(withSpring(0, SPRING_CONFIG));
   };
 
@@ -202,28 +225,73 @@ const EditablePrint = ({
     localInputRef.current?.focus();
   };
 
-  // One animated style for both modes — switching between two useAnimatedStyle
-  // results left Type-mode translateY stuck on the native view.
-  const scribbleModeSV = useSharedValue(scribbleActive ? 1 : 0);
-
   useEffect(() => {
     scribbleModeSV.set(scribbleActive ? 1 : 0);
-  }, [scribbleActive, scribbleModeSV]);
+    if (scribbleActive) {
+      isCollapsingSV.set(0);
+      pinY.set(0);
+    }
+  }, [scribbleActive, scribbleModeSV, isCollapsingSV, pinY]);
+
+  // Drive pinY. Keyboard dismiss often lands on the UI thread before JS blur,
+  // so detect kb drop here and freeze/spring before live pin can jump.
+  useAnimatedReaction(
+    () => {
+      const p = expandProgress.get();
+      const keyboardOpen = Math.max(0, -keyboardHeight.get());
+      const scribble = scribbleModeSV.get() === 1;
+      const collapsing = isCollapsingSV.get() === 1;
+      const scale = interpolate(p, [0, 1], [1, expandedScale]);
+      const headerContent = interpolate(p, [0, 1], [CREATE_HEADER_HEIGHT, EXPANDED_HEADER_HEIGHT]);
+      const contentTop = topPad + headerContent;
+      const visualBottom = contentTop + BASE_HEIGHT * scale;
+      const targetBottom = windowHeight - keyboardOpen - PRINT_BOTTOM_GUTTER;
+      const livePin = targetBottom - visualBottom;
+      return { p, keyboardOpen, scribble, collapsing, livePin };
+    },
+    (curr, prev) => {
+      "worklet";
+      if (curr.scribble) {
+        pinY.set(0);
+        return;
+      }
+
+      const kbClosing =
+        prev != null && curr.p > 0.25 && prev.keyboardOpen - curr.keyboardOpen > 30;
+      const progressCollapsing =
+        prev != null && curr.p < prev.p - 0.01 && prev.p > 0.4 && !curr.collapsing;
+
+      if (kbClosing || progressCollapsing) {
+        beginCollapsePin();
+        return;
+      }
+
+      if (curr.collapsing || isCollapsingSV.get() === 1) {
+        if (curr.p < 0.01 && curr.keyboardOpen < 1) {
+          isCollapsingSV.set(0);
+          pinY.set(0);
+        }
+        return;
+      }
+
+      // Live pin only while the keyboard is open. With kb=0, livePin is a large
+      // positive rest-slot offset; applying it at residual p (~0.01) after the
+      // collapsing flag clears jumps pinY from 0 → ~2px (end-of-collapse dip).
+      if (curr.keyboardOpen < 1) {
+        pinY.set(0);
+        return;
+      }
+
+      pinY.set(interpolate(curr.p, [0, 1], [0, curr.livePin], "clamp"));
+    },
+    [expandedScale, BASE_HEIGHT, topPad, windowHeight],
+  );
 
   const pinStyle = useAnimatedStyle(() => {
     if (scribbleModeSV.get() === 1) {
       return { transform: [{ translateY: 0 }] };
     }
-    const p = expandProgress.get();
-    const scale = interpolate(p, [0, 1], [1, expandedScale]);
-    const keyboardOpen = Math.max(0, -keyboardHeight.get());
-    const headerContent = interpolate(p, [0, 1], [CREATE_HEADER_HEIGHT, EXPANDED_HEADER_HEIGHT]);
-    const contentTop = topPad + headerContent;
-    const visualBottom = contentTop + BASE_HEIGHT * scale;
-    const targetBottom = windowHeight - keyboardOpen - PRINT_BOTTOM_GUTTER;
-    const pinTranslate = targetBottom - visualBottom;
-    const translateY = interpolate(p, [0, 1], [0, pinTranslate], "clamp");
-    return { transform: [{ translateY }] };
+    return { transform: [{ translateY: pinY.get() }] };
   });
 
   const scaleStyle = useAnimatedStyle(() => ({
