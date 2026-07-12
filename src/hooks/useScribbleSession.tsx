@@ -187,8 +187,16 @@ export function useScribbleSession<T extends DraftWithInk>(options: {
       return;
     }
     // Discard uncommitted session strokes; last Save is already on the draft.
-    activeInkCanvas()?.loadDocument(artefacts[activeIndex]?.ink?.document ?? null);
+    const ink = artefacts[activeIndex]?.ink ?? null;
+    const canvas = activeInkCanvas();
+    const document = ink?.document ?? null;
+    // Exit first so Default shows the committed overlay and hides the live
+    // canvas (opacity 0). Remount PencilKit only after that paint — otherwise
+    // replaceStrokeData flickers every remaining stroke.
     onBackFromScribble();
+    requestAnimationFrame(() => {
+      canvas?.loadDocument(document);
+    });
   }, [activeInkCanvas, activeIndex, artefacts, onBackFromScribble, scribbleSaving]);
 
   const size = INK_STROKE_SIZES[inkSizeKey];

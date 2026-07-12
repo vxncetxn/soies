@@ -39,7 +39,12 @@ export type ArtefactInkCanvasHandle = {
    * Rejects on native failure — caller must keep Scribble open and offer Retry.
    */
   commit: () => Promise<{ document: InkDocument; overlayUri: string }>;
-  /** Replace canvas with committed strokes (clears undo stack; non-undoable). */
+  /**
+   * Restore committed strokes (clears undo). Skips native remount when the
+   * session is clean — `replaceStrokeData` rebuilds the PencilKit canvas and
+   * flickers every stroke. Dirty discards remount only after Default mode has
+   * hidden this canvas behind the committed InkOverlay.
+   */
   loadDocument: (document: InkDocument | null) => void;
   /** Clear undo/redo after a successful Save without changing pixels. */
   clearHistory: () => void;
@@ -96,9 +101,20 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
     const initialDocumentRef = useRef(initialDocument);
     const canvasSizeRef = useRef<InkCanvasSize | null>(null);
     const commitGenerationRef = useRef(0);
+    /** True after the user changes strokes since the last commit/load. */
+    const dirtyRef = useRef(false);
+    /** Ignore onChange from programmatic replaceStrokeData. */
+    const suppressDirtyRef = useRef(false);
     const [committing, setCommitting] = useState(false);
     const isEraser = tool === "eraser";
     const inputEnabled = enabled && !locked && !committing;
+
+    const replaceStrokesQuietly = (strokes: StrokeData) => {
+      suppressDirtyRef.current = true;
+      inkRef.current?.replaceStrokeData(strokes);
+      dirtyRef.current = false;
+      suppressDirtyRef.current = false;
+    };
 
     useEffect(() => {
       mountedRef.current = true;
@@ -168,6 +184,7 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
                   throw new Error("Ink overlay could not be prepared for display.");
                 }
                 ink.clearHistory();
+                dirtyRef.current = false;
                 return {
                   document: {
                     version: 2 as const,
@@ -201,7 +218,13 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
       loadDocument: (document) => {
         const targetSize = canvasSizeRef.current;
         const strokes = document && targetSize ? strokeDataForCanvas(document, targetSize) : [];
-        inkRef.current?.replaceStrokeData(strokes as StrokeData);
+        if (!dirtyRef.current) {
+          // Match Save: keep pixels, drop session undo only.
+          inkRef.current?.clearHistory();
+          return;
+        }
+        // Caller exits Scribble first so this remount runs under opacity 0 + overlay.
+        replaceStrokesQuietly(strokes as StrokeData);
       },
       isEmpty: () => {
         const ink = inkRef.current;
@@ -246,9 +269,7 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
       loadedRef.current = true;
       const doc = initialDocumentRef.current;
       if (doc && doc.strokes.length > 0) {
-        inkRef.current?.replaceStrokeData(
-          strokeDataForCanvas(doc, { width, height }) as StrokeData,
-        );
+        replaceStrokesQuietly(strokeDataForCanvas(doc, { width, height }) as StrokeData);
       }
     };
 
@@ -260,13 +281,18 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
       >
         <SignatureInk
           ref={inkRef}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, enabled ? null : styles.hiddenInk]}
           showToolbar={false}
           showBaseline={false}
           backgroundColor="transparent"
           penColor={penColor}
           penMinWidth={penMinWidth}
           penMaxWidth={penMaxWidth}
+          onChange={() => {
+            if (!suppressDirtyRef.current) {
+              dirtyRef.current = true;
+            }
+          }}
         />
         {isEraser ? (
           <View
@@ -284,5 +310,12 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
     );
   },
 );
+
+const styles = StyleSheet.create({
+  /** Default mode: live canvas stays mounted but hidden under InkOverlay. */
+  hiddenInk: {
+    opacity: 0,
+  },
+});
 
 export default ArtefactInkCanvas;

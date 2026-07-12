@@ -357,7 +357,7 @@ const EditablePrint = ({
             />
           </View>
         </Pressable>
-        {scribbleCanvas == null && inkOverlayUri ? <InkOverlay uri={inkOverlayUri} /> : null}
+        {inkOverlayUri && !scribbleActive ? <InkOverlay uri={inkOverlayUri} /> : null}
         {scribbleCanvas}
       </Animated.View>
     </Animated.View>

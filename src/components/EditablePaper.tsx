@@ -312,7 +312,7 @@ const EditablePaper = ({
         className="h-full w-full p-6 font-paper text-base text-primary"
         style={styles.input}
       />
-      {scribbleCanvas == null && inkOverlayUri ? <InkOverlay uri={inkOverlayUri} /> : null}
+      {inkOverlayUri && !scribbleActive ? <InkOverlay uri={inkOverlayUri} /> : null}
       {scribbleCanvas}
     </Animated.View>
   );
