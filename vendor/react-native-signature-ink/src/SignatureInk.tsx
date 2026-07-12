@@ -1,7 +1,7 @@
 // High-level wrapper around the codegen-generated `SignatureInkView`.
 // Owns the request-id ⇄ Promise back-channel for async commands
 // (`toBase64`, `toFile`, `toSvg`, `isEmpty`, `getStrokeData`,
-// `saveToPhotoLibrary`) and re-shapes native events into the public
+// `saveToPhotoLibrary`, `snapshot`) and re-shapes native events into the public
 // `Signature*Event` types declared in `./types`.
 import * as React from 'react';
 import { findNodeHandle, processColor } from 'react-native';
@@ -186,6 +186,57 @@ export const SignatureInk = React.forwardRef<
         const node = nativeRef.current;
         if (node) Commands.setStrokeData(node, JSON.stringify(data));
       },
+      replaceStrokeData: (data: StrokeData) => {
+        const node = nativeRef.current;
+        if (node) Commands.replaceStrokeData(node, JSON.stringify(data));
+      },
+      beginEraseGesture: () => {
+        const node = nativeRef.current;
+        if (node) Commands.beginEraseGesture(node);
+      },
+      eraseStrokeNear: (x: number, y: number, radius: number) => {
+        const node = nativeRef.current;
+        if (node) Commands.eraseStrokeNear(node, x, y, radius);
+      },
+      endEraseGesture: () => {
+        const node = nativeRef.current;
+        if (node) Commands.endEraseGesture(node);
+      },
+      clearHistory: () => {
+        const node = nativeRef.current;
+        if (node) Commands.clearHistory(node);
+      },
+      snapshot: (options?: ExportImageOptions) =>
+        send<{
+          strokes: StrokeData;
+          fileUri: string;
+          canvasWidth: number;
+          canvasHeight: number;
+        }>(
+          'snapshot',
+          (id) =>
+            Commands.snapshot(
+              nativeRef.current!,
+              id,
+              options?.format ?? 'png',
+              options?.quality ?? 1,
+              options?.trim ?? false
+            ),
+          (raw) => {
+            const parsed = parseMaybeJson<{
+              strokes?: StrokeData;
+              fileUri?: string;
+              canvasWidth?: number;
+              canvasHeight?: number;
+            }>(raw, {});
+            return {
+              strokes: parsed.strokes ?? [],
+              fileUri: parsed.fileUri ?? '',
+              canvasWidth: parsed.canvasWidth ?? 0,
+              canvasHeight: parsed.canvasHeight ?? 0,
+            };
+          }
+        ),
       isEmpty: () =>
         send<boolean>(
           'isEmpty',

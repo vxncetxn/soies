@@ -33,7 +33,8 @@ export async function savePrintEntry(params: {
   }
 
   // Copy media before the DB transaction so a failed copy doesn't leave a
-  // half-written entry. Track paths so any later failure can delete orphans.
+  // half-written entry. Register each side effect in `prepared` immediately
+  // so catch cleanup can always see the current artefact's files.
   const prepared: {
     id: string;
     text: string;
@@ -45,12 +46,19 @@ export async function savePrintEntry(params: {
       const id = randomUUID();
       const ext = extensionFromUri(artefact.imageUri);
       const imagePath = await saveMediaFile(artefact.imageUri, id, ext);
-      let annotations: string | null = null;
+      // Own the photo before the optional overlay copy so a later failure
+      // still cleans it up.
+      prepared.push({ id, text: artefact.text, imagePath, annotations: null });
       if (artefact.ink && artefact.ink.document.strokes.length > 0) {
-        annotations = serializeAnnotations(artefact.ink.document);
+        const annotations = serializeAnnotations(artefact.ink.document);
         await saveInkOverlayFile(artefact.ink.overlayUri, id);
+        prepared[prepared.length - 1] = {
+          id,
+          text: artefact.text,
+          imagePath,
+          annotations,
+        };
       }
-      prepared.push({ id, text: artefact.text, imagePath, annotations });
     }
 
     await persistNewEntry({

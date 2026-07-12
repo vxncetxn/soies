@@ -1,4 +1,5 @@
 import type { Artefact } from "../../data/entries";
+import type { InkDocument } from "../../data/ink";
 
 import { parseAnnotations } from "../../data/ink";
 import { inkOverlayUriForArtefact } from "../../storage/files";
@@ -19,7 +20,7 @@ export type ArtefactRow = {
   type: string;
   sort_order: number;
   data: string;
-  annotations: string | null;
+  has_ink: number;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -37,13 +38,15 @@ export type InsertArtefactInput = {
   updatedAt: number;
 };
 
-function inkFieldsFromAnnotations(artefactId: string, annotations: string | null) {
-  const document = parseAnnotations(annotations);
-  if (!document) {
+/**
+ * Display mapping: only project overlay URI when Ink exists.
+ * Full stroke JSON is loaded via {@link getArtefactInkDocument} when opening Scribble.
+ */
+function inkDisplayFields(artefactId: string, hasInk: number) {
+  if (hasInk !== 1) {
     return {};
   }
   return {
-    ink: document,
     inkOverlayPath: inkOverlayUriForArtefact(artefactId),
   };
 }
@@ -54,7 +57,7 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
       const parsed = JSON.parse(row.data) as { text?: string };
       return {
         text: parsed.text ?? "",
-        ...inkFieldsFromAnnotations(row.id, row.annotations),
+        ...inkDisplayFields(row.id, row.has_ink),
       };
     } catch {
       return { text: "" };
@@ -67,7 +70,7 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
       return {
         text: parsed.text ?? "",
         imagePath: parsed.imagePath ?? "",
-        ...inkFieldsFromAnnotations(row.id, row.annotations),
+        ...inkDisplayFields(row.id, row.has_ink),
       };
     } catch {
       return { text: "", imagePath: "" };
@@ -137,6 +140,36 @@ export async function updateArtefactData(
   });
 }
 
+/**
+ * Durable Ink update seam (ADR-0008): replace annotations JSON for an existing
+ * artefact. Pass null to clear Ink. Caller owns overlay file copy/delete.
+ */
+export async function updateArtefactAnnotations(
+  artefactId: string,
+  annotations: string | null,
+  updatedAt: number,
+  tx?: DbExecutor,
+): Promise<void> {
+  await withTransaction(tx, async (db) => {
+    await db.execute("UPDATE artefacts SET annotations = ?, updated_at = ? WHERE id = ?", [
+      annotations,
+      updatedAt,
+      artefactId,
+    ]);
+  });
+}
+
+/** Load parsed Ink strokes only when an editable canvas needs them. */
+export async function getArtefactInkDocument(
+  artefactId: string,
+  tx?: DbExecutor,
+): Promise<InkDocument | null> {
+  const db = tx ?? (await getDatabase());
+  const result = await db.execute("SELECT annotations FROM artefacts WHERE id = ?", [artefactId]);
+  const row = result.rows[0] as { annotations?: string | null } | undefined;
+  return parseAnnotations(row?.annotations ?? null);
+}
+
 export async function softDeleteArtefact(
   artefactId: string,
   deletedAt: number,
@@ -190,7 +223,9 @@ export async function restoreArtefact(
 export async function getArtefactsForEntry(entryId: string): Promise<ArtefactRow[]> {
   const db = await getDatabase();
   const result = await db.execute(
-    `SELECT id, entry_id, type, sort_order, data, annotations, created_at, updated_at, deleted_at
+    `SELECT id, entry_id, type, sort_order, data,
+            CASE WHEN annotations IS NULL OR annotations = '' THEN 0 ELSE 1 END AS has_ink,
+            created_at, updated_at, deleted_at
      FROM artefacts
      WHERE entry_id = ? AND deleted_at IS NULL
      ORDER BY sort_order`,
@@ -217,7 +252,9 @@ export async function getArtefactsForEntries(
   const db = tx ?? (await getDatabase());
   const placeholders = entryIds.map(() => "?").join(", ");
   const result = await db.execute(
-    `SELECT id, entry_id, type, sort_order, data, annotations, created_at, updated_at, deleted_at
+    `SELECT id, entry_id, type, sort_order, data,
+            CASE WHEN annotations IS NULL OR annotations = '' THEN 0 ELSE 1 END AS has_ink,
+            created_at, updated_at, deleted_at
      FROM artefacts
      WHERE entry_id IN (${placeholders}) AND deleted_at IS NULL
      ORDER BY entry_id, sort_order`,

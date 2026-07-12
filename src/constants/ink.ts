@@ -18,5 +18,5 @@ export const INK_COLORS = [
 
 export type InkTool = "pen" | "eraser";
 
-/** Hit radius (dp) for JS stroke eraser. */
+/** Responder coordinates and native hit-testing both use points/dp. */
 export const INK_ERASER_HIT_RADIUS = 28;

@@ -14,6 +14,8 @@ import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.AttributeSet
 import android.util.Base64
@@ -31,6 +33,8 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
+import java.util.concurrent.Executors
 import kotlin.math.max
 
 /**
@@ -46,7 +50,7 @@ internal class SignatureCanvasView @JvmOverloads constructor(
   // MARK: - Props
 
   var penColor: Int = Color.parseColor("#111111")
-    set(value) { field = value; paint.color = value; rebuildBitmap() }
+    set(value) { field = value; paint.color = value }
 
   // Pen widths are stored in dp (matching iOS points and the JS prop).
   // Every site that hands them to a raw-pixel API (`Paint.strokeWidth`,
@@ -182,7 +186,21 @@ internal class SignatureCanvasView @JvmOverloads constructor(
   private val bezier = Bezier()
 
   private val strokes: MutableList<Stroke> = mutableListOf()
-  private val undoneStrokes: ArrayDeque<Stroke> = ArrayDeque()
+  /**
+   * A single chronological history keeps Pen and Eraser undo/redo ordering
+   * correct. Both action types retain only the immutable strokes they changed;
+   * repeated eraser drags do not copy the complete document into history.
+   */
+  private data class RemovedStroke(val index: Int, val stroke: Stroke)
+
+  private sealed interface HistoryAction {
+    data class AddedStroke(val stroke: Stroke) : HistoryAction
+    data class Erased(val removed: List<RemovedStroke>) : HistoryAction
+  }
+  private val undoHistory: ArrayDeque<HistoryAction> = ArrayDeque()
+  private val redoHistory: ArrayDeque<HistoryAction> = ArrayDeque()
+  /** Non-null while an eraser drag owns a transaction, even before its first hit. */
+  private var eraseGestureRemoved: MutableList<RemovedStroke>? = null
 
   private var currentStroke: Stroke? = null
   private val activePoints: ArrayDeque<TimedPoint> = ArrayDeque()
@@ -203,8 +221,17 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     resources.displayMetrics,
   )
 
+  /**
+   * raw pixels → dp. Used when serializing stroke coordinates onto the
+   * JS wire so they match React Native's density-independent responder
+   * coords (and iOS points).
+   */
+  private fun pxToDp(px: Float): Float = px / resources.displayMetrics.density
+
   private var inkBitmap: Bitmap? = null
   private var inkCanvas: Canvas? = null
+  private val mainHandler = Handler(Looper.getMainLooper())
+  @Volatile private var released: Boolean = false
 
   // Replay state
   private var replayFrameCallback: Choreographer.FrameCallback? = null
@@ -221,9 +248,17 @@ internal class SignatureCanvasView @JvmOverloads constructor(
 
   private fun rebuildBitmap() {
     if (width <= 0 || height <= 0) return
+    val previous = inkBitmap
     inkBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     inkCanvas = Canvas(inkBitmap!!)
     inkCanvas?.drawColor(inkBackgroundColor)
+    if (previous != null && previous !== inkBitmap) {
+      try {
+        previous.recycle()
+      } catch (_: Throwable) {
+        // Already recycled or native teardown raced us — ignore.
+      }
+    }
     repaintAllStrokes()
   }
 
@@ -245,7 +280,7 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     if (pts.size < 2) {
       if (pts.size == 1) {
         val p = pts[0]
-        val r = dpToPx((stroke.minWidth + stroke.maxWidth) / 2f)
+        val r = dpToPx(p.sizeDp ?: (stroke.minWidth + stroke.maxWidth) / 2f)
         paint.style = Paint.Style.FILL
         canvas.drawCircle(p.x, p.y, r / 2f, paint)
         paint.style = Paint.Style.STROKE
@@ -353,8 +388,8 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     activePoints.clear()
     lastVelocity = 0f
     lastWidth = (penMinWidth + penMaxWidth) / 2f
-    stroke.points.add(TimedPoint(x, y, t))
-    activePoints.add(TimedPoint(x, y, t))
+    stroke.points.add(TimedPoint(x, y, t, lastWidth))
+    activePoints.add(TimedPoint(x, y, t, lastWidth))
     onBegin?.invoke()
     invalidate()
   }
@@ -381,7 +416,7 @@ internal class SignatureCanvasView @JvmOverloads constructor(
         // stroke is visible (the Bezier path needs >= 4 points).
         val p = stroke.points[0]
         paint.color = stroke.color
-        val r = dpToPx((stroke.minWidth + stroke.maxWidth) / 4f)
+        val r = dpToPx(p.sizeDp ?: (stroke.minWidth + stroke.maxWidth) / 2f) / 2f
         val savedStyle = paint.style
         paint.style = Paint.Style.FILL
         canvas.drawCircle(p.x, p.y, r, paint)
@@ -392,7 +427,8 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     }
     if (stroke.points.isNotEmpty()) {
       strokes.add(stroke)
-      undoneStrokes.clear()
+      undoHistory.addLast(HistoryAction.AddedStroke(stroke))
+      redoHistory.clear()
       emitChange()
     }
     currentStroke = null
@@ -417,8 +453,11 @@ internal class SignatureCanvasView @JvmOverloads constructor(
       paint.color = paintColor
       val p0 = activePoints[0]
       val p1 = activePoints[1]
+      val widthDp = p1.sizeDp ?: p0.sizeDp ?: (penMinWidth + penMaxWidth) / 2f
+      p0.sizeDp = p0.sizeDp ?: widthDp
+      p1.sizeDp = p1.sizeDp ?: widthDp
       val savedWidth = paint.strokeWidth
-      paint.strokeWidth = dpToPx((penMinWidth + penMaxWidth) / 2f)
+      paint.strokeWidth = dpToPx(widthDp)
       drawTo.drawLine(p0.x, p0.y, p1.x, p1.y, paint)
       paint.strokeWidth = savedWidth
     }
@@ -437,13 +476,17 @@ internal class SignatureCanvasView @JvmOverloads constructor(
       val velocity = endPoint.velocityFrom(startPoint)
       val filtered = velocityFilterWeight * velocity +
         (1 - velocityFilterWeight) * lastVelocity
-      val newWidth = strokeWidth(filtered)
+      val computedWidth = strokeWidth(filtered)
+      val startWidth = startPoint.sizeDp ?: lastWidth
+      val endWidth = endPoint.sizeDp ?: computedWidth
+      startPoint.sizeDp = startWidth
+      endPoint.sizeDp = endWidth
       bezier.set(startPoint, first.c2, second.c1, endPoint)
       // `bezier.draw` writes its `startWidth`/`endWidth` arguments directly
       // into `paint.strokeWidth`, so they must be in raw pixels.
-      bezier.draw(drawTo, paint, dpToPx(lastWidth), dpToPx(newWidth))
+      bezier.draw(drawTo, paint, dpToPx(startWidth), dpToPx(endWidth))
       lastVelocity = filtered
-      lastWidth = newWidth
+      lastWidth = endWidth
     }
   }
 
@@ -457,8 +500,11 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     paint.color = paintColor
     val a = activePoints[activePoints.size - 2]
     val b = activePoints[activePoints.size - 1]
+    val widthDp = b.sizeDp ?: a.sizeDp ?: (penMinWidth + penMaxWidth) / 2f
+    a.sizeDp = a.sizeDp ?: widthDp
+    b.sizeDp = b.sizeDp ?: widthDp
     val savedWidth = paint.strokeWidth
-    paint.strokeWidth = dpToPx((penMinWidth + penMaxWidth) / 2f)
+    paint.strokeWidth = dpToPx(widthDp)
     drawTo.drawLine(a.x, a.y, b.x, b.y, paint)
     paint.strokeWidth = savedWidth
   }
@@ -472,25 +518,55 @@ internal class SignatureCanvasView @JvmOverloads constructor(
   fun clear() {
     cancelReplay()
     strokes.clear()
-    undoneStrokes.clear()
+    undoHistory.clear()
+    redoHistory.clear()
+    eraseGestureRemoved = null
     repaintAllStrokes()
     emitChange()
   }
 
   fun undo() {
     cancelReplay()
-    if (strokes.isEmpty()) return
-    undoneStrokes.addLast(strokes.removeAt(strokes.lastIndex))
+    if (undoHistory.isEmpty()) return
+    val action = undoHistory.removeLast()
+    when (action) {
+      is HistoryAction.AddedStroke -> {
+        if (strokes.isNotEmpty()) strokes.removeAt(strokes.lastIndex)
+      }
+      is HistoryAction.Erased -> {
+        for (removed in action.removed.asReversed()) {
+          strokes.add(removed.index.coerceIn(0, strokes.size), removed.stroke)
+        }
+      }
+    }
+    redoHistory.addLast(action)
     repaintAllStrokes()
     emitChange()
   }
 
   fun redo() {
     cancelReplay()
-    if (undoneStrokes.isEmpty()) return
-    strokes.add(undoneStrokes.removeLast())
+    if (redoHistory.isEmpty()) return
+    val action = redoHistory.removeLast()
+    when (action) {
+      is HistoryAction.AddedStroke -> strokes.add(action.stroke)
+      is HistoryAction.Erased -> {
+        for (removed in action.removed) {
+          if (removed.index in strokes.indices) {
+            strokes.removeAt(removed.index)
+          }
+        }
+      }
+    }
+    undoHistory.addLast(action)
     repaintAllStrokes()
     emitChange()
+  }
+
+  fun clearHistory() {
+    undoHistory.clear()
+    redoHistory.clear()
+    eraseGestureRemoved = null
   }
 
   fun isEmpty(): Boolean = strokes.isEmpty()
@@ -505,32 +581,46 @@ internal class SignatureCanvasView @JvmOverloads constructor(
    */
   fun copyToClipboard() {
     val bmp = renderToBitmap(trim = true, opaque = false) ?: return
-    val cachePath = File(context.cacheDir, "signature-clipboard.png")
-    FileOutputStream(cachePath).use { out ->
-      bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+    try {
+      val cachePath = File(context.cacheDir, "signature-clipboard.png")
+      FileOutputStream(cachePath).use { out ->
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+      }
+      val authority = "${context.packageName}.signatureinkprovider"
+      val uri: Uri = FileProvider.getUriForFile(context.applicationContext, authority, cachePath)
+      val clip = ClipData.newUri(context.contentResolver, "signature", uri)
+      val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+      cm.setPrimaryClip(clip)
+      // Grant transient read access so the system clipboard preview (Android 13+)
+      // can render a thumbnail of the signature.
+      context.grantUriPermission(
+        "com.android.systemui",
+        uri,
+        Intent.FLAG_GRANT_READ_URI_PERMISSION
+      )
+    } finally {
+      try {
+        bmp.recycle()
+      } catch (_: Throwable) {
+      }
     }
-    val authority = "${context.packageName}.signatureinkprovider"
-    val uri: Uri = FileProvider.getUriForFile(context.applicationContext, authority, cachePath)
-    val clip = ClipData.newUri(context.contentResolver, "signature", uri)
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(clip)
-    // Grant transient read access so the system clipboard preview (Android 13+)
-    // can render a thumbnail of the signature.
-    context.grantUriPermission(
-      "com.android.systemui",
-      uri,
-      Intent.FLAG_GRANT_READ_URI_PERMISSION
-    )
   }
 
   fun toBase64(format: String, quality: Float, trim: Boolean): String? {
     val opaque = format.equals("jpeg", true) || format.equals("jpg", true)
     val bmp = renderToBitmap(trim = trim, opaque = opaque) ?: return null
-    val out = ByteArrayOutputStream()
-    val fmt = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
-    val q = (quality * 100).toInt().coerceIn(0, 100)
-    bmp.compress(fmt, q, out)
-    return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    try {
+      val out = ByteArrayOutputStream()
+      val fmt = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+      val q = (quality * 100).toInt().coerceIn(0, 100)
+      bmp.compress(fmt, q, out)
+      return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    } finally {
+      try {
+        bmp.recycle()
+      } catch (_: Throwable) {
+      }
+    }
   }
 
   /**
@@ -542,55 +632,69 @@ internal class SignatureCanvasView @JvmOverloads constructor(
   fun saveToPhotoLibrary(format: String, quality: Float, trim: Boolean): Uri? {
     val opaque = format.equals("jpeg", true) || format.equals("jpg", true)
     val bmp = renderToBitmap(trim = trim, opaque = opaque) ?: return null
-    val mime = if (opaque) "image/jpeg" else "image/png"
-    val ext = if (opaque) "jpg" else "png"
-    val name = "signature-${System.currentTimeMillis()}.$ext"
-    val fmt = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
-    val q = (quality * 100).toInt().coerceIn(0, 100)
+    try {
+      val mime = if (opaque) "image/jpeg" else "image/png"
+      val ext = if (opaque) "jpg" else "png"
+      val name = "signature-${System.currentTimeMillis()}.$ext"
+      val fmt = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+      val q = (quality * 100).toInt().coerceIn(0, 100)
 
-    val resolver = context.contentResolver
-    val values = ContentValues().apply {
-      put(MediaStore.Images.Media.DISPLAY_NAME, name)
-      put(MediaStore.Images.Media.MIME_TYPE, mime)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        put(
-          MediaStore.Images.Media.RELATIVE_PATH,
-          "${Environment.DIRECTORY_PICTURES}/Signatures",
-        )
-        put(MediaStore.Images.Media.IS_PENDING, 1)
+      val resolver = context.contentResolver
+      val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, name)
+        put(MediaStore.Images.Media.MIME_TYPE, mime)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          put(
+            MediaStore.Images.Media.RELATIVE_PATH,
+            "${Environment.DIRECTORY_PICTURES}/Signatures",
+          )
+          put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
       }
-    }
-    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-      ?: return null
-    return try {
-      resolver.openOutputStream(uri)?.use { out ->
-        bmp.compress(fmt, q, out)
-      } ?: return null
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        values.clear()
-        values.put(MediaStore.Images.Media.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
+      val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        ?: return null
+      return try {
+        resolver.openOutputStream(uri)?.use { out ->
+          bmp.compress(fmt, q, out)
+        } ?: return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          values.clear()
+          values.put(MediaStore.Images.Media.IS_PENDING, 0)
+          resolver.update(uri, values, null, null)
+        }
+        uri
+      } catch (t: Throwable) {
+        // Roll back the pending MediaStore entry so we don't leave a
+        // placeholder visible in the user's gallery.
+        runCatching { resolver.delete(uri, null, null) }
+        null
       }
-      uri
-    } catch (t: Throwable) {
-      // Roll back the pending MediaStore entry so we don't leave a
-      // placeholder visible in the user's gallery.
-      runCatching { resolver.delete(uri, null, null) }
-      null
+    } finally {
+      try {
+        bmp.recycle()
+      } catch (_: Throwable) {
+      }
     }
   }
 
   fun toFile(format: String, quality: Float, trim: Boolean): String? {
     val opaque = format.equals("jpeg", true) || format.equals("jpg", true)
     val bmp = renderToBitmap(trim = trim, opaque = opaque) ?: return null
-    val ext = if (opaque) "jpg" else "png"
-    val file = File(context.cacheDir, "signature-${System.currentTimeMillis()}.$ext")
-    FileOutputStream(file).use { out ->
-      val fmt = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
-      val q = (quality * 100).toInt().coerceIn(0, 100)
-      bmp.compress(fmt, q, out)
+    try {
+      val ext = if (opaque) "jpg" else "png"
+      val file = File(context.cacheDir, "signature-${System.currentTimeMillis()}.$ext")
+      FileOutputStream(file).use { out ->
+        val fmt = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+        val q = (quality * 100).toInt().coerceIn(0, 100)
+        bmp.compress(fmt, q, out)
+      }
+      return "file://${file.absolutePath}"
+    } finally {
+      try {
+        bmp.recycle()
+      } catch (_: Throwable) {
+      }
     }
-    return "file://${file.absolutePath}"
   }
 
   fun toSvg(): String {
@@ -606,10 +710,10 @@ internal class SignatureCanvasView @JvmOverloads constructor(
       if (pts.size < 2) {
         if (pts.size == 1) {
           val p = pts[0]
-          // SVG coordinates are in the same space as the point x/y (raw
-          // pixels on Android — they come from `MotionEvent.getX/Y`), so
-          // the radius derived from the dp pen widths must be converted
-          // to pixels too for the dot to render at the intended size.
+          // SVG path coordinates stay in the internal pixel space of
+          // TimedPoint (MotionEvent raw x/y). Wire-format stroke JSON
+          // uses dp via getStrokeData/setStrokeData; SVG does not.
+          // Pen widths are dp, so convert them to pixels for stroke-width.
           sb.append("<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" fill=\"%s\"/>"
             .format(p.x, p.y, dpToPx((stroke.minWidth + stroke.maxWidth) / 4f), colorHex(stroke.color)))
         }
@@ -629,19 +733,26 @@ internal class SignatureCanvasView @JvmOverloads constructor(
   }
 
   fun getStrokeData(): String {
+    return strokeDataJson(strokes, resources.displayMetrics.density)
+  }
+
+  private fun strokeDataJson(source: List<Stroke>, density: Float): String {
     // soies fork: emit per-stroke color/width so multi-color drawings round-trip.
+    // x/y are density-independent (dp) on the wire; internal TimedPoints stay px.
     val root = JSONArray()
-    for (stroke in strokes) {
+    for (stroke in source) {
       val obj = JSONObject()
       obj.put("color", colorHex(stroke.color))
       obj.put("minWidth", stroke.minWidth.toDouble())
       obj.put("maxWidth", stroke.maxWidth.toDouble())
       val arr = JSONArray()
+      val strokeStart = stroke.points.firstOrNull()?.timestamp ?: 0L
       for (p in stroke.points) {
         val o = JSONObject()
-        o.put("x", p.x.toDouble())
-        o.put("y", p.y.toDouble())
-        o.put("t", p.timestamp)
+        o.put("x", (p.x / density).toDouble())
+        o.put("y", (p.y / density).toDouble())
+        o.put("t", (p.timestamp - strokeStart).coerceAtLeast(0L))
+        p.sizeDp?.let { o.put("size", it.toDouble()) }
         arr.put(o)
       }
       obj.put("points", arr)
@@ -654,7 +765,9 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     cancelReplay()
     val root = try { JSONArray(json) } catch (_: Throwable) { return }
     strokes.clear()
-    undoneStrokes.clear()
+    undoHistory.clear()
+    redoHistory.clear()
+    eraseGestureRemoved = null
     for (i in 0 until root.length()) {
       // Accept both legacy StrokePoint[][] and enriched { color, points } objects.
       val pointsArray: JSONArray
@@ -680,15 +793,218 @@ internal class SignatureCanvasView @JvmOverloads constructor(
       }
       for (j in 0 until pointsArray.length()) {
         val o = pointsArray.optJSONObject(j) ?: continue
-        val x = o.optDouble("x", 0.0).toFloat()
-        val y = o.optDouble("y", 0.0).toFloat()
-        val t = o.optLong("t", System.currentTimeMillis())
-        stroke.points.add(TimedPoint(x, y, t))
+        // Incoming wire coords are dp; store TimedPoints in raw pixels.
+        val x = dpToPx(o.optDouble("x", 0.0).toFloat())
+        val y = dpToPx(o.optDouble("y", 0.0).toFloat())
+        val t = o.optLong("t", 0L).coerceAtLeast(0L)
+        val size = if (o.has("size")) o.optDouble("size").toFloat() else null
+        stroke.points.add(TimedPoint(x, y, t, size))
       }
       if (stroke.points.isNotEmpty()) strokes.add(stroke)
     }
     repaintAllStrokes()
     emitChange()
+  }
+
+  /**
+   * Like [setStrokeData] but does not leave any undo/redo history behind
+   * the replacement (setStrokeData already skips push; this also clears
+   * any lingering erase snapshots).
+   */
+  fun replaceStrokeData(json: String) {
+    setStrokeData(json)
+    clearHistory()
+  }
+
+  /** Capture one pre-drag revision so all removals share one undo action. */
+  fun beginEraseGesture() {
+    cancelReplay()
+    if (currentStroke != null || eraseGestureRemoved != null) return
+    eraseGestureRemoved = mutableListOf()
+  }
+
+  /**
+   * Capture the UI-owned bitmap and stroke JSON synchronously, then move crop,
+   * compression, payload construction, and file I/O to a serial worker. The
+   * immutable bitmap copy is the revision boundary: later touches cannot make
+   * the PNG diverge from the JSON captured immediately beside it.
+   */
+  fun snapshot(
+    format: String,
+    quality: Float,
+    trim: Boolean,
+    completion: (String?, String?) -> Unit,
+  ) {
+    if (currentStroke != null || eraseGestureRemoved != null) {
+      completion(null, "Finish the active Ink gesture before saving.")
+      return
+    }
+    val source = inkBitmap
+    if (source == null || width <= 0 || height <= 0) {
+      completion(null, "Ink canvas is not ready.")
+      return
+    }
+
+    val immutableBitmap = try {
+      source.copy(Bitmap.Config.ARGB_8888, false)
+        ?: throw IllegalStateException("Failed to copy Ink bitmap")
+    } catch (error: Throwable) {
+      completion(null, error.message ?: "Failed to capture Ink bitmap")
+      return
+    }
+    val capturedStrokes = strokes.toList()
+    val density = resources.displayMetrics.density
+    val capturedBounds = if (trim && strokes.isNotEmpty()) totalBounds() else null
+    val capturedBackground = inkBackgroundColor
+    val canvasWidthDp = pxToDp(width.toFloat())
+    val canvasHeightDp = pxToDp(height.toFloat())
+
+    SNAPSHOT_EXECUTOR.execute {
+      var rendered: Bitmap? = null
+      var outputFile: File? = null
+      try {
+        val strokesJson = strokeDataJson(capturedStrokes, density)
+        val opaque = format.equals("jpeg", true) || format.equals("jpg", true)
+        val bitmap = renderCapturedBitmap(
+          immutableBitmap,
+          capturedBounds,
+          opaque,
+          capturedBackground,
+        )
+        rendered = bitmap
+        val ext = if (opaque) "jpg" else "png"
+        val file = File(context.cacheDir, "signature-${UUID.randomUUID()}.$ext")
+        outputFile = file
+        FileOutputStream(file).use { out ->
+          val bitmapFormat = if (opaque) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+          val compressionQuality = (quality * 100).toInt().coerceIn(0, 100)
+          if (!bitmap.compress(bitmapFormat, compressionQuality, out)) {
+            throw IllegalStateException("Failed to encode Ink snapshot")
+          }
+        }
+
+        val payload = JSONObject().apply {
+          put("strokes", JSONArray(strokesJson))
+          put("fileUri", "file://${file.absolutePath}")
+          put("canvasWidth", canvasWidthDp.toDouble())
+          put("canvasHeight", canvasHeightDp.toDouble())
+        }.toString()
+        mainHandler.post {
+          if (released) {
+            file.delete()
+          } else {
+            completion(payload, null)
+          }
+        }
+      } catch (error: Throwable) {
+        outputFile?.delete()
+        mainHandler.post {
+          if (!released) {
+            completion(null, error.message ?: "Ink snapshot failed")
+          }
+        }
+      } finally {
+        if (rendered !== immutableBitmap) {
+          rendered?.recycle()
+        }
+        immutableBitmap.recycle()
+      }
+    }
+  }
+
+  /**
+   * Hit-test the nearest stroke within [radiusDp] of ([xDp], [yDp]) and
+   * remove at most one. Coordinates are density-independent (dp). One
+   * drag becomes one [HistoryAction.Erased]; a new action clears redo.
+   */
+  fun eraseStrokeNear(xDp: Float, yDp: Float, radiusDp: Float) {
+    cancelReplay()
+    if (strokes.isEmpty()) return
+    val standaloneGesture = eraseGestureRemoved == null
+    if (standaloneGesture) beginEraseGesture()
+    val x = dpToPx(xDp)
+    val y = dpToPx(yDp)
+    val radius = dpToPx(radiusDp)
+    var bestIndex = -1
+    var bestDistanceSquared = radius * radius
+    for (i in strokes.indices) {
+      val stroke = strokes[i]
+      val bounds = stroke.bounds()
+      if (
+        x < bounds.left - radius ||
+        x > bounds.right + radius ||
+        y < bounds.top - radius ||
+        y > bounds.bottom + radius
+      ) {
+        continue
+      }
+      val points = stroke.points
+      if (points.size == 1) {
+        val dx = points[0].x - x
+        val dy = points[0].y - y
+        val distanceSquared = dx * dx + dy * dy
+        if (distanceSquared <= bestDistanceSquared) {
+          bestDistanceSquared = distanceSquared
+          bestIndex = i
+        }
+        continue
+      }
+      for (pointIndex in 0 until points.lastIndex) {
+        val distanceSquared = distanceSquaredToSegment(
+          x,
+          y,
+          points[pointIndex],
+          points[pointIndex + 1],
+        )
+        if (distanceSquared <= bestDistanceSquared) {
+          bestDistanceSquared = distanceSquared
+          bestIndex = i
+        }
+      }
+    }
+    if (bestIndex < 0) {
+      if (standaloneGesture) endEraseGesture()
+      return
+    }
+    val removedStroke = strokes.removeAt(bestIndex)
+    eraseGestureRemoved?.add(RemovedStroke(bestIndex, removedStroke))
+    repaintAllStrokes()
+    emitChange()
+    if (standaloneGesture) endEraseGesture()
+  }
+
+  /** Finalize the drag after the responder releases or is terminated. */
+  fun endEraseGesture() {
+    val removed = eraseGestureRemoved ?: return
+    if (removed.isNotEmpty()) {
+      undoHistory.addLast(HistoryAction.Erased(removed.toList()))
+      redoHistory.clear()
+    }
+    eraseGestureRemoved = null
+  }
+
+  private fun distanceSquaredToSegment(
+    x: Float,
+    y: Float,
+    start: TimedPoint,
+    end: TimedPoint,
+  ): Float {
+    val segmentX = end.x - start.x
+    val segmentY = end.y - start.y
+    val lengthSquared = segmentX * segmentX + segmentY * segmentY
+    if (lengthSquared <= 0f) {
+      val dx = x - start.x
+      val dy = y - start.y
+      return dx * dx + dy * dy
+    }
+    val projection = (
+      ((x - start.x) * segmentX + (y - start.y) * segmentY) / lengthSquared
+    ).coerceIn(0f, 1f)
+    val closestX = start.x + projection * segmentX
+    val closestY = start.y + projection * segmentY
+    val dx = x - closestX
+    val dy = y - closestY
+    return dx * dx + dy * dy
   }
 
   fun replay(speed: Float) {
@@ -736,6 +1052,7 @@ internal class SignatureCanvasView @JvmOverloads constructor(
           strokes.addAll(replaySnapshot)
           repaintAllStrokes()
           replayFrameCallback = null
+          replaySnapshot = emptyList()
           return
         }
         Choreographer.getInstance().postFrameCallback(this)
@@ -746,8 +1063,15 @@ internal class SignatureCanvasView @JvmOverloads constructor(
   }
 
   private fun cancelReplay() {
-    replayFrameCallback?.let { Choreographer.getInstance().removeFrameCallback(it) }
+    val callback = replayFrameCallback
+    callback?.let { Choreographer.getInstance().removeFrameCallback(it) }
     replayFrameCallback = null
+    if (callback != null && replaySnapshot.isNotEmpty()) {
+      strokes.clear()
+      strokes.addAll(replaySnapshot)
+      replaySnapshot = emptyList()
+      repaintAllStrokes()
+    }
   }
 
   // MARK: - Lifecycle
@@ -768,12 +1092,15 @@ internal class SignatureCanvasView @JvmOverloads constructor(
    * can't reach a stale React tag.
    */
   fun releaseNativeResources() {
+    released = true
     cancelReplay()
     inkCanvas = null
     inkBitmap?.recycle()
     inkBitmap = null
     strokes.clear()
-    undoneStrokes.clear()
+    undoHistory.clear()
+    redoHistory.clear()
+    eraseGestureRemoved = null
     activePoints.clear()
     currentStroke = null
     onBegin = null
@@ -833,8 +1160,41 @@ internal class SignatureCanvasView @JvmOverloads constructor(
     return out
   }
 
+  /** Worker-thread crop/composite over the immutable revision captured on UI. */
+  private fun renderCapturedBitmap(
+    source: Bitmap,
+    capturedBounds: RectF?,
+    opaque: Boolean,
+    backgroundColor: Int,
+  ): Bitmap {
+    val rect = capturedBounds?.let {
+      RectF(
+        it.left.coerceAtLeast(0f),
+        it.top.coerceAtLeast(0f),
+        it.right.coerceAtMost(source.width.toFloat()),
+        it.bottom.coerceAtMost(source.height.toFloat()),
+      )
+    } ?: RectF(0f, 0f, source.width.toFloat(), source.height.toFloat())
+    val output = Bitmap.createBitmap(
+      max(1, rect.width().toInt()),
+      max(1, rect.height().toInt()),
+      Bitmap.Config.ARGB_8888,
+    )
+    val canvas = Canvas(output)
+    if (opaque) {
+      canvas.drawColor(if (backgroundColor == Color.TRANSPARENT) Color.WHITE else backgroundColor)
+    }
+    canvas.drawBitmap(source, -rect.left, -rect.top, null)
+    return output
+  }
+
   private fun colorHex(color: Int): String {
     return "#%02X%02X%02X".format(Color.red(color), Color.green(color), Color.blue(color))
+  }
+
+  private companion object {
+    /** One encoder keeps peak bitmap memory bounded across mounted pager canvases. */
+    val SNAPSHOT_EXECUTOR = Executors.newSingleThreadExecutor()
   }
 }
 

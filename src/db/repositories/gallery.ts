@@ -95,7 +95,7 @@ export async function getGallery(): Promise<GalleryArtefact[]> {
        a.type,
        a.sort_order AS artefact_sort_order,
        a.data,
-       a.annotations,
+       CASE WHEN a.annotations IS NULL OR a.annotations = '' THEN 0 ELSE 1 END AS has_ink,
        a.created_at AS artefact_created_at,
        a.updated_at AS artefact_updated_at,
        e.title AS entry_title
@@ -115,7 +115,7 @@ export async function getGallery(): Promise<GalleryArtefact[]> {
       type: String(row.type),
       sort_order: Number(row.artefact_sort_order),
       data: String(row.data),
-      annotations: row.annotations == null ? null : String(row.annotations),
+      has_ink: Number(row.has_ink),
       created_at: Number(row.artefact_created_at),
       updated_at: Number(row.artefact_updated_at),
       deleted_at: null,

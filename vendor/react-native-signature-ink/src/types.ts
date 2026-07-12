@@ -63,9 +63,8 @@ export interface StrokePoint {
   /** Y coordinate in the view's coordinate space. */
   y: number;
   /**
-   * Timestamp: on iOS this is the PencilKit `timeOffset` (seconds since
-   * stroke creation). On Android this is the absolute `MotionEvent.eventTime`
-   * (millisecond uptime). Only the relative deltas matter for replay.
+   * Milliseconds since this stroke began. Both platforms normalize onto this
+   * relative wire format so velocity and replay survive cross-platform loads.
    */
   t: number;
   /** iOS only. Force at this sample, in PencilKit's normalized 0..1 range. */
@@ -371,6 +370,35 @@ export interface SignatureInkHandle {
   replay: (options?: ReplayOptions) => void;
   /** Replace the canvas contents with the given stroke data. */
   setStrokeData: (data: StrokeData) => void;
+  /**
+   * Replace canvas contents without pushing onto undo, then clear
+   * history. Use for Save/Back resets so discarded ink cannot resurrect.
+   */
+  replaceStrokeData: (data: StrokeData) => void;
+  /**
+   * Capture stroke data and a PNG/JPEG file from the same immutable
+   * drawing revision (no edits between the two).
+   */
+  snapshot: (
+    options?: ExportImageOptions
+  ) => Promise<{
+    strokes: StrokeData;
+    fileUri: string;
+    canvasWidth: number;
+    canvasHeight: number;
+  }>;
+  /** Begin one eraser drag; all removals until `endEraseGesture` share history. */
+  beginEraseGesture: () => void;
+  /**
+   * Hit-test and remove at most one stroke near `(x, y)` within
+   * `radius`. Coordinates are density-independent (points/dp). One
+   * undo transaction; clears redo.
+   */
+  eraseStrokeNear: (x: number, y: number, radius: number) => void;
+  /** Finish the active eraser drag and commit one undo/redo transaction. */
+  endEraseGesture: () => void;
+  /** Clear undo/redo stacks without changing the drawing. */
+  clearHistory: () => void;
   /** Resolves with `true` when there are zero strokes on the canvas. */
   isEmpty: () => Promise<boolean>;
   /**

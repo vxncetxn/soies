@@ -261,6 +261,28 @@ internal class SignatureInkViewManager :
         val json = args?.getString(0) ?: "[]"
         view.canvas.setStrokeData(json)
       }
+      "replaceStrokeData" -> {
+        val json = args?.getString(0) ?: "[]"
+        view.canvas.replaceStrokeData(json)
+      }
+      "snapshot" -> {
+        val rid = args?.getString(0).orEmpty()
+        val format = args?.getString(1) ?: "png"
+        val quality = args?.getDouble(2)?.toFloat() ?: 1f
+        val trim = args?.getBoolean(3) ?: false
+        view.canvas.snapshot(format, quality, trim) { result, error ->
+          view.canvas.onResult?.invoke(rid, "snapshot", result, error)
+        }
+      }
+      "beginEraseGesture" -> view.canvas.beginEraseGesture()
+      "eraseStrokeNear" -> {
+        val x = args?.getDouble(0)?.toFloat() ?: 0f
+        val y = args?.getDouble(1)?.toFloat() ?: 0f
+        val radius = args?.getDouble(2)?.toFloat() ?: 0f
+        view.canvas.eraseStrokeNear(x, y, radius)
+      }
+      "endEraseGesture" -> view.canvas.endEraseGesture()
+      "clearHistory" -> view.canvas.clearHistory()
       "replay" -> {
         val speed = args?.getDouble(0)?.toFloat() ?: 1f
         view.canvas.replay(speed)
@@ -374,6 +396,39 @@ internal class SignatureInkViewManager :
   override fun setStrokeData(view: SignatureInkView?, json: String?) {
     view?.canvas?.setStrokeData(json ?: "[]")
   }
+  override fun replaceStrokeData(view: SignatureInkView?, json: String?) {
+    view?.canvas?.replaceStrokeData(json ?: "[]")
+  }
+  override fun snapshot(
+    view: SignatureInkView?,
+    requestId: String?,
+    format: String?,
+    quality: Float,
+    trim: Boolean,
+  ) {
+    view ?: return
+    val rid = requestId.orEmpty()
+    view.canvas.snapshot(format ?: "png", quality, trim) { result, error ->
+      view.canvas.onResult?.invoke(rid, "snapshot", result, error)
+    }
+  }
+  override fun eraseStrokeNear(
+    view: SignatureInkView?,
+    x: Float,
+    y: Float,
+    radius: Float,
+  ) {
+    view?.canvas?.eraseStrokeNear(x, y, radius)
+  }
+  override fun beginEraseGesture(view: SignatureInkView?) {
+    view?.canvas?.beginEraseGesture()
+  }
+  override fun endEraseGesture(view: SignatureInkView?) {
+    view?.canvas?.endEraseGesture()
+  }
+  override fun clearHistory(view: SignatureInkView?) {
+    view?.canvas?.clearHistory()
+  }
   override fun replay(view: SignatureInkView?, speed: Float) {
     view?.canvas?.replay(speed)
   }
@@ -403,24 +458,58 @@ internal class SignatureInkViewManager :
   private fun dispatch(view: SignatureInkView, name: String, data: WritableMap?) {
     val ctx = view.context as? ThemedReactContext ?: return
     val dispatcher = UIManagerHelper.getEventDispatcherForReactTag(ctx, view.id) ?: return
-    dispatcher.dispatchEvent(
-      SignatureInkEvent(
-        surfaceId = UIManagerHelper.getSurfaceId(ctx),
-        viewTag = view.id,
-        name = name,
-        payload = data,
-      ),
-    )
+    val surfaceId = UIManagerHelper.getSurfaceId(ctx)
+    val viewTag = view.id
+    val event = when (name) {
+      EVENT_RESULT -> SignatureInkResultEvent(surfaceId, viewTag, name, data)
+      EVENT_REPLAY_PROGRESS -> SignatureInkReplayProgressEvent(surfaceId, viewTag, name, data)
+      else -> SignatureInkNonCoalescingEvent(surfaceId, viewTag, name, data)
+    }
+    dispatcher.dispatchEvent(event)
   }
 
-  private class SignatureInkEvent(
+  /**
+   * Promise back-channel results must never coalesce — concurrent
+   * `getStrokeData` + `toFile` (or `snapshot` siblings) would otherwise
+   * collapse into one event and leave the other Promise pending.
+   */
+  private class SignatureInkResultEvent(
     surfaceId: Int,
     viewTag: Int,
     private val name: String,
     private val payload: WritableMap?,
-  ) : Event<SignatureInkEvent>(surfaceId, viewTag) {
+  ) : Event<SignatureInkResultEvent>(surfaceId, viewTag) {
     override fun getEventName(): String = name
     override fun getEventData(): WritableMap? = payload
+    override fun canCoalesce(): Boolean = false
+    override fun getCoalescingKey(): Short {
+      if (payload == null || !payload.hasKey("requestId")) return 0
+      val id = payload.getString("requestId") ?: return 0
+      return (id.hashCode() and 0xFFFF).toShort()
+    }
+  }
+
+  /** Replay progress may coalesce; only the latest frame matters. */
+  private class SignatureInkReplayProgressEvent(
+    surfaceId: Int,
+    viewTag: Int,
+    private val name: String,
+    private val payload: WritableMap?,
+  ) : Event<SignatureInkReplayProgressEvent>(surfaceId, viewTag) {
+    override fun getEventName(): String = name
+    override fun getEventData(): WritableMap? = payload
+  }
+
+  /** Begin/end/change/toolbar — keep non-coalescing for correctness. */
+  private class SignatureInkNonCoalescingEvent(
+    surfaceId: Int,
+    viewTag: Int,
+    private val name: String,
+    private val payload: WritableMap?,
+  ) : Event<SignatureInkNonCoalescingEvent>(surfaceId, viewTag) {
+    override fun getEventName(): String = name
+    override fun getEventData(): WritableMap? = payload
+    override fun canCoalesce(): Boolean = false
   }
 
   companion object {

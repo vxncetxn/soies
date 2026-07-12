@@ -3,7 +3,7 @@
 // High-level wrapper around the codegen-generated `SignatureInkView`.
 // Owns the request-id ⇄ Promise back-channel for async commands
 // (`toBase64`, `toFile`, `toSvg`, `isEmpty`, `getStrokeData`,
-// `saveToPhotoLibrary`) and re-shapes native events into the public
+// `saveToPhotoLibrary`, `snapshot`) and re-shapes native events into the public
 // `Signature*Event` types declared in `./types`.
 import * as React from 'react';
 import { findNodeHandle, processColor } from 'react-native';
@@ -138,6 +138,35 @@ export const SignatureInk = /*#__PURE__*/React.forwardRef(function SignatureInk(
       const node = nativeRef.current;
       if (node) Commands.setStrokeData(node, JSON.stringify(data));
     },
+    replaceStrokeData: data => {
+      const node = nativeRef.current;
+      if (node) Commands.replaceStrokeData(node, JSON.stringify(data));
+    },
+    beginEraseGesture: () => {
+      const node = nativeRef.current;
+      if (node) Commands.beginEraseGesture(node);
+    },
+    eraseStrokeNear: (x, y, radius) => {
+      const node = nativeRef.current;
+      if (node) Commands.eraseStrokeNear(node, x, y, radius);
+    },
+    endEraseGesture: () => {
+      const node = nativeRef.current;
+      if (node) Commands.endEraseGesture(node);
+    },
+    clearHistory: () => {
+      const node = nativeRef.current;
+      if (node) Commands.clearHistory(node);
+    },
+    snapshot: options => send('snapshot', id => Commands.snapshot(nativeRef.current, id, options?.format ?? 'png', options?.quality ?? 1, options?.trim ?? false), raw => {
+      const parsed = parseMaybeJson(raw, {});
+      return {
+        strokes: parsed.strokes ?? [],
+        fileUri: parsed.fileUri ?? '',
+        canvasWidth: parsed.canvasWidth ?? 0,
+        canvasHeight: parsed.canvasHeight ?? 0
+      };
+    }),
     isEmpty: () => send('isEmpty', id => Commands.isEmpty(nativeRef.current, id), raw => raw === 'true'),
     toBase64: options => send('toBase64', id => Commands.toBase64(nativeRef.current, id, options?.format ?? 'png', options?.quality ?? 1, options?.trim ?? false)),
     toFile: options => send('toFile', id => Commands.toFile(nativeRef.current, id, options?.format ?? 'png', options?.quality ?? 1, options?.trim ?? false)),
@@ -208,4 +237,3 @@ export const _internal = {
   findNodeHandle,
   processColor
 };
-//# sourceMappingURL=SignatureInk.js.map

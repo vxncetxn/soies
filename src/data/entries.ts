@@ -2,7 +2,10 @@ import type { InkDocument } from "./ink";
 
 export type PaperArtefact = {
   text: string;
-  /** Parsed Ink strokes when present (ADR-0008). */
+  /**
+   * Parsed Ink strokes — loaded only for edit/Scribble, not Home display.
+   * Display uses `inkOverlayPath` alone (ADR-0008).
+   */
   ink?: InkDocument;
   /** File URI for the Ink overlay PNG cache. */
   inkOverlayPath?: string;
@@ -11,6 +14,7 @@ export type PaperArtefact = {
 export type PrintArtefact = {
   text: string;
   imagePath: string;
+  /** See PaperArtefact.ink. */
   ink?: InkDocument;
   inkOverlayPath?: string;
 };

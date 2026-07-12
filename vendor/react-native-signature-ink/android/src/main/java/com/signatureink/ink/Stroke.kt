@@ -8,8 +8,11 @@ internal class Stroke {
   var color: Int = 0xFF111111.toInt()
   var minWidth: Float = 1f
   var maxWidth: Float = 3f
+  /** Completed strokes are immutable, so calculate their coarse hit box once. */
+  private var cachedBounds: RectF? = null
 
   fun bounds(): RectF {
+    cachedBounds?.let { return RectF(it) }
     if (points.isEmpty()) return RectF()
     var l = points[0].x
     var t = points[0].y
@@ -21,6 +24,6 @@ internal class Stroke {
       if (p.x > r) r = p.x
       if (p.y > b) b = p.y
     }
-    return RectF(l, t, r, b)
+    return RectF(l, t, r, b).also { cachedBounds = RectF(it) }
   }
 }

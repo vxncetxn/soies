@@ -10,6 +10,8 @@ internal class TimedPoint(
   var x: Float,
   var y: Float,
   var timestamp: Long = System.currentTimeMillis(),
+  /** Density-independent width captured for cross-platform round-trip. */
+  var sizeDp: Float? = null,
 ) {
   fun set(x: Float, y: Float, t: Long = System.currentTimeMillis()): TimedPoint {
     this.x = x

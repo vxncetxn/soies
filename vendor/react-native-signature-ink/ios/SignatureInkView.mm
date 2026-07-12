@@ -299,6 +299,39 @@ using namespace facebook::react;
     [_surface setStrokeData:json];
 }
 
+- (void)replaceStrokeData:(NSString *)json
+{
+    [_surface replaceStrokeData:json];
+}
+
+- (void)snapshot:(NSString *)requestId
+          format:(NSString *)format
+         quality:(float)quality
+            trim:(BOOL)trim
+{
+    [_surface snapshot:requestId format:format quality:(CGFloat)quality trim:trim];
+}
+
+- (void)beginEraseGesture
+{
+    [_surface beginEraseGesture];
+}
+
+- (void)eraseStrokeNear:(float)x y:(float)y radius:(float)radius
+{
+    [_surface eraseStrokeNear:(CGFloat)x y:(CGFloat)y radius:(CGFloat)radius];
+}
+
+- (void)endEraseGesture
+{
+    [_surface endEraseGesture];
+}
+
+- (void)clearHistory
+{
+    [_surface clearHistory];
+}
+
 - (void)replay:(float)speed
 {
     [_surface replayWithSpeed:(CGFloat)speed];

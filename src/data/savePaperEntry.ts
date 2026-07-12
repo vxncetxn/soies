@@ -11,24 +11,28 @@ export async function savePaperEntry(params: {
   title: string;
   artefacts: { text: string; ink?: DraftInk | null }[];
 }): Promise<void> {
-  const prepared: { id: string; data: string; annotations: string | null; overlayUri?: string }[] =
-    [];
+  const prepared: { id: string; data: string; annotations: string | null }[] = [];
 
   try {
     for (const artefact of params.artefacts) {
       const id = randomUUID();
-      let annotations: string | null = null;
-      let overlayUri: string | undefined;
-      if (artefact.ink && artefact.ink.document.strokes.length > 0) {
-        annotations = serializeAnnotations(artefact.ink.document);
-        overlayUri = await saveInkOverlayFile(artefact.ink.overlayUri, id);
-      }
+      // Register cleanup ownership before the optional copy. File.copy can
+      // create its destination and then reject, so waiting until success would
+      // make that partial output invisible to the catch path.
       prepared.push({
         id,
         data: JSON.stringify({ text: artefact.text }),
-        annotations,
-        overlayUri,
+        annotations: null,
       });
+      if (artefact.ink && artefact.ink.document.strokes.length > 0) {
+        const annotations = serializeAnnotations(artefact.ink.document);
+        await saveInkOverlayFile(artefact.ink.overlayUri, id);
+        prepared[prepared.length - 1] = {
+          id,
+          data: JSON.stringify({ text: artefact.text }),
+          annotations,
+        };
+      }
     }
 
     await persistNewEntry({
@@ -44,9 +48,7 @@ export async function savePaperEntry(params: {
   } catch (error) {
     await Promise.allSettled(
       prepared.map(async (artefact) => {
-        if (artefact.overlayUri) {
-          await deleteInkOverlayFile(artefact.id);
-        }
+        await deleteInkOverlayFile(artefact.id);
       }),
     );
     throw error;

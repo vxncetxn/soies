@@ -24,7 +24,7 @@ interface ChangePayload {
 /**
  * Payload for the generic `onResult` event used as the back-channel for
  * every Promise-based command (`isEmpty`, `toBase64`, `toFile`, `toSvg`,
- * `getStrokeData`, `saveToPhotoLibrary`). The JS wrapper matches
+ * `getStrokeData`, `saveToPhotoLibrary`, `snapshot`). The JS wrapper matches
  * `requestId` to a pending Promise and resolves/rejects with `value`/`error`.
  */
 interface ResultPayload {
@@ -226,6 +226,47 @@ interface NativeCommands {
     viewRef: React.ElementRef<HostComponent<NativeProps>>,
     json: string
   ) => void;
+  /**
+   * Like `setStrokeData` but does not push onto undo and clears history
+   * after replace. Used for Save/Back history-boundary resets.
+   */
+  replaceStrokeData: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>,
+    json: string
+  ) => void;
+  /**
+   * Atomic stroke+PNG capture from one immutable revision.
+   * Resolves via `onResult` with strokes, file URI, and source canvas size.
+   */
+  snapshot: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>,
+    requestId: string,
+    format: string,
+    quality: Float,
+    trim: boolean
+  ) => void;
+  /** Start one native eraser history transaction. */
+  beginEraseGesture: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>
+  ) => void;
+  /**
+   * Hit-test and remove at most one stroke near `(x, y)` within
+   * `radius`. Coordinates are density-independent (points/dp).
+   */
+  eraseStrokeNear: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>,
+    x: Float,
+    y: Float,
+    radius: Float
+  ) => void;
+  /** Commit the active eraser drag as one undo/redo transaction. */
+  endEraseGesture: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>
+  ) => void;
+  /** Clear undo/redo stacks without changing the drawing. */
+  clearHistory: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>
+  ) => void;
   /** Animate the current strokes; `speed` multiplies the natural pace. */
   replay: (
     viewRef: React.ElementRef<HostComponent<NativeProps>>,
@@ -256,6 +297,12 @@ export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
     'toSvg',
     'getStrokeData',
     'setStrokeData',
+    'replaceStrokeData',
+    'snapshot',
+    'beginEraseGesture',
+    'eraseStrokeNear',
+    'endEraseGesture',
+    'clearHistory',
     'replay',
     'saveToPhotoLibrary',
   ],

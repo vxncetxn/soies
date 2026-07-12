@@ -16,23 +16,17 @@ import { withUniwind } from "uniwind";
 import type { DraftInk } from "../data/ink";
 
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
-import {
-  INK_COLORS,
-  INK_STROKE_SIZES,
-  type InkStrokeSizeKey,
-  type InkTool,
-} from "../constants/ink";
 import { savePrintEntry } from "../data/savePrintEntry";
 import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
 import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
 import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
+import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
 import { useCreateContext, useEntriesVersion } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePrint from "./EditablePrint";
 import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
-import ScribbleToolStrip from "./ScribbleToolStrip";
 
 const StyledImage = withUniwind(Image);
 
@@ -62,10 +56,6 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
   const [barOpen, setBarOpen] = useState(false);
   const inkCanvasRefs = useRef<Record<string, ArtefactInkCanvasHandle | null>>({});
 
-  const [inkTool, setInkTool] = useState<InkTool>("pen");
-  const [inkColor, setInkColor] = useState<string>(INK_COLORS[0]);
-  const [inkSizeKey, setInkSizeKey] = useState<InkStrokeSizeKey>("M");
-
   const {
     activeIndex,
     enteringIndex,
@@ -90,6 +80,24 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
   useEffect(() => {
     syncArtefactCount(artefacts.length);
   }, [artefacts.length, syncArtefactCount]);
+
+  const {
+    inkTool,
+    inkColor,
+    size,
+    scribbleSaving,
+    handleScribbleSave,
+    handleScribbleBack,
+    renderScribbleTools,
+  } = useScribbleSession({
+    artefacts,
+    setArtefacts,
+    activeIndex,
+    inkCanvasRefs,
+    exitScribble,
+    onBackFromScribble: handleBack,
+    setSessionBusy: setCreateSessionBusy,
+  });
 
   const appendPrint = (uri: string) => {
     const item: DraftPrint = { id: randomUUID(), text: "", imageUri: uri, ink: null };
@@ -145,40 +153,6 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
     setArtefacts((prev) => prev.map((item, i) => (i === index ? { ...item, text } : item)));
   };
 
-  const activeInkCanvas = () => {
-    const id = artefacts[activeIndex]?.id;
-    return id ? inkCanvasRefs.current[id] : null;
-  };
-
-  const handleScribbleSave = async () => {
-    const committed = await activeInkCanvas()?.commit();
-    if (!committed) {
-      return;
-    }
-    const index = activeIndex;
-    setArtefacts((prev) =>
-      prev.map((item, i) =>
-        i === index
-          ? {
-              ...item,
-              ink:
-                committed.document.strokes.length > 0
-                  ? { document: committed.document, overlayUri: committed.overlayUri }
-                  : null,
-            }
-          : item,
-      ),
-    );
-    exitScribble();
-  };
-
-  const handleScribbleBack = () => {
-    activeInkCanvas()?.loadDocument(artefacts[activeIndex]?.ink?.document ?? null);
-    handleBack();
-  };
-
-  const size = INK_STROKE_SIZES[inkSizeKey];
-
   const addBloomPanel = (
     <PrintMediaBloomPanel
       screen={mediaScreen}
@@ -196,18 +170,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
     />
   );
 
-  const scribbleTools = scribbleActive ? (
-    <ScribbleToolStrip
-      tool={inkTool}
-      onToolChange={setInkTool}
-      color={inkColor}
-      onColorChange={setInkColor}
-      sizeKey={inkSizeKey}
-      onSizeChange={setInkSizeKey}
-      onUndo={() => activeInkCanvas()?.undo()}
-      onRedo={() => activeInkCanvas()?.redo()}
-    />
-  ) : null;
+  const scribbleTools = renderScribbleTools(scribbleActive);
 
   return (
     <CreateScreenChrome
@@ -218,7 +181,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
       onChangeTitle={setTitle}
       onClose={onClose}
       onSubmit={submit}
-      saving={saving}
+      saving={saving || scribbleSaving}
       onBack={scribbleActive ? handleScribbleBack : handleBack}
       activeArtefactIndex={activeIndex}
       artefactCount={artefacts.length}
@@ -244,7 +207,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
         ref={pagerRef}
         count={artefacts.length}
         pageKeys={artefacts.map((a) => a.id)}
-        scrollEnabled={!typeState && !scribbleActive && !saving}
+        scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving}
         showScrollIndicator={!typeState && !scribbleActive}
         onActiveIndexChange={handleActiveIndexChange}
         enteringIndex={enteringIndex}
@@ -294,7 +257,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
                   expandProgress={expandProgress}
                   keepExpandedOnBlurRef={keepExpandedOnBlurRef}
                   suppressArtefactFocusRef={suppressArtefactFocusRef}
-                  editable={!saving}
+                  editable={!saving && !scribbleSaving}
                   inkOverlayUri={draft.ink?.overlayUri}
                   scribbleActive={scribbleActive}
                   textInputRef={(node) => {
@@ -312,6 +275,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
                       penMaxWidth={size.max}
                       initialDocument={draft.ink?.document ?? null}
                       enabled={isActiveScribble}
+                      locked={scribbleSaving}
                     />
                   }
                 />

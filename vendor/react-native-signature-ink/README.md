@@ -18,11 +18,13 @@ This fork exists so artefact Ink in soies can persist multi-color, multi-width d
 | --- | --- | --- |
 | Per-stroke `color` / `minWidth` / `maxWidth` in stroke JSON | iOS + Android + TS | Artefacts let users change pen color/size between strokes; a single global pen color cannot round-trip that drawing. |
 | iOS `getStrokeData` serializes path control points (not interpolated samples) | iOS | Interpolated samples inflated point count ~20×, flattened width on restore, and slowed `replay()`. |
-| iOS `setStrokeData` honours per-point `size` | iOS | Restoring without per-point size re-renders every stroke at uniform max width. |
+| `setStrokeData` honours per-point `size` and normalized relative milliseconds | iOS + Android | Width and velocity now survive cross-platform round-trips instead of depending on platform-specific timestamp units. |
 | Legacy `StrokePoint[]` entries still accepted by `setStrokeData` | iOS + Android | Older / upstream-shaped payloads keep working; they inherit the current pen props. |
 | Flicker-free Undo/Redo via two-canvas PencilKit handoff | iOS | Visible `PKCanvasView` replacement flashes every stroke; in-place `.drawing` assignment resurrects undone strokes on the next touch. |
+| Gesture-level native eraser history | iOS + Android + TS | One eraser drag produces one undo transaction; Android segment hit-testing catches ink between sampled points and supports Redo. |
+| Atomic asynchronous `snapshot()` | iOS + Android + TS | Stroke JSON and PNG share one immutable revision; image encoding and file I/O stay off the UI thread. |
 
-App-layer Ink lifecycle (persistent canvas across Default/Scribble, PNG overlay cache, eraser PNG cover) lives in soies itself — see `docs/adr/0008-artefact-ink-annotations.md`. This README covers only the native library deltas.
+App-layer Ink lifecycle (persistent canvas across Default/Scribble and PNG overlay cache) lives in soies itself — see `docs/adr/0008-artefact-ink-annotations.md`. This README covers only the native library deltas.
 
 ---
 
@@ -457,7 +459,7 @@ ref.current?.setStrokeData(data);
 
 **soies fork:** the preferred format is `StrokeRecord[]` — each stroke carries optional `color`, `minWidth`, and `maxWidth` plus `points`. Legacy `StrokePoint[]` entries are still accepted by `setStrokeData` and inherit the current pen props.
 
-Every point has `{ x, y, t }`; iOS additionally captures `pressure`, `azimuth`, `altitude`, and per-point `size`. Unknown fields are ignored on `setStrokeData`, so payloads round-trip cleanly across platforms. See [soies fork changes](#soies-fork-changes) for the full encode/decode behavior.
+Every point has `{ x, y, t }`, where `t` is relative milliseconds from the start of that stroke. Both platforms preserve per-point `size`; iOS additionally captures `pressure`, `azimuth`, and `altitude`. Unknown fields are ignored on `setStrokeData`, so payloads round-trip cleanly across platforms. See [soies fork changes](#soies-fork-changes) for the full encode/decode behavior.
 
 ### Replay animation
 

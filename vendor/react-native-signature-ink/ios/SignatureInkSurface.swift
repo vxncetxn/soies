@@ -161,6 +161,9 @@ import UniformTypeIdentifiers
   private var undoStack: [PKDrawing] = []
   private var redoStack: [PKDrawing] = []
   private var snapshotBeforeStroke: PKDrawing?
+  /// One pre-drag revision; individual move events must not grow history.
+  private var eraseGestureStartDrawing: PKDrawing?
+  private var eraseGestureChanged: Bool = false
   private var suppressChangeEvents: Bool = false
 
   // MARK: - Replay state
@@ -175,6 +178,12 @@ import UniformTypeIdentifiers
   private var replayStartTime: CFTimeInterval = 0
   private var replayTotalDuration: CFTimeInterval = 0
   private var replaySpeed: CGFloat = 1.0
+  /// Invalidates worker completions when Fabric recycles this surface.
+  private var snapshotGeneration: Int = 0
+  private static let snapshotQueue = DispatchQueue(
+    label: "com.signatureink.snapshot",
+    qos: .userInitiated
+  )
 
   // MARK: - Init
 
@@ -287,6 +296,7 @@ import UniformTypeIdentifiers
   /// from the outside.
   @objc public func prepareForReuse() {
     cancelReplay()
+    snapshotGeneration += 1
 
     // Reset EVERY user-facing prop here. The Obj-C++ host resets its
     // `_props` to defaults right before this call, so Fabric's
@@ -352,6 +362,8 @@ import UniformTypeIdentifiers
     undoStack.removeAll()
     redoStack.removeAll()
     snapshotBeforeStroke = nil
+    eraseGestureStartDrawing = nil
+    eraseGestureChanged = false
     suppressChangeEvents = false
     replayFinalDrawing = PKDrawing()
     replayStartTime = 0
@@ -856,6 +868,8 @@ import UniformTypeIdentifiers
 
   @objc public func clear() {
     cancelReplay()
+    eraseGestureStartDrawing = nil
+    eraseGestureChanged = false
     if !canvasView.drawing.strokes.isEmpty {
       undoStack.append(canvasView.drawing)
       redoStack.removeAll()
@@ -1042,7 +1056,11 @@ import UniformTypeIdentifiers
   }
 
   @objc public func getStrokeData(_ requestId: String) {
-    let json = buildStrokeDataJson()
+    let json = Self.buildStrokeDataJson(
+      from: canvasView.drawing,
+      fallbackMinWidth: penMinWidth,
+      fallbackMaxWidth: penMaxWidth
+    )
     onResult?(requestId, "getStrokeData", json, nil)
   }
 
@@ -1055,6 +1073,191 @@ import UniformTypeIdentifiers
     }
     resetCanvasWithDrawing(drawing)
     emitChange()
+  }
+
+  /// Replace drawing without pushing onto undo, then clear history.
+  /// Used for Save/Back so discarded ink cannot resurrect via Undo.
+  @objc public func replaceStrokeData(_ json: String) {
+    cancelReplay()
+    guard let drawing = drawingFromStrokeDataJson(json) else { return }
+    resetCanvasWithDrawing(drawing)
+    clearHistory()
+    emitChange()
+  }
+
+  /// Clear undo/redo without changing the visible drawing.
+  @objc public func clearHistory() {
+    undoStack.removeAll()
+    redoStack.removeAll()
+    eraseGestureStartDrawing = nil
+    eraseGestureChanged = false
+  }
+
+  /// Capture one pre-drag drawing so all removals share one undo action.
+  @objc public func beginEraseGesture() {
+    cancelReplay()
+    guard snapshotBeforeStroke == nil, eraseGestureStartDrawing == nil else { return }
+    eraseGestureStartDrawing = canvasView.drawing
+    eraseGestureChanged = false
+  }
+
+  /// Atomic stroke JSON + file export from one immutable revision.
+  @objc public func snapshot(_ requestId: String,
+                             format: String,
+                             quality: CGFloat,
+                             trim: Bool) {
+    guard snapshotBeforeStroke == nil, eraseGestureStartDrawing == nil else {
+      onResult?(requestId, "snapshot", nil, "Finish the active Ink gesture before saving.")
+      return
+    }
+    snapshotGeneration += 1
+    let generation = snapshotGeneration
+    let drawing = canvasView.drawing
+    let canvasSize = canvasView.bounds.size
+    let backgroundColor = inkBackgroundColor
+    let fallbackMinWidth = penMinWidth
+    let fallbackMaxWidth = penMaxWidth
+    let scale = UIScreen.main.scale
+
+    Self.snapshotQueue.async { [weak self] in
+      autoreleasepool {
+        let strokesJson = Self.buildStrokeDataJson(
+          from: drawing,
+          fallbackMinWidth: fallbackMinWidth,
+          fallbackMaxWidth: fallbackMaxWidth
+        )
+        guard let strokesData = strokesJson.data(using: .utf8),
+              let strokesObj = try? JSONSerialization.jsonObject(with: strokesData) else {
+          DispatchQueue.main.async {
+            guard let self, self.snapshotGeneration == generation else { return }
+            self.onResult?(requestId, "snapshot", nil, "Failed to serialize strokes")
+          }
+          return
+        }
+
+        let isJpeg = ["jpeg", "jpg"].contains(format.lowercased())
+        let image = Self.renderImage(
+          drawing: drawing,
+          canvasSize: canvasSize,
+          trim: trim,
+          scale: scale,
+          opaque: isJpeg,
+          backgroundColor: backgroundColor
+        )
+        let bytes = isJpeg
+          ? image.jpegData(compressionQuality: max(0, min(1, quality)))
+          : image.pngData()
+        guard let bytes else {
+          DispatchQueue.main.async {
+            guard let self, self.snapshotGeneration == generation else { return }
+            self.onResult?(requestId, "snapshot", nil, "Failed to encode image")
+          }
+          return
+        }
+
+        let ext = isJpeg ? "jpg" : "png"
+        let filename = "signature-\(UUID().uuidString).\(ext)"
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(filename)
+        do {
+          try bytes.write(to: url, options: .atomic)
+          let payloadObj: [String: Any] = [
+            "strokes": strokesObj,
+            "fileUri": url.absoluteString,
+            "canvasWidth": Double(canvasSize.width),
+            "canvasHeight": Double(canvasSize.height),
+          ]
+          let payloadData = try JSONSerialization.data(withJSONObject: payloadObj, options: [])
+          guard let payload = String(data: payloadData, encoding: .utf8) else {
+            throw NSError(
+              domain: "SignatureInk",
+              code: 1,
+              userInfo: [NSLocalizedDescriptionKey: "Failed to build snapshot payload"]
+            )
+          }
+          DispatchQueue.main.async {
+            guard let self, self.snapshotGeneration == generation else {
+              try? FileManager.default.removeItem(at: url)
+              return
+            }
+            self.onResult?(requestId, "snapshot", payload, nil)
+          }
+        } catch {
+          try? FileManager.default.removeItem(at: url)
+          DispatchQueue.main.async {
+            guard let self, self.snapshotGeneration == generation else { return }
+            self.onResult?(requestId, "snapshot", nil, error.localizedDescription)
+          }
+        }
+      }
+    }
+  }
+
+  /// Hit-test and remove at most one stroke near `(x, y)` within `radius`
+  /// (points). One drag is one undo transaction. Uses silent drawing
+  /// swap + history canvas warm-up to avoid full canvas rebuild flicker.
+  @objc public func eraseStrokeNear(_ x: CGFloat, y: CGFloat, radius: CGFloat) {
+    cancelReplay()
+    let drawing = canvasView.drawing
+    guard !drawing.strokes.isEmpty else { return }
+    let standaloneGesture = eraseGestureStartDrawing == nil
+    if standaloneGesture { beginEraseGesture() }
+    let target = CGPoint(x: x, y: y)
+    var bestIndex: Int?
+    var bestDistanceSquared = radius * radius
+
+    for (idx, stroke) in drawing.strokes.enumerated() {
+      // Avoid allocating interpolated points for every unrelated stroke on
+      // every responder move; only refine paths whose render bounds are near.
+      let candidateBounds = stroke.renderBounds.insetBy(dx: -radius, dy: -radius)
+      guard candidateBounds.contains(target) else { continue }
+      let path = stroke.path
+      for i in 0..<path.count {
+        let loc = path[i].location
+        let dx = loc.x - target.x
+        let dy = loc.y - target.y
+        let distanceSquared = dx * dx + dy * dy
+        if distanceSquared <= bestDistanceSquared {
+          bestDistanceSquared = distanceSquared
+          bestIndex = idx
+        }
+      }
+      let interpolated = path.interpolatedPoints(by: .distance(2.0))
+      for point in interpolated {
+        let loc = point.location
+        let dx = loc.x - target.x
+        let dy = loc.y - target.y
+        let distanceSquared = dx * dx + dy * dy
+        if distanceSquared <= bestDistanceSquared {
+          bestDistanceSquared = distanceSquared
+          bestIndex = idx
+        }
+      }
+    }
+
+    guard let index = bestIndex else {
+      if standaloneGesture { endEraseGesture() }
+      return
+    }
+
+    var newStrokes = Array(drawing.strokes)
+    newStrokes.remove(at: index)
+    let newDrawing = PKDrawing(strokes: newStrokes)
+    setDrawingSilently(newDrawing)
+    prepareHistoryCanvas(with: newDrawing)
+    eraseGestureChanged = true
+    emitChange()
+    if standaloneGesture { endEraseGesture() }
+  }
+
+  /// Finalize the eraser drag as one reversible history transaction.
+  @objc public func endEraseGesture() {
+    guard let before = eraseGestureStartDrawing else { return }
+    if eraseGestureChanged {
+      undoStack.append(before)
+      redoStack.removeAll()
+    }
+    eraseGestureStartDrawing = nil
+    eraseGestureChanged = false
   }
 
   @objc public func replay(speed: CGFloat) {
@@ -1132,17 +1335,43 @@ import UniformTypeIdentifiers
   }
 
   private func cancelReplay() {
+    let wasReplaying = replayLink != nil
     replayLink?.invalidate()
     replayLink = nil
     replayProxy = nil
+    if wasReplaying {
+      setDrawingSilently(replayFinalDrawing)
+    }
   }
 
   // MARK: - Rendering helpers
 
   private func renderImage(trim: Bool, scale: CGFloat, opaque: Bool) -> UIImage {
-    let drawing = canvasView.drawing
+    return Self.renderImage(
+      drawing: canvasView.drawing,
+      canvasSize: canvasView.bounds.size,
+      trim: trim,
+      scale: scale,
+      opaque: opaque,
+      backgroundColor: inkBackgroundColor
+    )
+  }
+
+  /**
+   * Pure snapshot renderer: all inputs are immutable values captured on main,
+   * so PNG/JPEG work can run on the dedicated snapshot queue without touching
+   * PKCanvasView or any recycled Fabric surface state.
+   */
+  private static func renderImage(
+    drawing: PKDrawing,
+    canvasSize: CGSize,
+    trim: Bool,
+    scale: CGFloat,
+    opaque: Bool,
+    backgroundColor: UIColor
+  ) -> UIImage {
     let drawingBounds = drawing.bounds
-    let canvasRect = CGRect(origin: .zero, size: canvasView.bounds.size)
+    let canvasRect = CGRect(origin: .zero, size: canvasSize)
     let rect: CGRect
     if trim && !drawing.strokes.isEmpty && !drawingBounds.isNull && !drawingBounds.isEmpty {
       rect = drawingBounds.insetBy(dx: -2, dy: -2)
@@ -1160,12 +1389,15 @@ import UniformTypeIdentifiers
       img = drawing.image(from: rect, scale: scale)
     }
     if opaque {
-      return drawOnBackground(img, color: inkBackgroundColor.cgColor.alpha == 0 ? .white : inkBackgroundColor)
+      return drawOnBackground(
+        img,
+        color: backgroundColor.cgColor.alpha == 0 ? .white : backgroundColor
+      )
     }
     return img
   }
 
-  private func drawOnBackground(_ image: UIImage, color: UIColor) -> UIImage {
+  private static func drawOnBackground(_ image: UIImage, color: UIColor) -> UIImage {
     let size = image.size
     let renderer = UIGraphicsImageRenderer(size: size,
                                            format: UIGraphicsImageRendererFormat.preferred())
@@ -1284,7 +1516,7 @@ import UniformTypeIdentifiers
     var bodies: [String] = []
     for stroke in drawing.strokes {
       let inkColor = uiColorFromUIColor(stroke.ink.color)
-      let hex = hexString(from: inkColor)
+      let hex = Self.hexString(from: inkColor)
       let pathPoints = stroke.path.interpolatedPoints(by: .distance(2.0))
       var d = ""
       var first = true
@@ -1315,7 +1547,7 @@ import UniformTypeIdentifiers
 
   private func uiColorFromUIColor(_ color: UIColor) -> UIColor { color }
 
-  private func hexString(from color: UIColor) -> String {
+  private static func hexString(from color: UIColor) -> String {
     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
     color.getRed(&r, green: &g, blue: &b, alpha: &a)
     return String(format: "#%02X%02X%02X",
@@ -1324,8 +1556,11 @@ import UniformTypeIdentifiers
 
   // MARK: - Stroke data JSON
 
-  private func buildStrokeDataJson() -> String {
-    let drawing = canvasView.drawing
+  private static func buildStrokeDataJson(
+    from drawing: PKDrawing,
+    fallbackMinWidth: CGFloat,
+    fallbackMaxWidth: CGFloat
+  ) -> String {
     // soies fork: emit per-stroke color/width so multi-color drawings round-trip.
     var strokes: [[String: Any]] = []
     for stroke in drawing.strokes {
@@ -1337,27 +1572,28 @@ import UniformTypeIdentifiers
       // per-point size and (2) caused replay() to run in slow motion
       // because its duration scales with total control-point count.
       let path = stroke.path
-      var widthAccum: CGFloat = 0
-      var widthCount: Int = 0
+      var minimumWidth = CGFloat.greatestFiniteMagnitude
+      var maximumWidth: CGFloat = 0
       for i in 0..<path.count {
         let point = path[i]
         points.append([
           "x": Double(point.location.x),
           "y": Double(point.location.y),
-          "t": Double(point.timeOffset),
+          "t": Double(point.timeOffset * 1_000),
           "pressure": Double(point.force),
           "size": Double(point.size.width),
           "azimuth": Double(point.azimuth),
           "altitude": Double(point.altitude),
         ])
-        widthAccum += point.size.width
-        widthCount += 1
+        minimumWidth = min(minimumWidth, point.size.width)
+        maximumWidth = max(maximumWidth, point.size.width)
       }
-      let avgWidth = widthCount > 0 ? widthAccum / CGFloat(widthCount) : penMaxWidth
+      let strokeMinWidth = minimumWidth.isFinite ? minimumWidth : fallbackMinWidth
+      let strokeMaxWidth = maximumWidth > 0 ? maximumWidth : fallbackMaxWidth
       strokes.append([
-        "color": hexString(from: uiColorFromUIColor(stroke.ink.color)),
-        "minWidth": Double(penMinWidth),
-        "maxWidth": Double(avgWidth),
+        "color": Self.hexString(from: stroke.ink.color),
+        "minWidth": Double(strokeMinWidth),
+        "maxWidth": Double(strokeMaxWidth),
         "points": points,
       ])
     }
@@ -1402,7 +1638,7 @@ import UniformTypeIdentifiers
       for p in points {
         let x = (p["x"] as? Double) ?? 0
         let y = (p["y"] as? Double) ?? 0
-        let t = (p["t"] as? Double) ?? 0
+        let tMilliseconds = (p["t"] as? Double) ?? 0
         let pressure = (p["pressure"] as? Double) ?? 1.0
         let azimuth = (p["azimuth"] as? Double) ?? 0
         let altitude = (p["altitude"] as? Double) ?? 0
@@ -1412,7 +1648,7 @@ import UniformTypeIdentifiers
         let widthValue = (p["size"] as? Double) ?? Double(strokeMaxWidth)
         let size = CGSize(width: widthValue, height: widthValue)
         let sp = PKStrokePoint(location: CGPoint(x: x, y: y),
-                               timeOffset: t,
+                               timeOffset: tMilliseconds / 1_000,
                                size: size,
                                opacity: 1.0,
                                force: CGFloat(pressure),
