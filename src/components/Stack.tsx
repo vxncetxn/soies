@@ -19,7 +19,7 @@
  * blurred backdrop with an actions menu (Edit/Share/Delete...) — which clones
  * the deck and animates from its measured frame. That lives in `FocusOverlay`.
  */
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import Animated, {
   interpolate,
@@ -37,6 +37,7 @@ import type { Entry } from "../data/entries";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
+import { useShare } from "../share/ShareContext";
 import CollapsedDeck, { useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
 import FocusOverlay from "./FocusOverlay";
@@ -57,6 +58,7 @@ const Stack = ({ entry }: StackProps) => {
   // drives header/chrome fade-out while *any* entry is expanded. We bump it
   // to 1 on expand and back to 0 on collapse.
   const { chromeProgress } = useExpandContext();
+  const { openShare } = useShare();
   const { width: SCREEN_WIDTH } = useWindowDimensions();
 
   // Layout math (see docs/01 for the full diagram):
@@ -76,6 +78,10 @@ const Stack = ({ entry }: StackProps) => {
   // can reset them during render when the DayPager reuses this Stack across
   // dates (see adjust-state block below).
   const [prevEntry, setPrevEntry] = useState(entry);
+  // Share is deferred until FocusOverlay reports its close spring has settled.
+  // Store the exact session requested by the tap so a list/date update during
+  // the animation cannot switch the artefact underneath the pending action.
+  const pendingShareRef = useRef<{ entry: Entry; page: number } | null>(null);
 
   // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
   // deck's on-screen frame and animate the long-press overlay from it.
@@ -208,6 +214,22 @@ const Stack = ({ entry }: StackProps) => {
     setFocusOpen(false);
   };
 
+  // Begin closing Focus. Presentation happens from `finishFocusClose`, not a
+  // guessed frame delay, so the blur/morph never overlaps the sheet scrim.
+  const openShareFromFocus = () => {
+    pendingShareRef.current = { entry, page: activePage };
+    setFocusOpen(false);
+  };
+
+  const finishFocusClose = () => {
+    const pending = pendingShareRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingShareRef.current = null;
+    openShare(pending.entry, pending.page);
+  };
+
   /**
    * Restore the saved page when the expanded pager lays out. Because the pager
    * is portaled and mounts fresh each expand, its scroll starts at 0; this
@@ -269,6 +291,8 @@ const Stack = ({ entry }: StackProps) => {
         entry={entry}
         activePage={activePage}
         onRequestClose={closeFocus}
+        onShare={openShareFromFocus}
+        onCloseComplete={finishFocusClose}
       />
 
       {/* ---- Expanded branch ---- */}

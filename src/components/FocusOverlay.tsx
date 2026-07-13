@@ -12,21 +12,22 @@
  *      from a UI-thread worklet and store it in `origin`.
  *   2. Spring `progress` 0 → 1. The backdrop fades in, the clone blooms in at
  *      the deck's measured position, and the menu items stagger in.
- *   3. On close, spring `progress` back to 0. No post-close RN notification is
- *      required: the overlay is preloaded and stays mounted; `open={false}`
- *      alone drives the close spring. (An earlier `onClose` + `scheduleOnRN`
- *      bridge was unused by Stack and risked function-valued Worklets args.)
+ *   3. On close, spring `progress` back to 0, then publish a primitive sequence
+ *      to React. Stack uses `onCloseComplete` to present Share only after the
+ *      blur and clone are gone. The Worklets boundary carries a number plus a
+ *      stable state setter—never a render-local function, which can crash when
+ *      serialized after a React Compiler rerender.
  *
  * The overlay always lives in the root `morph` portal host and is always
  * mounted (preloaded) by `Stack` so opening never mounts it fresh. It only
  * animates when `open` flips — see the `previousOpenRef` transition guard
  * (StrictMode-safe: mount / effect replay does not schedule a close spring).
  *
- * Note: the menu items are currently wired to a no-op (`noopAction`) — this is
- * a UI/interaction prototype; the actions aren't implemented yet.
+ * Note: Edit / Add to gallery / Delete are still no-ops; Share closes Focus and
+ * opens the Share sheet via `onShare`.
  */
 import { BlurView } from "expo-blur";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   type AnimatedRef,
@@ -41,7 +42,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
-import { scheduleOnUI } from "react-native-worklets";
+import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import type { Entry } from "../data/entries";
 
@@ -85,6 +86,10 @@ type FocusOverlayProps = {
   // shows the same card as the original.
   activePage: number;
   onRequestClose: () => void;
+  /** Share menu action — Focus closes, then the Share sheet opens (owned by Stack). */
+  onShare: () => void;
+  /** Fires on JS only after the close spring has fully settled at zero. */
+  onCloseComplete?: () => void;
 };
 
 type FocusMenuItemProps = {
@@ -170,10 +175,26 @@ const animateOpen = ({
   });
 };
 
-const animateClose = ({ progress }: { progress: SharedValue<number> }) => {
+const animateClose = ({
+  progress,
+  closeSequence,
+  setCloseSequence,
+}: {
+  progress: SharedValue<number>;
+  closeSequence: SharedValue<number>;
+  setCloseSequence: (value: number) => void;
+}) => {
   scheduleOnUI(() => {
     "worklet";
-    progress.set(withSpring(0, FOCUS_SPRING));
+    progress.set(
+      withSpring(0, FOCUS_SPRING, (finished) => {
+        if (finished) {
+          const next = closeSequence.get() + 1;
+          closeSequence.set(next);
+          scheduleOnRN(setCloseSequence, next);
+        }
+      }),
+    );
   });
 };
 
@@ -186,6 +207,8 @@ const FocusOverlay = ({
   entry,
   activePage,
   onRequestClose,
+  onShare,
+  onCloseComplete,
 }: FocusOverlayProps) => {
   const insets = useSafeAreaInsets();
   // Android-only blurTarget — see useAndroidBlurTargetProps (avoids StrictMode
@@ -205,6 +228,21 @@ const FocusOverlay = ({
   // Transition guard: only animate when `open` actually flips. Initialized from
   // `open` so mount / StrictMode effect replay does not schedule a close spring.
   const previousOpenRef = useRef(open);
+  // Close completion crosses Worklets as a primitive sequence. The latest
+  // callback stays in a ref on JS so no function-valued argument is serialized.
+  const onCloseCompleteRef = useRef(onCloseComplete);
+  const closeSequenceSV = useSharedValue(0);
+  const [closeSequence, setCloseSequence] = useState(0);
+
+  useEffect(() => {
+    onCloseCompleteRef.current = onCloseComplete;
+  }, [onCloseComplete]);
+
+  useEffect(() => {
+    if (closeSequence > 0) {
+      onCloseCompleteRef.current?.();
+    }
+  }, [closeSequence]);
 
   // Mirror the deck's current page into the clone's shared values whenever it
   // changes. This way the clone shows the same card as the original when it
@@ -228,8 +266,8 @@ const FocusOverlay = ({
       return;
     }
 
-    animateClose({ progress });
-  }, [open, origin, progress, triggerRef]);
+    animateClose({ progress, closeSequence: closeSequenceSV, setCloseSequence });
+  }, [closeSequenceSV, open, origin, progress, triggerRef]);
 
   // Hardware-back (Android) closes the overlay when open. Returning true
   // suppresses the default back behavior (navigating away).
@@ -267,9 +305,15 @@ const FocusOverlay = ({
     height: origin.get().height,
   }));
 
-  // Placeholder action handler — the menu actions aren't implemented yet, so
-  // tapping an item does nothing.
+  // Edit / Add to gallery / Delete stay stubs; Share is wired.
   const noopAction = () => {};
+
+  const actionFor = (label: string) => {
+    if (label === "Share") {
+      return onShare;
+    }
+    return noopAction;
+  };
 
   // The menu sits just below the top safe area.
   const menuTop = insets.top + 12;
@@ -329,7 +373,7 @@ const FocusOverlay = ({
               icon={item.icon}
               index={index}
               open={open}
-              onPress={noopAction}
+              onPress={actionFor(item.label)}
             />
           ))}
         </Animated.View>

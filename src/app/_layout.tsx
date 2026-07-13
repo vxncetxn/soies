@@ -1,4 +1,5 @@
 import "../global.css";
+import { BottomSheetProvider } from "@swmansion/react-native-bottom-sheet";
 import { BlurTargetView } from "expo-blur";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
@@ -13,6 +14,7 @@ import { withUniwind } from "uniwind";
 
 import { BlurTargetViewProvider } from "../components/BlurTargetViewContext";
 import { DatabaseProvider } from "../db/DatabaseProvider";
+import { ShareProvider } from "../share/ShareContext";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledPortalHost = withUniwind(PortalHost);
@@ -34,26 +36,30 @@ export default function Layout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StrictMode>
         <KeyboardProvider>
-          <PortalProvider>
-            <SafeAreaProvider>
-              <StatusBar style="auto" />
-              <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
-                <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
-                  <DatabaseProvider>
-                    <StyledSafeAreaView className="flex-1 bg-background">
-                      <Stack screenOptions={{ headerShown: false }}>
-                        <Stack.Screen name="(tabs)" />
-                      </Stack>
-                      <StyledPortalHost name="overlay" className="absolute inset-0" />
-                    </StyledSafeAreaView>
-                  </DatabaseProvider>
-                </BlurTargetViewProvider>
-              </BlurTargetView>
-              <StyledPortalHost name="morph" className="absolute inset-0" />
-              <StyledPortalHost name="bloom" className="absolute inset-0" />
-              <StyledPortalHost name="create" className="absolute inset-0" />
-            </SafeAreaProvider>
-          </PortalProvider>
+          <BottomSheetProvider>
+            <PortalProvider>
+              <SafeAreaProvider>
+                <StatusBar style="auto" />
+                <ShareProvider>
+                  <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
+                    <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
+                      <DatabaseProvider>
+                        <StyledSafeAreaView className="flex-1 bg-background">
+                          <Stack screenOptions={{ headerShown: false }}>
+                            <Stack.Screen name="(tabs)" />
+                          </Stack>
+                          <StyledPortalHost name="overlay" className="absolute inset-0" />
+                        </StyledSafeAreaView>
+                      </DatabaseProvider>
+                    </BlurTargetViewProvider>
+                  </BlurTargetView>
+                  <StyledPortalHost name="morph" className="absolute inset-0" />
+                  <StyledPortalHost name="bloom" className="absolute inset-0" />
+                  <StyledPortalHost name="create" className="absolute inset-0" />
+                </ShareProvider>
+              </SafeAreaProvider>
+            </PortalProvider>
+          </BottomSheetProvider>
         </KeyboardProvider>
       </StrictMode>
     </GestureHandlerRootView>

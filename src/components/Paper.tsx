@@ -5,15 +5,24 @@ import InkOverlay from "./InkOverlay";
 
 type PaperProps = {
   inkOverlayPath?: string;
+  onInkDisplay?: () => void;
+  onInkError?: () => void;
 };
 
-const Paper = ({ children, inkOverlayPath }: PropsWithChildren<PaperProps>) => {
+const Paper = ({
+  children,
+  inkOverlayPath,
+  onInkDisplay,
+  onInkError,
+}: PropsWithChildren<PaperProps>) => {
   return (
     <View className="relative aspect-a4 h-full w-full overflow-hidden bg-paper">
       <View className="h-full w-full p-6">
         <Text className="font-paper text-base text-primary">{children}</Text>
       </View>
-      {inkOverlayPath ? <InkOverlay uri={inkOverlayPath} /> : null}
+      {inkOverlayPath ? (
+        <InkOverlay uri={inkOverlayPath} onDisplay={onInkDisplay} onError={onInkError} />
+      ) : null}
     </View>
   );
 };

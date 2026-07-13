@@ -41,6 +41,21 @@
           "cameraPermission": "Allow soies to use the camera to create Print entries.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow soies to save shared artefacts to your photo library.",
+          "savePhotosPermission": "Allow soies to save shared artefacts to your photo library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
+        "react-native-share",
+        {
+          "ios": ["fb", "facebook-stories", "instagram", "instagram-stories"],
+          "android": ["com.facebook.katana", "com.instagram.android"]
+        }
       ]
     ],
     "name": "soies",
@@ -51,6 +66,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow soies to use the camera to create Print entries.",
         "NSPhotoLibraryUsageDescription": "Allow soies to access your photos to create Print entries.",
+        "NSPhotoLibraryAddUsageDescription": "Allow soies to save shared artefacts to your photo library.",
+        "LSApplicationQueriesSchemes": ["fb", "facebook-stories", "instagram", "instagram-stories"],
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }

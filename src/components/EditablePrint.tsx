@@ -44,14 +44,17 @@ import { withUniwind } from "uniwind";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
+import {
+  getCollapsedArtefactLayout,
+  PRINT_FONT_FAMILY,
+  PRINT_FONT_SIZE,
+  PRINT_LINE_HEIGHT,
+  PRINT_MAX_CAPTION_LINES,
+} from "./artefactLayout";
 import InkOverlay from "./InkOverlay";
 
 const StyledImage = withUniwind(Image);
 
-const PRINT_FONT_FAMILY = "ABCStefan-Simple-Trial";
-const PRINT_FONT_SIZE = 16;
-const INPUT_LINE_HEIGHT = PRINT_FONT_SIZE * 1.4;
-const MAX_CAPTION_LINES = 2;
 const PRINT_BOTTOM_GUTTER = 16;
 // Must match CreateScreenChrome header content heights (below top safe padding).
 const CREATE_HEADER_HEIGHT = 84;
@@ -109,11 +112,11 @@ const EditablePrint = ({
   const topPad = insets.top + 12;
   const localInputRef = useRef<TextInput>(null);
 
-  // Print collapsed width matches ArtefactWrapper: same height as A4 paper deck,
-  // width = (53/86) × that height.
-  const paperHeight = ((windowWidth - 80) / 210) * 297;
-  const BASE_WIDTH = (53 / 86) * paperHeight;
-  const BASE_HEIGHT = paperHeight;
+  // Shared with Home and Share so fixed chrome scales from one canonical card.
+  const { width: BASE_WIDTH, height: BASE_HEIGHT } = getCollapsedArtefactLayout(
+    windowWidth,
+    "print",
+  );
   const EXPANDED_WIDTH = windowWidth - 20;
   const expandedScale = EXPANDED_WIDTH / BASE_WIDTH;
 
@@ -126,7 +129,7 @@ const EditablePrint = ({
 
   const truncateToLines = (lines: TextLayoutEventData["lines"], src: string) => {
     let fitTextLen = 0;
-    for (let i = 0; i < lines.length && i < MAX_CAPTION_LINES; i++) {
+    for (let i = 0; i < lines.length && i < PRINT_MAX_CAPTION_LINES; i++) {
       fitTextLen += lines[i].text.length;
     }
     let count = 0;
@@ -146,7 +149,7 @@ const EditablePrint = ({
     }
     const lines = event.nativeEvent.lines;
 
-    if (lines.length > MAX_CAPTION_LINES) {
+    if (lines.length > PRINT_MAX_CAPTION_LINES) {
       const truncated = truncateToLines(lines, value);
       if (truncated.length < value.length) {
         onChangeText(truncated);
@@ -157,7 +160,7 @@ const EditablePrint = ({
 
     let nextMaxChars = ARTEFACT_TEXT_LIMITS.print;
     const last = lines.length > 0 ? lines[lines.length - 1] : null;
-    if (lines.length === MAX_CAPTION_LINES && last && last.text.length > 0) {
+    if (lines.length === PRINT_MAX_CAPTION_LINES && last && last.text.length > 0) {
       const avgCharWidth = last.width / last.text.length;
       if (last.width + avgCharWidth > captionWidth) {
         nextMaxChars = value.length;
@@ -256,8 +259,7 @@ const EditablePrint = ({
         return;
       }
 
-      const kbClosing =
-        prev != null && curr.p > 0.25 && prev.keyboardOpen - curr.keyboardOpen > 30;
+      const kbClosing = prev != null && curr.p > 0.25 && prev.keyboardOpen - curr.keyboardOpen > 30;
       const progressCollapsing =
         prev != null && curr.p < prev.p - 0.01 && prev.p > 0.4 && !curr.collapsing;
 
@@ -353,7 +355,7 @@ const EditablePrint = ({
               maxLength={maxChars}
               textAlignVertical="top"
               className="w-full font-paper text-base text-primary"
-              style={[styles.input, { maxHeight: INPUT_LINE_HEIGHT * MAX_CAPTION_LINES }]}
+              style={[styles.input, { maxHeight: PRINT_LINE_HEIGHT * PRINT_MAX_CAPTION_LINES }]}
             />
           </View>
         </Pressable>
@@ -372,12 +374,12 @@ const styles = StyleSheet.create({
     top: 0,
     fontFamily: PRINT_FONT_FAMILY,
     fontSize: PRINT_FONT_SIZE,
-    lineHeight: INPUT_LINE_HEIGHT,
+    lineHeight: PRINT_LINE_HEIGHT,
   },
   input: {
     fontFamily: PRINT_FONT_FAMILY,
     fontSize: PRINT_FONT_SIZE,
-    lineHeight: INPUT_LINE_HEIGHT,
+    lineHeight: PRINT_LINE_HEIGHT,
     padding: 0,
     margin: 0,
   },

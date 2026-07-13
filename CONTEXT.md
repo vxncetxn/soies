@@ -47,3 +47,11 @@ _Avoid_: Annotate mode, draw mode, drawing tools
 **Ink**:
 Durable strokes plus a display overlay belonging to one artefact.
 _Avoid_: Annotation (UI sense), scribble (for the data), drawing
+
+**Share**:
+Exporting a single artefact as a composed image (not the whole entry).
+_Avoid_: Posting, publishing, sharing an entry
+
+**Share image**:
+The raster produced for a share target (full canvas or transparent sticker).
+_Avoid_: Screenshot

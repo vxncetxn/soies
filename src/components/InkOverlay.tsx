@@ -12,9 +12,12 @@ const StyledImage = withUniwind(Image);
 
 type InkOverlayProps = {
   uri: string;
+  /** Optional export barrier callbacks; normal display callers do not need them. */
+  onDisplay?: () => void;
+  onError?: () => void;
 };
 
-const InkOverlay = ({ uri }: InkOverlayProps) => (
+const InkOverlay = ({ uri, onDisplay, onError }: InkOverlayProps) => (
   <View pointerEvents="none" style={StyleSheet.absoluteFill}>
     <StyledImage
       source={uri}
@@ -22,6 +25,8 @@ const InkOverlay = ({ uri }: InkOverlayProps) => (
       contentFit="fill"
       cachePolicy="memory-disk"
       transition={0}
+      onDisplay={onDisplay}
+      onError={onError}
     />
   </View>
 );

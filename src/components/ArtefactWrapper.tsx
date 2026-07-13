@@ -4,6 +4,7 @@ import Animated, { interpolate, SharedValue, useAnimatedStyle } from "react-nati
 
 import { SHADOW_SM, SHADOW_XL } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
+import { getCollapsedArtefactLayout } from "./artefactLayout";
 
 type ArtefactWrapperProps = {
   type: string;
@@ -23,8 +24,10 @@ const ArtefactWrapper = ({
   children,
 }: ArtefactWrapperProps) => {
   const { width: SCREEN_WIDTH } = useWindowDimensions();
-  const BASE_WIDTH =
-    type === "paper" ? SCREEN_WIDTH - 80 : (53 / 86) * (((SCREEN_WIDTH - 80) / 210) * 297);
+  const { width: BASE_WIDTH } = getCollapsedArtefactLayout(
+    SCREEN_WIDTH,
+    type === "paper" ? "paper" : "print",
+  );
   const EXPANDED_WIDTH = SCREEN_WIDTH - 20;
 
   const animatedStyle = useAnimatedStyle(() => {
