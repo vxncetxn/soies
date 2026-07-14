@@ -61,6 +61,10 @@ type GalleryAddSheetProps = {
 };
 
 const SHEET_SURFACE = "#F5F5F4";
+// GalleryFrame's board shadow extends farther below than above its board. This
+// much trailing space lets that shadow fade back into the sheet surface before
+// the horizontal ScrollView clips, avoiding a hard line above the controls.
+const PICKER_SHADOW_FADE_PADDING_BOTTOM = 56;
 
 export function GalleryAddSheet({
   entry,
@@ -249,7 +253,8 @@ export function GalleryAddSheet({
           contentContainerStyle={{
             paddingHorizontal: sidePad,
             alignItems: "center",
-            paddingVertical: 24,
+            paddingTop: 24,
+            paddingBottom: PICKER_SHADOW_FADE_PADDING_BOTTOM,
             backgroundColor: SHEET_SURFACE,
           }}
           onMomentumScrollEnd={selectAtOffset}

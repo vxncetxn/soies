@@ -8,10 +8,12 @@
  *
  * The live app deliberately adapts the subject treatment: user-authored Paper,
  * Print, and Ink are contained rather than cropped, and no extra source padding
- * is added. Paper owns its artefact padding; Print owns its top padding and caption
- * gap, so each artefact is first laid out at its natural Home size and then
- * uniformly scaled into the well. The reduced shadow stack keeps the source's
- * board depth, inner edge, and light mat centre without copying every web layer.
+ * is added inside the artefact itself. Paper owns its text padding; Print owns
+ * its top padding and caption gap. Each artefact is first laid out at its
+ * natural Home size, uniformly scaled into a protected inner inset, then given
+ * Home's subtle collapsed-card shadow. The inset keeps white pages clear of the
+ * well's inner edge, while the reduced frame shadow stack preserves the source's
+ * board depth and light mat centre without copying every web layer.
  */
 import { type ReactNode } from "react";
 import { Pressable, StyleSheet, View, type ViewStyle } from "react-native";
@@ -36,6 +38,13 @@ const FRAME_WELL_ASPECT = 3 / 4;
 export const FRAME_BOARD_SCALE = 1.45;
 /** Inner mat vs well (Astro figure:before). */
 const FRAME_MAT_SCALE = 1.32;
+// Reserve 4% of the well width on every edge. This is deliberately quieter
+// than the web reference's 2vw padding, but it guarantees that no artefact can
+// cover the well's inset shadow at the top or bottom.
+const FRAME_CONTENT_INSET_SCALE = 0.04;
+// Match Home's collapsed SHADOW_SM (1px offset, 2px blur, 5% opacity). Against
+// the white well this is just enough to reveal a white page boundary.
+const FRAME_ARTEFACT_SHADOW = "0 1px 2px rgba(0,0,0,0.05)";
 
 function wellSizeForMaxWidth(maxWellWidth: number): { width: number; height: number } {
   return { width: maxWellWidth, height: maxWellWidth / FRAME_WELL_ASPECT };
@@ -115,13 +124,22 @@ const GalleryFrame = ({
   const wellH = wellWidth / FRAME_WELL_ASPECT;
   const boardSize = { width: wellW * FRAME_BOARD_SCALE, height: wellH * FRAME_BOARD_SCALE };
   const matSize = { width: wellW * FRAME_MAT_SCALE, height: wellH * FRAME_MAT_SCALE };
+  const contentInset = wellW * FRAME_CONTENT_INSET_SCALE;
+  const contentBounds = {
+    width: wellW - contentInset * 2,
+    height: wellH - contentInset * 2,
+  };
 
   const kind = artefactKind(artefact);
   const natural =
     kind === "unknown"
       ? containSize(wellW, wellH, artefactAspect(artefact))
       : getCollapsedArtefactLayout(viewportWidth, kind);
-  const target = containSize(wellW, wellH, natural.width / natural.height);
+  const target = containSize(
+    contentBounds.width,
+    contentBounds.height,
+    natural.width / natural.height,
+  );
   const scale = target.width / natural.width;
 
   const content = children ?? renderArtefactContent(artefact);
@@ -164,13 +182,7 @@ const GalleryFrame = ({
           size; inner keeps Home natural size so fixed Print/Paper chrome scales
           uniformly via transformOrigin top-left.
         */}
-        <View
-          style={{
-            width: target.width,
-            height: target.height,
-            overflow: "hidden",
-          }}
-        >
+        <View style={[styles.artefact, { width: target.width, height: target.height }]}>
           <View
             style={{
               width: natural.width,
@@ -239,6 +251,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     boxShadow: "inset 0 4px 2px rgba(0,0,0,0.18)",
+  },
+  // The page owns its clipping; this wrapper stays overflow-visible so the
+  // boundary shadow can fall onto the surrounding white well.
+  artefact: {
+    boxShadow: FRAME_ARTEFACT_SHADOW,
   },
 });
 
