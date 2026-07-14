@@ -37,10 +37,11 @@ import type { Entry } from "../data/entries";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
+import { useGalleryAdd } from "../gallery/GalleryAddContext";
 import { useShare } from "../share/ShareContext";
 import CollapsedDeck, { useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
-import FocusOverlay from "./FocusOverlay";
+import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
 import { Icon } from "./Icon";
 import LongPressable from "./LongPressable";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
@@ -59,6 +60,7 @@ const Stack = ({ entry }: StackProps) => {
   // to 1 on expand and back to 0 on collapse.
   const { chromeProgress } = useExpandContext();
   const { openShare } = useShare();
+  const { openGalleryAdd } = useGalleryAdd();
   const { width: SCREEN_WIDTH } = useWindowDimensions();
 
   // Layout math (see docs/01 for the full diagram):
@@ -78,10 +80,13 @@ const Stack = ({ entry }: StackProps) => {
   // can reset them during render when the DayPager reuses this Stack across
   // dates (see adjust-state block below).
   const [prevEntry, setPrevEntry] = useState(entry);
-  // Share is deferred until FocusOverlay reports its close spring has settled.
-  // Store the exact session requested by the tap so a list/date update during
-  // the animation cannot switch the artefact underneath the pending action.
+  // Share / Add-to-Gallery are deferred until FocusOverlay reports its close
+  // spring has settled. Store the exact session requested by the tap so a
+  // list/date update during the animation cannot switch the artefact underneath.
   const pendingShareRef = useRef<{ entry: Entry; page: number } | null>(null);
+  const pendingGalleryAddRef = useRef<{ entry: Entry; page: number } | null>(null);
+  type PendingFocusAction = "share" | "galleryAdd" | null;
+  const pendingFocusActionRef = useRef<PendingFocusAction>(null);
 
   // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
   // deck's on-screen frame and animate the long-press overlay from it.
@@ -217,18 +222,55 @@ const Stack = ({ entry }: StackProps) => {
   // Begin closing Focus. Presentation happens from `finishFocusClose`, not a
   // guessed frame delay, so the blur/morph never overlaps the sheet scrim.
   const openShareFromFocus = () => {
+    pendingFocusActionRef.current = "share";
     pendingShareRef.current = { entry, page: activePage };
     setFocusOpen(false);
   };
 
+  const openGalleryAddFromFocus = () => {
+    pendingFocusActionRef.current = "galleryAdd";
+    pendingGalleryAddRef.current = { entry, page: activePage };
+    setFocusOpen(false);
+  };
+
   const finishFocusClose = () => {
-    const pending = pendingShareRef.current;
-    if (!pending) {
+    const action = pendingFocusActionRef.current;
+    pendingFocusActionRef.current = null;
+
+    if (action === "share") {
+      const pending = pendingShareRef.current;
+      pendingShareRef.current = null;
+      if (pending) {
+        openShare(pending.entry, pending.page);
+      }
       return;
     }
-    pendingShareRef.current = null;
-    openShare(pending.entry, pending.page);
+
+    if (action === "galleryAdd") {
+      const pending = pendingGalleryAddRef.current;
+      pendingGalleryAddRef.current = null;
+      if (pending) {
+        openGalleryAdd(pending.entry, pending.page);
+      }
+    }
   };
+
+  const focusMenuItems: FocusMenuItem[] = [
+    { label: "Edit", icon: "pencil", onPress: () => {} },
+    { label: "Add to gallery", icon: "photo", onPress: openGalleryAddFromFocus },
+    { label: "Share", icon: "share", onPress: openShareFromFocus },
+    { label: "Delete", icon: "trash", onPress: () => {} },
+  ];
+
+  // Frozen clone shared values for Focus subject (do not share live pager values).
+  const cloneProgress = useSharedValue(0);
+  const cloneCurrentPage = useSharedValue(0);
+  const cloneActiveIndex = useSharedValue(0);
+
+  useLayoutEffect(() => {
+    cloneCurrentPage.set(activePage);
+    cloneActiveIndex.set(activePage);
+  }, [activePage, cloneActiveIndex, cloneCurrentPage]);
 
   /**
    * Restore the saved page when the expanded pager lays out. Because the pager
@@ -288,11 +330,18 @@ const Stack = ({ entry }: StackProps) => {
       <FocusOverlay
         triggerRef={triggerRef}
         open={focusOpen}
-        entry={entry}
-        activePage={activePage}
+        subject={
+          <CollapsedDeck
+            entry={entry}
+            progress={cloneProgress}
+            currentPage={cloneCurrentPage}
+            activeIndex={cloneActiveIndex}
+          />
+        }
+        menuItems={focusMenuItems}
         onRequestClose={closeFocus}
-        onShare={openShareFromFocus}
         onCloseComplete={finishFocusClose}
+        accessibilityDismissLabel="Dismiss entry options"
       />
 
       {/* ---- Expanded branch ---- */}

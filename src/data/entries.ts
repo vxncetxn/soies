@@ -1,6 +1,7 @@
 import type { InkDocument } from "./ink";
 
 export type PaperArtefact = {
+  id: string;
   text: string;
   /**
    * Parsed Ink strokes — loaded only for edit/Scribble, not Home display.
@@ -12,6 +13,7 @@ export type PaperArtefact = {
 };
 
 export type PrintArtefact = {
+  id: string;
   text: string;
   imagePath: string;
   /** See PaperArtefact.ink. */
@@ -20,6 +22,7 @@ export type PrintArtefact = {
 };
 
 export type UnknownArtefact = {
+  id: string;
   type: string;
   rawData: string;
 };
@@ -61,6 +64,7 @@ export type Tag = {
 };
 
 export type GalleryArtefact = {
+  galleryId: string;
   artefact: Artefact;
   entryId: string;
   entryTitle: string;
@@ -70,7 +74,13 @@ export type GalleryArtefact = {
 export { getEntriesByDate, getEntryDates, getAllEntriesByDate } from "../db/repositories/entries";
 export { searchEntries } from "../db/repositories/search";
 export { listTags } from "../db/repositories/tags";
-export { getGallery } from "../db/repositories/gallery";
+export {
+  getGallery,
+  addArtefactToGallery,
+  removeArtefactFromGallery,
+  isArtefactInGallery,
+  getFeaturedArtefactIds,
+} from "../db/repositories/gallery";
 export { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
 
 export function isUnknownArtefact(artefact: Artefact): artefact is UnknownArtefact {

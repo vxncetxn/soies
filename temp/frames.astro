@@ -1,0 +1,106 @@
+---
+import type { ImageMetadata } from "astro";
+import type { CollectionEntry } from "astro:content";
+
+import Overlay from "../components/Overlay.astro";
+
+import { Image } from "astro:assets";
+
+import Label from "../components/Label.astro";
+
+interface Props {
+  message: CollectionEntry<"messages">;
+  index: number;
+}
+
+const { message, index } = Astro.props;
+const images = import.meta.glob<{ default: ImageMetadata }>(
+  "/src/assets/*.{jpeg,jpg,png,gif}",
+);
+if (!images[`/src/assets/img-${message.data.order}.jpg`])
+  throw new Error(
+    `"/src/assets/img-${message.data.order}.jpg" does not exist in glob: "src/assets/*.{jpeg,jpg,png,gif}"`,
+  );
+---
+
+<article
+  id={`exhibit-${index}`}
+  class="bg-noise visibility-auto z-10 flex h-screen w-screen snap-center items-center justify-center bg-stone-200 contain-strict"
+>
+  <Overlay {index} />
+  <figure
+    class={`[contain:layout_style] z-10 relative ${message.data.image.type === "portrait" ? "w-[18vw] h-[24vw] lg:w-[20vw] lg:h-[26.67vw]" : message.data.image.type === "landscape" ? "w-[28vw] h-[21vw] lg:w-[30vw] lg:h-[22.5vw]" : "w-[40vw] lg:w-[50vw]"}`}
+  >
+    <Image
+      src={images[`/src/assets/img-${message.data.order}.jpg`]()}
+      alt={message.data.title}
+      densities={[1, 1.5, 2]}
+      loading="eager"
+      class={`object-cover box-border p-[2vw] shadow-[inset_0px_0.3em_0.1em_rgba(0,0,0,0.2)] ${message.data.image.type === "large" ? "aspect-video" : ""}`}
+    />
+  </figure>
+  {message.data.image.type === "large" ? null : <Label {index} {message} />}
+</article>
+
+<style>
+  figure:before {
+    content: "";
+    position: absolute;
+    display: block;
+    width: 132%;
+    height: 132%;
+    top: -16%;
+    left: -16%;
+    background-color: #f8f8f8;
+    z-index: -1;
+    box-shadow:
+      inset 0px 10px 0.5em rgba(0, 0, 0, 0.25),
+      inset 0.1em 0px 0.1em rgba(0, 0, 0, 0.1),
+      inset -0.1em 0px 0.1em rgba(0, 0, 0, 0.05),
+      0 0.3em 0.2em #fff;
+    background-image: -moz-radial-gradient(
+      circle farthest-corner at 50% 50%,
+      #ffffff,
+      #f8f8f8 100%
+    );
+    background-image: -webkit-radial-gradient(
+      circle farthest-corner at 50% 50%,
+      #ffffff,
+      #f8f8f8 100%
+    );
+    background-image: -o-radial-gradient(
+      circle farthest-corner at 50% 50%,
+      #ffffff,
+      #f8f8f8 100%
+    );
+    background-image: -ms-radial-gradient(
+      circle farthest-corner at 50% 50%,
+      #ffffff,
+      #f8f8f8 100%
+    );
+    background-image: radial-gradient(
+      circle farthest-corner at 50% 50%,
+      #ffffff,
+      #f8f8f8 100%
+    );
+  }
+
+  figure:after {
+    content: "";
+    position: absolute;
+    display: block;
+    width: 145%;
+    height: 145%;
+    top: -22.5%;
+    left: -22.5%;
+    background: #f8f8f8;
+    z-index: -2;
+    box-shadow:
+      0px 1em 2em -1em rgba(0, 0, 0, 0.4),
+      0px 2em 2em -1em rgba(0, 0, 0, 0.3),
+      0px 3em 2em -1em rgba(0, 0, 0, 0.2),
+      0px 4em 1.5em -1em rgba(0, 0, 0, 0.15),
+      0px 2em 4em 0.5em rgba(0, 0, 0, 0.1),
+      inset 0 0.2em 0.1em #fff;
+  }
+</style>

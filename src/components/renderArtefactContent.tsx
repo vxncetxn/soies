@@ -1,0 +1,36 @@
+/**
+ * Shared per-artefact content renderer (Paper / Print / unknown placeholder).
+ * Used by CollapsedDeck, GalleryFrame, and the Add-to-Gallery picker.
+ */
+import { ReactNode } from "react";
+import { Text, View } from "react-native";
+
+import type { Artefact } from "../data/entries";
+
+import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
+import Paper from "./Paper";
+import Print from "./Print";
+
+export function renderArtefactContent(artefact: Artefact, key?: string | number): ReactNode {
+  if (isPrintArtefact(artefact)) {
+    return (
+      <Print key={key} imagePath={artefact.imagePath} inkOverlayPath={artefact.inkOverlayPath}>
+        {artefact.text}
+      </Print>
+    );
+  }
+
+  if (isUnknownArtefact(artefact)) {
+    return (
+      <View key={key} className="flex h-full w-full items-center justify-center bg-paper p-4">
+        <Text className="text-center text-primary">Unsupported artefact</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Paper key={key} inkOverlayPath={artefact.inkOverlayPath}>
+      {artefact.text}
+    </Paper>
+  );
+}

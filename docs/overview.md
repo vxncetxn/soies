@@ -40,7 +40,7 @@ flowchart TD
   Root["src/app/_layout.tsx<br/>fonts, portals, blur target, StrictMode"]
   Tabs["src/app/(tabs)/_layout.tsx<br/>Home + Gallery tabs"]
   Home["src/app/(tabs)/index.tsx<br/>day pager home"]
-  Gallery["src/app/(tabs)/gallery.tsx<br/>placeholder"]
+  Gallery["src/app/(tabs)/gallery.tsx<br/>horizontal framed artefacts"]
   Root --> Tabs
   Tabs --> Home
   Tabs --> Gallery
@@ -64,7 +64,7 @@ flowchart TD
 | [`tsconfig.json`](../tsconfig.json) | TypeScript (extends Expo base, `strict: true`). |
 | [`.oxlintrc.json`](../.oxlintrc.json) / [`.oxfmtrc.json`](../.oxfmtrc.json) | Lint and format (oxlint with native React Compiler rules, oxfmt). |
 | [`.github/workflows/quality.yml`](../.github/workflows/quality.yml) | CI: `pnpm check` + production iOS `expo export`. |
-| [`CONTEXT.md`](./CONTEXT.md) | Ubiquitous language: Entry, Artefact, Paper, Print, Day, Gallery, Tombstone, Undo. |
+| [`CONTEXT.md`](./CONTEXT.md) | Ubiquitous language: Entry, Artefact, Paper, Print, Day, Gallery, Frame, Tombstone, Undo. |
 | [`AGENTS.md`](../AGENTS.md) / [`CLAUDE.md`](../CLAUDE.md) | Pointers for AI assistants (Expo **v57** docs). |
 | [`README.md`](../README.md) | Minimal Expo Router + Uniwind starter notes. |
 
@@ -77,7 +77,7 @@ flowchart TD
 | [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), **`bloom`** (BloomPanel calendar/menus), **`create`** (create flow). Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. |
 | [`src/app/(tabs)/_layout.tsx`](../src/app/(tabs)/_layout.tsx) | **Tab layout.** Native-style tabs (Home, Gallery) with custom styled triggers. Wraps tabs in `ExpandProvider` so expand/collapse can hide chrome app-wide. |
 | [`src/app/(tabs)/index.tsx`](../src/app/(tabs)/index.tsx) | **Home screen.** Reads optional `?date=` from the URL, loads entries for that day, renders `HomeHeader` + vertical `DayPager`. Tracks scroll offset as shared values for the header title and scroll indicator. |
-| [`src/app/(tabs)/gallery.tsx`](../src/app/(tabs)/gallery.tsx) | **Gallery tab.** Placeholder screen for future curated entry browsing. |
+| [`src/app/(tabs)/gallery.tsx`](../src/app/(tabs)/gallery.tsx) | **Gallery tab.** Horizontal paging strip of framed featured Artefacts; no HomeHeader. |
 
 ---
 
@@ -101,7 +101,9 @@ flowchart TD
 |------|------|
 | [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** used by the calendar (fullscreen) and create menus. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
 | [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Month calendar (`flash-calendar`) with dots on days that have entries. Selecting a date navigates home with `?date=`. |
-| [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press “focus” mode on a stack: blurred backdrop, cloned deck, contextual menu actions (share, edit, delete icons — UI only for now). Preloaded; `open={false}` drives close with no post-close RN callback. |
+| [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: blurred backdrop, measured subject clone, parameterized menu. Shared by Home stacks and Gallery frames. |
+| [`GalleryFrame.tsx`](../src/components/GalleryFrame.tsx) | Portrait mat chrome wrapping live Paper/Print (and future artefact kinds). |
+| [`GalleryPager.tsx`](../src/components/GalleryPager.tsx) | Horizontal paging Gallery strip + Focus Delete; lands on pending index after Add. |
 | [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) | **Unused** legacy morph overlay (no callsite). Kept for reference; unsafe Worklets `onClose` bridge — do not reintroduce without hardening. |
 
 ### Shared UI & context
@@ -122,6 +124,8 @@ flowchart TD
 |------|------|
 | [`tabs/StyledTabList.tsx`](../src/components/tabs/StyledTabList.tsx) | Bottom tab bar container styling. |
 | [`tabs/StyledTabTrigger.tsx`](../src/components/tabs/StyledTabTrigger.tsx) | Individual tab trigger styling. |
+| [`tabs/CameraShiftTabSlot.tsx`](../src/components/tabs/CameraShiftTabSlot.tsx) | Keep-alive Home↔Gallery content pan; chrome stays fixed (ADR-0010). |
+| [`tabs/TabTransitionContext.tsx`](../src/components/tabs/TabTransitionContext.tsx) | Shared `shiftProgress` for the camera-shift. |
 
 ---
 

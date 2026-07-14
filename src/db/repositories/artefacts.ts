@@ -56,11 +56,12 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
     try {
       const parsed = JSON.parse(row.data) as { text?: string };
       return {
+        id: row.id,
         text: parsed.text ?? "",
         ...inkDisplayFields(row.id, row.has_ink),
       };
     } catch {
-      return { text: "" };
+      return { id: row.id, text: "" };
     }
   }
 
@@ -68,16 +69,18 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
     try {
       const parsed = JSON.parse(row.data) as { text?: string; imagePath?: string };
       return {
+        id: row.id,
         text: parsed.text ?? "",
         imagePath: parsed.imagePath ?? "",
         ...inkDisplayFields(row.id, row.has_ink),
       };
     } catch {
-      return { text: "", imagePath: "" };
+      return { id: row.id, text: "", imagePath: "" };
     }
   }
 
   return {
+    id: row.id,
     type: row.type,
     rawData: row.data,
   };
@@ -177,6 +180,15 @@ export async function softDeleteArtefact(
 ): Promise<void> {
   await withTransaction(tx, async (db) => {
     await db.execute("UPDATE artefacts SET deleted_at = ? WHERE id = ?", [deletedAt, artefactId]);
+
+    // Gallery is a live view over artefacts — soft-delete membership in the same
+    // write so resurrect via Add-to-Gallery stays clean (unique active index).
+    // Inline SQL (not removeArtefactFromGallery) to avoid a require cycle with
+    // gallery.ts, which imports mapArtefactRow from this module.
+    await db.execute(
+      "UPDATE gallery_items SET deleted_at = ?, updated_at = ? WHERE artefact_id = ? AND deleted_at IS NULL",
+      [deletedAt, deletedAt, artefactId],
+    );
 
     const artefactRowid = await getArtefactRowid(db, artefactId);
     if (artefactRowid != null) {

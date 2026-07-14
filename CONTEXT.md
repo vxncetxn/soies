@@ -25,8 +25,12 @@ A calendar date (`YYYY-MM-DD`) that groups zero or more entries.
 _Avoid_: Page, session
 
 **Gallery**:
-A curated collection entries can be added to for browsing outside the day pager.
+A curated, ordered collection of featured Artefacts for browsing outside the day pager.
 _Avoid_: Album, folder
+
+**Frame**:
+The portrait presentation that exhibits a Gallery Artefact (wraps the live Paper/Print surface); not a separate persisted entity.
+_Avoid_: Exhibit, feature card, mat
 
 **Tombstone**:
 A soft-deleted record marked by `deleted_at`; hidden from reads but retained for sync.

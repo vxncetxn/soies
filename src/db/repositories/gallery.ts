@@ -19,24 +19,25 @@ export async function addArtefactToGallery(artefactId: string, tx?: DbExecutor):
       return;
     }
 
+    const orderResult = await db.execute(
+      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM gallery_items WHERE deleted_at IS NULL",
+    );
+    const sortOrder = Number(orderResult.rows[0]?.next_order ?? 0);
+
     // Previously un-featured (tombstoned) -> revive the existing membership row
-    // so re-featuring keeps a stable row id (sync-friendly, no new UUID).
+    // so re-featuring keeps a stable row id (sync-friendly, no new UUID). Append
+    // at the end like a first-time add so order stays newest-last.
     const tombstoned = await db.execute(
       "SELECT id FROM gallery_items WHERE artefact_id = ? AND deleted_at IS NOT NULL LIMIT 1",
       [artefactId],
     );
     if (tombstoned.rows.length > 0) {
       await db.execute(
-        "UPDATE gallery_items SET deleted_at = NULL, added_at = ?, updated_at = ?, sort_order = 0 WHERE id = ?",
-        [now, now, tombstoned.rows[0].id],
+        "UPDATE gallery_items SET deleted_at = NULL, added_at = ?, updated_at = ?, sort_order = ? WHERE id = ?",
+        [now, now, sortOrder, tombstoned.rows[0].id],
       );
       return;
     }
-
-    const orderResult = await db.execute(
-      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM gallery_items WHERE deleted_at IS NULL",
-    );
-    const sortOrder = Number(orderResult.rows[0]?.next_order ?? 0);
 
     await db.execute(
       `INSERT INTO gallery_items (id, artefact_id, sort_order, added_at, updated_at)
@@ -44,6 +45,23 @@ export async function addArtefactToGallery(artefactId: string, tx?: DbExecutor):
       [Crypto.randomUUID(), artefactId, sortOrder, now, now],
     );
   });
+}
+
+/** Active gallery membership for one artefact (for picker dimming). */
+export async function isArtefactInGallery(artefactId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const result = await db.execute(
+    "SELECT 1 AS ok FROM gallery_items WHERE artefact_id = ? AND deleted_at IS NULL LIMIT 1",
+    [artefactId],
+  );
+  return result.rows.length > 0;
+}
+
+/** All currently featured artefact ids (batch check for an entry's picker). */
+export async function getFeaturedArtefactIds(): Promise<Set<string>> {
+  const db = await getDatabase();
+  const result = await db.execute("SELECT artefact_id FROM gallery_items WHERE deleted_at IS NULL");
+  return new Set(result.rows.map((row) => String(row.artefact_id)));
 }
 
 export async function removeArtefactFromGallery(
@@ -122,6 +140,7 @@ export async function getGallery(): Promise<GalleryArtefact[]> {
     };
 
     return {
+      galleryId: String(row.gallery_id),
       artefact: mapArtefactRow(artefactRow),
       entryId: String(row.entry_id),
       entryTitle: String(row.entry_title),

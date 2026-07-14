@@ -21,47 +21,12 @@
  *     render the same artefact components driven by the same shared values).
  */
 import { ReactNode } from "react";
-import { Text, View } from "react-native";
 import Animated, { type AnimatedRef, type SharedValue } from "react-native-reanimated";
 
-import type { Artefact, Entry } from "../data/entries";
+import type { Entry } from "../data/entries";
 
-import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
 import ArtefactWrapper from "./ArtefactWrapper";
-import Paper from "./Paper";
-import Print from "./Print";
-
-/**
- * Pick the content component for a single artefact based on the artefact's own
- * shape (not the entry's primary type). This keeps rendering correct when an
- * entry mixes artefact types, and lets an unknown/future artefact type render a
- * placeholder instead of being coerced into a Print and crashing on a missing
- * `imagePath` (ADR-0003). The entry-type discriminant is still used elsewhere
- * for layout (aspect ratio), but content rendering is per-artefact.
- */
-function renderArtefactContent(artefact: Artefact, index: number): ReactNode {
-  if (isPrintArtefact(artefact)) {
-    return (
-      <Print key={index} imagePath={artefact.imagePath} inkOverlayPath={artefact.inkOverlayPath}>
-        {artefact.text}
-      </Print>
-    );
-  }
-
-  if (isUnknownArtefact(artefact)) {
-    return (
-      <View key={index} className="flex h-full w-full items-center justify-center bg-paper p-4">
-        <Text className="text-center text-primary">Unsupported artefact</Text>
-      </View>
-    );
-  }
-
-  return (
-    <Paper key={index} inkOverlayPath={artefact.inkOverlayPath}>
-      {artefact.text}
-    </Paper>
-  );
-}
+import { renderArtefactContent } from "./renderArtefactContent";
 
 /**
  * Build the className for a deck/frame given the entry type.
