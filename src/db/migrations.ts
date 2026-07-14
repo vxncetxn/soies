@@ -85,7 +85,45 @@ const MIGRATION_V2: Migration = {
   statements: ["ALTER TABLE artefacts ADD COLUMN annotations TEXT"],
 };
 
-const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2];
+/**
+ * Keep Gallery capacity authoritative at the storage seam. Repository callers
+ * receive a typed preflight error, while these triggers also protect future
+ * sync/import adapters and concurrent writes that do not share that code path.
+ * Existing over-capacity rows are tombstoned newest-last before the triggers
+ * are installed; their artefacts remain intact in the journal.
+ */
+const MIGRATION_V3: Migration = {
+  version: 3,
+  statements: [
+    `UPDATE gallery_items
+     SET deleted_at = updated_at
+     WHERE deleted_at IS NULL
+       AND id NOT IN (
+         SELECT id
+         FROM gallery_items
+         WHERE deleted_at IS NULL
+         ORDER BY sort_order, added_at DESC
+         LIMIT 10
+       )`,
+    `CREATE TRIGGER gallery_capacity_before_insert
+     BEFORE INSERT ON gallery_items
+     WHEN NEW.deleted_at IS NULL
+       AND (SELECT COUNT(*) FROM gallery_items WHERE deleted_at IS NULL) >= 10
+     BEGIN
+       SELECT RAISE(ABORT, 'GALLERY_CAPACITY_REACHED');
+     END`,
+    `CREATE TRIGGER gallery_capacity_before_revive
+     BEFORE UPDATE OF deleted_at ON gallery_items
+     WHEN OLD.deleted_at IS NOT NULL
+       AND NEW.deleted_at IS NULL
+       AND (SELECT COUNT(*) FROM gallery_items WHERE deleted_at IS NULL) >= 10
+     BEGIN
+       SELECT RAISE(ABORT, 'GALLERY_CAPACITY_REACHED');
+     END`,
+  ],
+};
+
+const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3];
 
 export async function runMigrations(db: DB): Promise<void> {
   const versionResult = await db.execute("PRAGMA user_version");

@@ -1,7 +1,9 @@
 ---
-status: accepted
+status: superseded
 ---
 
-# Home↔Gallery uses a keep-alive camera-shift transition
+# Home↔Gallery uses the default lazy tab lifecycle
 
-Tab switches between Home and Gallery pan content sideways (camera shift) while the floating tab chrome and create button stay fixed. Both tab scenes stay mounted; the inactive scene is frozen (no pointer events) so the pan is always ready without a mount hitch. Default `TabSlot` scene swapping was rejected because it cannot show both rooms during the transition and often unmounts the inactive tab. Content-only translation (not sliding the whole shell) keeps chrome stable and avoids fighting expand/create fade behavior.
+The release uses Expo Router's default `TabSlot`, which mounts Gallery lazily and lets inactive scenes follow the router's normal lifecycle. Home must not pay for Gallery database reads, live Paper/Print/Ink trees, images, portals, and effects during cold start.
+
+The earlier keep-alive camera-shift rendered both tab descriptors from startup and described the inactive route as “frozen.” Pointer and accessibility suppression did not freeze React effects, queries, rendering, or native resources, so that lifecycle claim was incorrect. A future camera-shift may be reconsidered only as a separately profiled feature with a lightweight destination placeholder and explicit launch, memory, and transition budgets.

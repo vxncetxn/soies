@@ -78,8 +78,10 @@ export {
   getGallery,
   addArtefactToGallery,
   removeArtefactFromGallery,
-  isArtefactInGallery,
-  getFeaturedArtefactIds,
+  getGalleryPickerState,
+  GalleryCapacityError,
+  isGalleryCapacityError,
+  GALLERY_CAPACITY,
 } from "../db/repositories/gallery";
 export { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
 

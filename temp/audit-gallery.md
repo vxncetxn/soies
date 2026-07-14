@@ -4,32 +4,32 @@
 **Review posture:** adversarial release-readiness review, ordered by performance/stability, user experience/error handling, then simplicity and hygiene.  
 **Confirmed requirement:** Gallery must contain no more than 10 featured artefacts.  
 **Confirmed frame scope:** Gallery frames derive from the portrait branch of `temp/frames.astro`; landscape and large-frame variants are not required.  
-**Recommendation:** **do not release in the current state.** The five High findings affect the missing capacity invariant, startup architecture, the core post-add flow, cancellation semantics, and selection correctness. Portrait-frame geometry is sound, but its surface fidelity and Android fallback also require explicit sign-off.
+**Implementation update (2026-07-15):** all actionable findings except the explicitly excluded G-16 have been implemented and pass automated validation. Release still requires the physical-device profiling, visual, and accessibility sign-offs called out under G-01, G-15, and G-09; those checks cannot be proven by static builds.
 
 ## Severity summary
 
 Severity describes production/user risk, independently of whether CI happens to block the change.
 
-| ID   | Severity | Finding                                                                                           | Addressed |
-| ---- | -------- | ------------------------------------------------------------------------------------------------- | --------- |
-| G-14 | High     | The required 10-artefact Gallery limit is not enforced                                            | No        |
-| G-01 | Medium   | A bounded Gallery still duplicates expensive native content per artefact                          | No        |
-| G-15 | Medium   | The frame preserves portrait geometry but only partially ports the reference surface treatment    | No        |
-| G-16 | Medium   | Frame depth disappears on Android versions that the app still supports                            | No        |
-| G-02 | High     | The camera-shift force-mounts Gallery at cold start and does not actually freeze the inactive tab | No        |
-| G-03 | High     | The post-add destination is consumed against stale data, so Gallery lands on the wrong artefact   | No        |
-| G-04 | High     | Cancel/dismiss during Add does not cancel the mutation or its later navigation                    | No        |
-| G-05 | High     | Rotation/resizing breaks page identity and can add a different artefact from the one displayed    | No        |
-| G-06 | Medium   | Read, delete, and membership-check failures are hidden or unhandled                               | No        |
-| G-07 | Medium   | The Add sheet has a first-open resize jump and permanently retains its last rendered entry        | No        |
-| G-08 | Medium   | Artefact delete/restore no longer restores Gallery membership                                     | No        |
-| G-09 | Medium   | Closed Gallery overlays remain exposed to assistive technology                                    | No        |
-| G-10 | Medium   | Add performs avoidable whole-Gallery reads and mapping                                            | No        |
-| G-11 | Low      | Required formatting fails on two new files                                                        | No        |
-| G-12 | Low      | Dead/scaffolding exports and branches remain in the production change set                         | No        |
-| G-13 | Low      | Gallery copy violates the domain language and overstates a non-destructive action                 | No        |
+| ID   | Severity | Finding                                                                                           | Addressed | Implementer's Remarks                                                                                                                                                                                                                                                       |
+| ---- | -------- | ------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G-14 | High     | The required 10-artefact Gallery limit is not enforced                                            | Yes       | Added a typed `GalleryCapacityError`, transactional count, and migration V3 insert/revival triggers that also cover direct sync/import writes. Hidden parent memberships count. Tests cover artefacts 10/11, remove/add, revival, duplicate-at-capacity, and racing writes. |
+| G-01 | Medium   | A bounded Gallery still duplicates expensive native content per artefact                          | Yes       | Moved focus state to `GalleryPager`; only one overlay/clone mounts for the active opening/open/closing target. Frame dimensions are computed once per viewport and non-trigger frames remain collapsible. A physical 10-artefact Print+Ink profile remains required.        |
+| G-15 | Medium   | The frame preserves portrait geometry but only partially ports the reference surface treatment    | Yes       | Corrected source-vs-app documentation, retained deliberate `contain`, and restored a reduced board inner edge, tuned depth stack, and subtle mat-centre cue. Reference-screenshot approval on representative iOS/Android devices remains required.                          |
+| G-16 | Medium   | Frame depth disappears on Android versions that the app still supports                            | No        | Explicitly excluded from this implementation request; no older-Android shadow fallback was added.                                                                                                                                                                           |
+| G-02 | High     | The camera-shift force-mounts Gallery at cold start and does not actually freeze the inactive tab | Yes       | Restored Expo Router's default lazy `TabSlot`, removed the eager camera-shift slot/context, and superseded ADR-0010 with the actual lifecycle decision and profiling gate for any future transition.                                                                        |
+| G-03 | High     | The post-add destination is consumed against stale data, so Gallery lands on the wrong artefact   | Yes       | Pending navigation now stores an artefact ID, remains pending until refreshed rows contain it, resolves the current index, then clears. `jumpToIndex` is stable.                                                                                                            |
+| G-04 | High     | Cancel/dismiss during Add does not cancel the mutation or its later navigation                    | Yes       | Add is presented as a committing operation: Cancel is disabled and the closed detent becomes programmatic-only while the transaction is active. The keyed session stays owned until native close settle.                                                                    |
+| G-05 | High     | Rotation/resizing breaks page identity and can add a different artefact from the one displayed    | Yes       | Both Add and Gallery use artefact identity as selection truth. Resize resolves that ID against current rows and restores the native offset with the new page size; committed and displayed IDs are the same value.                                                          |
+| G-06 | Medium   | Read, delete, and membership-check failures are hidden or unhandled                               | Yes       | Initial load, refresh, remove, membership, and add failures are caught and surfaced. Initial/refresh/remove/membership paths have Retry, last good Gallery rows survive refresh failure, and the route exports an Expo Router `ErrorBoundary`.                              |
+| G-07 | Medium   | The Add sheet has a first-open resize jump and permanently retains its last rendered entry        | Yes       | Replaced JS height measurement with native `[0, "content"]` detents. Each presentation is keyed; the provider retains its Entry only through the close animation and unmounts it from `onSettle(0)`.                                                                        |
+| G-08 | Medium   | Artefact delete/restore no longer restores Gallery membership                                     | Yes       | Artefact tombstoning now leaves independent Gallery membership active but hidden by the parent join, so Undo makes it visible again in place. ADR-0001 documents the invariant and an integration test covers tombstone/Undo visibility.                                    |
+| G-09 | Medium   | Closed Gallery overlays remain exposed to assistive technology                                    | Yes       | Gallery now has one transient overlay. `FocusOverlay` hides closed descendants from VoiceOver/TalkBack and applies modal semantics while open. Manual traversal on both screen readers remains a release check.                                                             |
+| G-10 | Medium   | Add performs avoidable whole-Gallery reads and mapping                                            | Yes       | The picker queries only its candidate artefact IDs plus one aggregate capacity count. The pre-insert `getGallery()` read and positional destination calculation were removed.                                                                                               |
+| G-11 | Low      | Required formatting fails on two new files                                                        | Yes       | Ran `pnpm fmt`; `pnpm fmt:check` and the aggregate `pnpm check` now pass.                                                                                                                                                                                                   |
+| G-12 | Low      | Dead/scaffolding exports and branches remain in the production change set                         | Yes       | Removed the camera-shift scaffolding, pending-page peek/index interface, single-membership export, deprecated aspect alias, and unnecessary public sizing export.                                                                                                           |
+| G-13 | Low      | Gallery copy violates the domain language and overstates a non-destructive action                 | Yes       | Copy now uses “Artefacts,” capitalizes “Gallery,” and labels the membership action “Remove from Gallery.”                                                                                                                                                                   |
 
-No Critical issue was proven by the available static/build evidence. G-01 is Medium if the 10-artefact limit is enforced. Until G-14 is fixed, the current implementation remains unbounded and retains the original OOM risk. G-15 does not treat portrait-only support as a defect; it covers only divergences within the required portrait treatment.
+No Critical issue was proven by the available static/build evidence. G-14 now supplies the hard bound assumed by G-01. G-15 does not treat portrait-only support as a defect; it covers only divergences within the required portrait treatment.
 
 ## Detailed findings
 
@@ -247,23 +247,27 @@ The user-facing empty state says “No items in gallery” even though the domai
 
 ## Validation performed
 
-| Check                                          | Result                                               |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| `git diff --check HEAD`                        | Pass for tracked diff                                |
-| `pnpm fmt:check`                               | **Fail** — `GalleryFrame.tsx`, `GalleryAddSheet.tsx` |
-| `pnpm typecheck`                               | Pass                                                 |
-| `pnpm lint`                                    | Pass                                                 |
-| `pnpm lint:rc`                                 | Pass                                                 |
-| `pnpm healthcheck:rc`                          | Pass — 91/91 components compiled                     |
-| `pnpm exec expo export --platform ios --clear` | Pass — production iOS bundle exported                |
-| Portrait source-to-port static comparison      | Geometry passes; material finish is partial          |
-| React Native 0.86 shadow support inspection    | Outset API 28+; inset API 29+                        |
+| Check                                              | Result                                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `git diff --check`                                 | Pass                                                                                             |
+| `pnpm test`                                        | Pass — 8/8 focused SQLite/identity tests                                                         |
+| `pnpm fmt:check`                                   | Pass                                                                                             |
+| `pnpm typecheck`                                   | Pass                                                                                             |
+| `pnpm lint`                                        | Pass                                                                                             |
+| `pnpm lint:rc`                                     | Pass                                                                                             |
+| `pnpm healthcheck:rc`                              | Pass — 88/88 remaining components compiled                                                       |
+| `pnpm check`                                       | Pass                                                                                             |
+| `pnpm exec expo export --platform ios --clear`     | Pass — production iOS bundle exported                                                            |
+| `pnpm exec expo export --platform android --clear` | Pass — production Android bundle exported                                                        |
+| Physical 10-artefact Print+Ink profile             | **Pending manual validation** — requires representative physical iOS and Android devices         |
+| Reference screenshot comparison                    | **Pending manual validation** — requires product visual approval on representative iOS/Android   |
+| VoiceOver/TalkBack traversal                       | **Pending manual validation** — accessibility tree is fixed statically but needs device sign-off |
 
-The repository has no `test` script, and this change adds no focused tests for capacity, membership persistence, stale refresh ordering, rotation, cancellation, or delete/restore. No physical-device profiling was performed.
+G-16 remains intentionally unaddressed. Its older-Android fallback/test matrix is outside this implementation request.
 
-After enforcing the cap, validate G-01, G-15, and G-16 with a full 10-item, Print-heavy Gallery containing Ink on representative iOS and Android devices. No reference-screenshot comparison or physical-device frame profiling was performed during this static review.
+## Original suggested fix order
 
-## Suggested fix order
+The implementation followed this order. All code actions are complete except the explicitly excluded G-16; the device-only sign-offs are recorded in the validation table above.
 
 1. Enforce the hard 10-artefact invariant across writes and sync/import paths (G-14).
 2. Remove per-row overlays and profile the bounded Gallery (G-01), then stop cold-start force mounting (G-02).

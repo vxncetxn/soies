@@ -181,14 +181,10 @@ export async function softDeleteArtefact(
   await withTransaction(tx, async (db) => {
     await db.execute("UPDATE artefacts SET deleted_at = ? WHERE id = ?", [deletedAt, artefactId]);
 
-    // Gallery is a live view over artefacts — soft-delete membership in the same
-    // write so resurrect via Add-to-Gallery stays clean (unique active index).
-    // Inline SQL (not removeArtefactFromGallery) to avoid a require cycle with
-    // gallery.ts, which imports mapArtefactRow from this module.
-    await db.execute(
-      "UPDATE gallery_items SET deleted_at = ?, updated_at = ? WHERE artefact_id = ? AND deleted_at IS NULL",
-      [deletedAt, deletedAt, artefactId],
-    );
+    // Gallery membership is an independent child state. Keep it active but
+    // hidden by getGallery's parent join so Undo makes the artefact reappear in
+    // exactly the same featured position. An explicit Remove from Gallery is
+    // the only operation that tombstones this membership row.
 
     const artefactRowid = await getArtefactRowid(db, artefactId);
     if (artefactRowid != null) {

@@ -2,9 +2,10 @@
  * FocusOverlay — long-press / ellipsis actions overlay (measure-and-morph).
  *
  * Home and Gallery share one morph system: a measured trigger, blurred
- * backdrop, frozen subject clone, and a staggered menu. Menu items and the
- * subject clone are parameterized so Gallery can show a framed artefact with
- * Delete-only actions without a second overlay stack.
+ * backdrop, frozen subject clone, and a staggered menu. Home's Stack preloads
+ * its overlay; Gallery mounts one pager-owned overlay only for the active
+ * opening/open/closing target. Starting from a logically closed ref preserves
+ * the opening morph when that shared Gallery overlay first mounts open.
  */
 import { BlurView } from "expo-blur";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -162,7 +163,10 @@ const FocusOverlay = ({
   const androidBlurProps = useAndroidBlurTargetProps();
   const progress = useSharedValue(0);
   const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
-  const previousOpenRef = useRef(open);
+  // Start from closed even when this overlay mounts for an already-selected
+  // Gallery target. Gallery owns one transient overlay and mounts it on demand;
+  // treating its first `open` as a transition preserves the opening morph.
+  const previousOpenRef = useRef(false);
   const onCloseCompleteRef = useRef(onCloseComplete);
   const closeSequenceSV = useSharedValue(0);
   const [closeSequence, setCloseSequence] = useState(0);
@@ -229,7 +233,13 @@ const FocusOverlay = ({
 
   return (
     <Portal hostName="morph">
-      <View style={styles.root} pointerEvents={open ? "auto" : "none"}>
+      <View
+        style={styles.root}
+        pointerEvents={open ? "auto" : "none"}
+        accessibilityElementsHidden={!open}
+        importantForAccessibility={open ? "yes" : "no-hide-descendants"}
+        accessibilityViewIsModal={open}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={onRequestClose}

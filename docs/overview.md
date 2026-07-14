@@ -103,7 +103,7 @@ flowchart TD
 | [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Month calendar (`flash-calendar`) with dots on days that have entries. Selecting a date navigates home with `?date=`. |
 | [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: blurred backdrop, measured subject clone, parameterized menu. Shared by Home stacks and Gallery frames. |
 | [`GalleryFrame.tsx`](../src/components/GalleryFrame.tsx) | Portrait mat chrome wrapping live Paper/Print (and future artefact kinds). |
-| [`GalleryPager.tsx`](../src/components/GalleryPager.tsx) | Horizontal paging Gallery strip + Focus Delete; lands on pending index after Add. |
+| [`GalleryPager.tsx`](../src/components/GalleryPager.tsx) | Horizontal paging Gallery strip + shared Focus Remove; lands on pending artefact identity after Add. |
 | [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) | **Unused** legacy morph overlay (no callsite). Kept for reference; unsafe Worklets `onClose` bridge — do not reintroduce without hardening. |
 
 ### Shared UI & context
@@ -124,8 +124,6 @@ flowchart TD
 |------|------|
 | [`tabs/StyledTabList.tsx`](../src/components/tabs/StyledTabList.tsx) | Bottom tab bar container styling. |
 | [`tabs/StyledTabTrigger.tsx`](../src/components/tabs/StyledTabTrigger.tsx) | Individual tab trigger styling. |
-| [`tabs/CameraShiftTabSlot.tsx`](../src/components/tabs/CameraShiftTabSlot.tsx) | Keep-alive Home↔Gallery content pan; chrome stays fixed (ADR-0010). |
-| [`tabs/TabTransitionContext.tsx`](../src/components/tabs/TabTransitionContext.tsx) | Shared `shiftProgress` for the camera-shift. |
 
 ---
 

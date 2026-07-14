@@ -257,7 +257,7 @@ const Stack = ({ entry }: StackProps) => {
 
   const focusMenuItems: FocusMenuItem[] = [
     { label: "Edit", icon: "pencil", onPress: () => {} },
-    { label: "Add to gallery", icon: "photo", onPress: openGalleryAddFromFocus },
+    { label: "Add to Gallery", icon: "photo", onPress: openGalleryAddFromFocus },
     { label: "Share", icon: "share", onPress: openShareFromFocus },
     { label: "Delete", icon: "trash", onPress: () => {} },
   ];

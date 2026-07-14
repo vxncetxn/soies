@@ -1,13 +1,28 @@
 /**
  * GalleryPager — horizontal paging strip of framed Gallery artefacts.
  *
- * Mirrors DayPager’s paging + ScrollIndicator pattern on the X axis. Uses
- * `usePagingScroll` for jump/offset wiring. Pending page (post-add) is applied
- * before paint so the camera-shift lands already on the new frame.
+ * Mirrors DayPager's paging + ScrollIndicator pattern on the X axis. Artefact
+ * identity—not a pixel offset—is the selection source of truth, so rotation,
+ * refresh, and post-add ordering changes all resolve back to the same frame.
+ *
+ * Rows contain only their live frame and trigger. The pager owns one transient
+ * FocusOverlay for the selected target and keeps it mounted through the close
+ * spring, avoiding ten full-screen portals and ten duplicate subject trees at
+ * Gallery capacity. Persistence failures stay distinct from a truthful empty
+ * Gallery and expose retry rather than silently replacing good rows.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Text, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import Animated, {
+  type AnimatedRef,
   useAnimatedRef,
   useAnimatedScrollHandler,
   useDerivedValue,
@@ -16,7 +31,10 @@ import Animated, {
 import type { Entry, GalleryArtefact } from "../data/entries";
 
 import { getGallery, isPrintArtefact, removeArtefactFromGallery } from "../data/entries";
-import { consumePendingGalleryPage } from "../gallery/pendingGalleryPage";
+import {
+  clearPendingGalleryArtefact,
+  getPendingGalleryArtefact,
+} from "../gallery/pendingGalleryPage";
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { usePagingScroll } from "../hooks/usePagingScroll";
 import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
@@ -24,79 +42,59 @@ import { useGalleryVersion } from "./GalleryContext";
 import GalleryFrame, { wellSizeFittingBoard } from "./GalleryFrame";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
 
-function entryForPreview(item: GalleryArtefact): Entry {
-  if (isPrintArtefact(item.artefact)) {
+function entryForPreview(galleryArtefact: GalleryArtefact): Entry {
+  if (isPrintArtefact(galleryArtefact.artefact)) {
     return {
-      title: item.entryTitle,
+      title: galleryArtefact.entryTitle,
       type: "print",
-      artefacts: [item.artefact],
+      artefacts: [galleryArtefact.artefact],
     };
   }
-  if ("rawData" in item.artefact) {
+  if ("rawData" in galleryArtefact.artefact) {
     return {
-      title: item.entryTitle,
-      type: item.artefact.type,
-      artefacts: [item.artefact],
+      title: galleryArtefact.entryTitle,
+      type: galleryArtefact.artefact.type,
+      artefacts: [galleryArtefact.artefact],
     };
   }
   return {
-    title: item.entryTitle,
+    title: galleryArtefact.entryTitle,
     type: "paper",
-    artefacts: [item.artefact],
+    artefacts: [galleryArtefact.artefact],
   };
 }
 
-type GalleryItemProps = {
-  item: GalleryArtefact;
+type GalleryPageProps = {
+  galleryArtefact: GalleryArtefact;
   pageWidth: number;
-  onRequestDelete: (artefactId: string) => void;
+  wellWidth: number;
+  viewportWidth: number;
+  onRequestFocus: (target: FocusTarget) => void;
 };
 
-function GalleryItem({ item, pageWidth, onRequestDelete }: GalleryItemProps) {
-  const [focusOpen, setFocusOpen] = useState(false);
+type FocusTarget = {
+  galleryArtefact: GalleryArtefact;
+  triggerRef: AnimatedRef<Animated.View>;
+};
+
+function GalleryPage({
+  galleryArtefact,
+  pageWidth,
+  wellWidth,
+  viewportWidth,
+  onRequestFocus,
+}: GalleryPageProps) {
   const triggerRef = useAnimatedRef<Animated.View>();
-  const pendingDeleteRef = useRef(false);
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  // Outer board must fit inside the screen; well is Astro 3:4 (not Paper/Print).
-  const well = wellSizeFittingBoard(screenWidth - 72, screenHeight * 0.52);
-  const wellWidth = well.width;
-
-  const menuItems: FocusMenuItem[] = [
-    {
-      label: "Delete from Gallery",
-      icon: "trash",
-      onPress: () => {
-        pendingDeleteRef.current = true;
-        setFocusOpen(false);
-      },
-    },
-  ];
-
-  const finishFocusClose = () => {
-    if (!pendingDeleteRef.current) {
-      return;
-    }
-    pendingDeleteRef.current = false;
-    onRequestDelete(item.artefact.id);
-  };
 
   return (
     <View style={{ width: pageWidth }} className="flex-1 items-center justify-center">
       <GalleryFrame
-        artefact={item.artefact}
+        artefact={galleryArtefact.artefact}
         wellWidth={wellWidth}
+        viewportWidth={viewportWidth}
         triggerRef={triggerRef}
         interactive
-        onRequestFocus={() => setFocusOpen(true)}
-      />
-      <FocusOverlay
-        triggerRef={triggerRef}
-        open={focusOpen}
-        subject={<GalleryFrame artefact={item.artefact} wellWidth={wellWidth} />}
-        menuItems={menuItems}
-        onRequestClose={() => setFocusOpen(false)}
-        onCloseComplete={finishFocusClose}
-        accessibilityDismissLabel="Dismiss gallery options"
+        onRequestFocus={() => onRequestFocus({ galleryArtefact, triggerRef })}
       />
     </View>
   );
@@ -104,12 +102,28 @@ function GalleryItem({ item, pageWidth, onRequestDelete }: GalleryItemProps) {
 
 export default function GalleryPager() {
   const { galleryVersion, bumpGalleryVersion } = useGalleryVersion();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const indicatorFadeStyle = useHomeChromeFade();
 
-  const [items, setItems] = useState<GalleryArtefact[]>([]);
+  const [galleryArtefacts, setGalleryArtefacts] = useState<GalleryArtefact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [failedRemoveId, setFailedRemoveId] = useState<string | null>(null);
+  // Native resize restoration needs the last settled identity but rendering
+  // does not; a ref avoids an extra React pass on every completed swipe.
+  const activeArtefactIdRef = useRef<string | null>(null);
+  const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
+  const [focusOpen, setFocusOpen] = useState(false);
+  const pendingRemoveRef = useRef<string | null>(null);
+  const previousPageWidthRef = useRef(screenWidth);
+  const measuredContentWidthRef = useRef(0);
+  const [contentLayoutVersion, setContentLayoutVersion] = useState(0);
   const pageWidth = screenWidth;
+  // Calculate the portrait frame once per viewport; rows and the overlay clone
+  // consume the same dimensions instead of subscribing independently.
+  const well = wellSizeFittingBoard(screenWidth - 72, screenHeight * 0.52);
 
   const { scrollRef, scrollOffset, jumpToIndex } = usePagingScroll({
     pageSize: pageWidth,
@@ -134,12 +148,21 @@ export default function GalleryPager() {
     void getGallery()
       .then((next) => {
         if (!cancelled) {
-          setItems(next);
+          setGalleryArtefacts(next);
+          setLoadError(null);
+          if (
+            !activeArtefactIdRef.current ||
+            !next.some(
+              (galleryArtefact) => galleryArtefact.artefact.id === activeArtefactIdRef.current,
+            )
+          ) {
+            activeArtefactIdRef.current = next[0]?.artefact.id ?? null;
+          }
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setItems([]);
+          setLoadError(error instanceof Error ? error : new Error(String(error)));
         }
       })
       .finally(() => {
@@ -150,54 +173,146 @@ export default function GalleryPager() {
     return () => {
       cancelled = true;
     };
-  }, [galleryVersion]);
+  }, [galleryVersion, loadAttempt]);
 
   useLayoutEffect(() => {
-    const pending = consumePendingGalleryPage();
-    if (pending == null || items.length === 0) {
+    const pendingArtefactId = getPendingGalleryArtefact();
+    if (pendingArtefactId == null || galleryArtefacts.length === 0) {
       return;
     }
-    const clamped = Math.max(0, Math.min(items.length - 1, pending));
-    jumpToIndex(clamped, false);
-  }, [items, jumpToIndex]);
+    const index = galleryArtefacts.findIndex(
+      (galleryArtefact) => galleryArtefact.artefact.id === pendingArtefactId,
+    );
+    if (index < 0) {
+      return;
+    }
+    // A lazy first mount can have React rows before the native ScrollView has
+    // measured them. Keep the identity pending until the target page exists in
+    // native content and `jumpToIndex` can issue a real scroll command.
+    if (measuredContentWidthRef.current < (index + 1) * pageWidth) {
+      return;
+    }
+    if (!jumpToIndex(index, false)) {
+      return;
+    }
+    activeArtefactIdRef.current = pendingArtefactId;
+    clearPendingGalleryArtefact(pendingArtefactId);
+  }, [contentLayoutVersion, galleryArtefacts, jumpToIndex, pageWidth]);
+
+  useLayoutEffect(() => {
+    const sizeChanged = previousPageWidthRef.current !== pageWidth;
+    previousPageWidthRef.current = pageWidth;
+    if (!sizeChanged || galleryArtefacts.length === 0) {
+      return;
+    }
+    const index = Math.max(
+      0,
+      galleryArtefacts.findIndex(
+        (galleryArtefact) => galleryArtefact.artefact.id === activeArtefactIdRef.current,
+      ),
+    );
+    jumpToIndex(index, false);
+  }, [galleryArtefacts, jumpToIndex, pageWidth]);
 
   useLayoutEffect(() => {
     if (!animateClampAfterDeleteRef.current) {
       return;
     }
     animateClampAfterDeleteRef.current = false;
-    if (items.length === 0) {
+    if (galleryArtefacts.length === 0) {
       scrollOffset.set(0);
       return;
     }
     const page = Math.round(scrollOffset.get() / pageWidth);
-    const clamped = Math.max(0, Math.min(items.length - 1, page));
+    const clamped = Math.max(0, Math.min(galleryArtefacts.length - 1, page));
+    activeArtefactIdRef.current = galleryArtefacts[clamped]?.artefact.id ?? null;
     jumpToIndex(clamped, true);
-  }, [items, jumpToIndex, pageWidth, scrollOffset]);
+  }, [galleryArtefacts, jumpToIndex, pageWidth, scrollOffset]);
 
   const handleDelete = (artefactId: string) => {
+    setRemoveError(null);
+    setFailedRemoveId(null);
     void removeArtefactFromGallery(artefactId)
       .then(() => {
         animateClampAfterDeleteRef.current = true;
         bumpGalleryVersion();
       })
       .catch(() => {
-        // Ignore — membership unchanged.
+        setRemoveError("Couldn't remove this artefact from Gallery. Try again.");
+        setFailedRemoveId(artefactId);
       });
   };
 
-  if (loading && items.length === 0) {
+  const onScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (pageWidth <= 0 || galleryArtefacts.length === 0) {
+      return;
+    }
+    const index = Math.max(
+      0,
+      Math.min(
+        galleryArtefacts.length - 1,
+        Math.round(event.nativeEvent.contentOffset.x / pageWidth),
+      ),
+    );
+    activeArtefactIdRef.current = galleryArtefacts[index]?.artefact.id ?? null;
+  };
+
+  const focusMenuItems: FocusMenuItem[] = focusTarget
+    ? [
+        {
+          label: "Remove from Gallery",
+          icon: "trash",
+          onPress: () => {
+            pendingRemoveRef.current = focusTarget.galleryArtefact.artefact.id;
+            setFocusOpen(false);
+          },
+        },
+      ]
+    : [];
+
+  const finishFocusClose = () => {
+    const artefactId = pendingRemoveRef.current;
+    pendingRemoveRef.current = null;
+    setFocusTarget(null);
+    if (artefactId) {
+      handleDelete(artefactId);
+    }
+  };
+
+  const retryLoad = () => {
+    setLoading(true);
+    setLoadError(null);
+    setLoadAttempt((attempt) => attempt + 1);
+  };
+
+  if (loading && galleryArtefacts.length === 0 && !loadError) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <Text className="text-center text-primary">Loading…</Text>
+        <ActivityIndicator />
       </View>
     );
   }
 
-  if (items.length === 0) {
+  if (loadError && galleryArtefacts.length === 0) {
+    return (
+      <View className="flex-1 items-center justify-center gap-4 bg-background px-8">
+        <Text className="text-center text-primary">Couldn&apos;t load Gallery.</Text>
+        <Pressable
+          onPress={retryLoad}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading Gallery"
+          className="rounded-full border border-controls-border bg-controls-background px-5 py-2"
+        >
+          <Text className="text-primary">Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (galleryArtefacts.length === 0 && !loading) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-8">
-        <Text className="text-center text-primary">No items in gallery.</Text>
+        <Text className="text-center text-primary">No artefacts in Gallery yet.</Text>
       </View>
     );
   }
@@ -210,6 +325,11 @@ export default function GalleryPager() {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onScroll={onScroll}
+        onMomentumScrollEnd={onScrollEnd}
+        onContentSizeChange={(width) => {
+          measuredContentWidthRef.current = width;
+          setContentLayoutVersion((version) => version + 1);
+        }}
         scrollEventThrottle={16}
         style={{ flex: 1, backgroundColor: "transparent" }}
         contentContainerStyle={{
@@ -219,15 +339,45 @@ export default function GalleryPager() {
           alignItems: "center",
         }}
       >
-        {items.map((item) => (
-          <GalleryItem
-            key={item.galleryId}
-            item={item}
+        {galleryArtefacts.map((galleryArtefact) => (
+          <GalleryPage
+            key={galleryArtefact.galleryId}
+            galleryArtefact={galleryArtefact}
             pageWidth={pageWidth}
-            onRequestDelete={handleDelete}
+            wellWidth={well.width}
+            viewportWidth={screenWidth}
+            onRequestFocus={(target) => {
+              setFocusTarget(target);
+              setFocusOpen(true);
+            }}
           />
         ))}
       </Animated.ScrollView>
+
+      {loadError || removeError ? (
+        <View className="absolute top-4 right-4 left-4 flex-row items-center justify-between gap-3 rounded-2xl bg-stone-800 px-4 py-3">
+          <Text className="flex-1 text-sm text-white">
+            {removeError ?? "Couldn't refresh Gallery."}
+          </Text>
+          {loadError || failedRemoveId ? (
+            <Pressable
+              onPress={() => {
+                if (failedRemoveId) {
+                  handleDelete(failedRemoveId);
+                } else {
+                  retryLoad();
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                failedRemoveId ? "Retry removing artefact from Gallery" : "Retry refreshing Gallery"
+              }
+            >
+              <Text className="font-sans-medium text-sm text-white">Try again</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <Animated.View
         style={indicatorFadeStyle}
@@ -236,18 +386,39 @@ export default function GalleryPager() {
       >
         <ScrollIndicator
           orientation="horizontal"
-          count={items.length}
+          count={galleryArtefacts.length}
           currentPage={currentPage}
-          onJumpToIndex={(index) => jumpToIndex(index, false)}
+          onJumpToIndex={(index) => {
+            activeArtefactIdRef.current = galleryArtefacts[index]?.artefact.id ?? null;
+            jumpToIndex(index, false);
+          }}
           renderPreview={(index) => {
-            const item = items[index];
-            if (!item) {
+            const galleryArtefact = galleryArtefacts[index];
+            if (!galleryArtefact) {
               return null;
             }
-            return <ArtefactPreview entry={entryForPreview(item)} index={0} />;
+            return <ArtefactPreview entry={entryForPreview(galleryArtefact)} index={0} />;
           }}
         />
       </Animated.View>
+
+      {focusTarget ? (
+        <FocusOverlay
+          triggerRef={focusTarget.triggerRef}
+          open={focusOpen}
+          subject={
+            <GalleryFrame
+              artefact={focusTarget.galleryArtefact.artefact}
+              wellWidth={well.width}
+              viewportWidth={screenWidth}
+            />
+          }
+          menuItems={focusMenuItems}
+          onRequestClose={() => setFocusOpen(false)}
+          onCloseComplete={finishFocusClose}
+          accessibilityDismissLabel="Dismiss Gallery options"
+        />
+      ) : null}
     </View>
   );
 }

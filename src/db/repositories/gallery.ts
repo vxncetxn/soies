@@ -5,63 +5,59 @@ import type { GalleryArtefact } from "../../data/entries";
 import { getDatabase } from "../client";
 import { type DbExecutor, withTransaction } from "../executor";
 import { mapArtefactRow, type ArtefactRow } from "./artefacts";
+import {
+  addGalleryMembership,
+  GALLERY_CAPACITY,
+  GalleryCapacityError,
+  isGalleryCapacityError,
+} from "./galleryMembership";
+
+export { GALLERY_CAPACITY, GalleryCapacityError, isGalleryCapacityError };
 
 export async function addArtefactToGallery(artefactId: string, tx?: DbExecutor): Promise<void> {
-  await withTransaction(tx, async (db) => {
-    const now = Date.now();
-
-    // Already featured (active) -> no-op.
-    const existing = await db.execute(
-      "SELECT id FROM gallery_items WHERE artefact_id = ? AND deleted_at IS NULL LIMIT 1",
-      [artefactId],
-    );
-    if (existing.rows.length > 0) {
-      return;
-    }
-
-    const orderResult = await db.execute(
-      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM gallery_items WHERE deleted_at IS NULL",
-    );
-    const sortOrder = Number(orderResult.rows[0]?.next_order ?? 0);
-
-    // Previously un-featured (tombstoned) -> revive the existing membership row
-    // so re-featuring keeps a stable row id (sync-friendly, no new UUID). Append
-    // at the end like a first-time add so order stays newest-last.
-    const tombstoned = await db.execute(
-      "SELECT id FROM gallery_items WHERE artefact_id = ? AND deleted_at IS NOT NULL LIMIT 1",
-      [artefactId],
-    );
-    if (tombstoned.rows.length > 0) {
-      await db.execute(
-        "UPDATE gallery_items SET deleted_at = NULL, added_at = ?, updated_at = ?, sort_order = ? WHERE id = ?",
-        [now, now, sortOrder, tombstoned.rows[0].id],
-      );
-      return;
-    }
-
-    await db.execute(
-      `INSERT INTO gallery_items (id, artefact_id, sort_order, added_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [Crypto.randomUUID(), artefactId, sortOrder, now, now],
-    );
-  });
-}
-
-/** Active gallery membership for one artefact (for picker dimming). */
-export async function isArtefactInGallery(artefactId: string): Promise<boolean> {
-  const db = await getDatabase();
-  const result = await db.execute(
-    "SELECT 1 AS ok FROM gallery_items WHERE artefact_id = ? AND deleted_at IS NULL LIMIT 1",
-    [artefactId],
+  await withTransaction(tx, (db) =>
+    addGalleryMembership(db, {
+      artefactId,
+      membershipId: Crypto.randomUUID(),
+      now: Date.now(),
+    }),
   );
-  return result.rows.length > 0;
 }
 
-/** All currently featured artefact ids (batch check for an entry's picker). */
-export async function getFeaturedArtefactIds(): Promise<Set<string>> {
+export type GalleryPickerState = {
+  featuredIds: Set<string>;
+  isFull: boolean;
+};
+
+/**
+ * Membership for only the picker candidates plus one aggregate capacity count.
+ * The sentinel UNION guarantees a row even when none of the candidates is
+ * featured, avoiding a second whole-Gallery read or JS mapping pass.
+ */
+export async function getGalleryPickerState(artefactIds: string[]): Promise<GalleryPickerState> {
   const db = await getDatabase();
-  const result = await db.execute("SELECT artefact_id FROM gallery_items WHERE deleted_at IS NULL");
-  return new Set(result.rows.map((row) => String(row.artefact_id)));
+  const candidateClause =
+    artefactIds.length > 0
+      ? `AND artefact_id IN (${artefactIds.map(() => "?").join(", ")})`
+      : "AND 0";
+  const result = await db.execute(
+    `SELECT artefact_id,
+            (SELECT COUNT(*) FROM gallery_items WHERE deleted_at IS NULL) AS active_count
+     FROM gallery_items
+     WHERE deleted_at IS NULL ${candidateClause}
+     UNION ALL
+     SELECT NULL AS artefact_id, COUNT(*) AS active_count
+     FROM gallery_items
+     WHERE deleted_at IS NULL`,
+    artefactIds,
+  );
+  const activeCount = Number(result.rows[0]?.active_count ?? 0);
+  return {
+    featuredIds: new Set(
+      result.rows.filter((row) => row.artefact_id != null).map((row) => String(row.artefact_id)),
+    ),
+    isFull: activeCount >= GALLERY_CAPACITY,
+  };
 }
 
 export async function removeArtefactFromGallery(

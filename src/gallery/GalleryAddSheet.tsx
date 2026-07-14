@@ -1,17 +1,31 @@
 /**
- * GalleryAddSheet — pick one artefact from an entry to feature in the Gallery.
+ * GalleryAddSheet — select one artefact from an Entry and feature it.
  *
- * Horizontal framed carousel (≤5 artefacts). Cancel dismisses; Add is dimmed
- * with a short message when the selection is already featured. On success:
- * persist → bump gallery version → set pending page → close → navigate Gallery.
+ * The sheet uses three identities instead of positions:
+ *   1. The Entry object identifies one presentation session.
+ *   2. `selectedArtefactIdRef` is the authoritative carousel selection.
+ *   3. The same artefact ID is handed to Gallery after persistence.
+ * This keeps the visible frame, committed artefact, and post-navigation target
+ * aligned across rotation and asynchronous Gallery refreshes.
+ *
+ * The native `'content'` detent measures the first presentation without a
+ * full-height intermediate frame. GalleryAddProvider retains the keyed session
+ * only until the close animation settles, then all framed content unmounts. During the
+ * repository transaction, Cancel and the closed detent become programmatic-
+ * only: the UI communicates that Add is committing and cannot dismiss a write
+ * whose result would later navigate from a different session.
+ *
+ * Membership loading is a prerequisite, not an optimistic hint. Add stays
+ * disabled until the bounded candidate query succeeds, and capacity/read/write
+ * failures have distinct recovery copy.
  */
-import { ModalBottomSheet } from "@swmansion/react-native-bottom-sheet";
+import { ModalBottomSheet, programmatic } from "@swmansion/react-native-bottom-sheet";
 import { useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,116 +36,139 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Artefact, Entry } from "../data/entries";
+
 import { useGalleryVersion } from "../components/GalleryContext";
 import GalleryFrame, { FRAME_BOARD_SCALE, wellSizeFittingBoard } from "../components/GalleryFrame";
-import { addArtefactToGallery, getFeaturedArtefactIds, getGallery } from "../data/entries";
-import { setPendingGalleryPage } from "./pendingGalleryPage";
+import {
+  addArtefactToGallery,
+  GALLERY_CAPACITY,
+  getGalleryPickerState,
+  isGalleryCapacityError,
+} from "../data/entries";
+import { setPendingGalleryArtefact } from "./pendingGalleryPage";
 
 type GalleryAddSheetProps = {
-  entry: Entry | null;
+  /** Entry held by GalleryAddProvider through the entire native close animation. */
+  entry: Entry;
+  /** Home page visible when this session was requested. */
   initialPage: number;
+  /** Controlled presentation state owned by GalleryAddProvider. */
   open: boolean;
+  /** Marks the provider session closed while preserving content for native settle. */
   onClose: () => void;
+  /** Unmounts the keyed session only after the native sheet reaches detent zero. */
+  onClosed: () => void;
 };
 
 const SHEET_SURFACE = "#F5F5F4";
 
-export function GalleryAddSheet({ entry, initialPage, open, onClose }: GalleryAddSheetProps) {
+export function GalleryAddSheet({
+  entry,
+  initialPage,
+  open,
+  onClose,
+  onClosed,
+}: GalleryAddSheetProps) {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { bumpGalleryVersion } = useGalleryVersion();
   const { push } = useRouter();
 
-  const [cachedEntry, setCachedEntry] = useState<Entry | null>(entry);
-  if (entry !== null && entry !== cachedEntry) {
-    setCachedEntry(entry);
-  }
-  const activeEntry = entry ?? cachedEntry;
-  const artefacts = (activeEntry?.artefacts ?? []) as Artefact[];
+  const artefacts = entry.artefacts as Artefact[];
 
-  // Shared Astro 3:4 well; board fits sheet with room for neighbour frame chrome only.
+  // Shared 3:4 frame geometry. Rotation recomputes `snap`, then the layout
+  // effect below resolves the same selected ID back to its new native offset.
   const well = wellSizeFittingBoard(screenWidth * 0.48, screenHeight * 0.3);
   const wellWidth = well.width;
   const pageWidth = wellWidth * FRAME_BOARD_SCALE;
   const pageHeight = well.height * FRAME_BOARD_SCALE;
-  // Peek only outer board chrome (~22.5% of well per side), not the artefact.
   const chromePeek = wellWidth * ((FRAME_BOARD_SCALE - 1) / 2) * 0.75;
   const sidePad = Math.max(0, (screenWidth - pageWidth) / 2);
   const pageGap = Math.max(chromePeek, Math.round(sidePad - chromePeek));
   const snap = pageWidth + pageGap;
   const snapOffsets = artefacts.map((_, index) => index * snap);
-
   const clampedInitial = Math.max(0, Math.min(Math.max(artefacts.length - 1, 0), initialPage));
 
-  const [sheetIndex, setSheetIndex] = useState(0);
-  const [page, setPage] = useState(clampedInitial);
+  const initialArtefactId = artefacts[clampedInitial]?.id ?? null;
+  const [sheetIndex, setSheetIndex] = useState(1);
+  const [selectedArtefactId, setSelectedArtefactId] = useState<string | null>(initialArtefactId);
+  const selectedArtefactIdRef = useRef<string | null>(initialArtefactId);
   const [featuredIds, setFeaturedIds] = useState<Set<string>>(new Set());
-  const [contentHeight, setContentHeight] = useState(0);
+  const [galleryFull, setGalleryFull] = useState(false);
+  const [membershipLoading, setMembershipLoading] = useState(true);
+  const [membershipError, setMembershipError] = useState(false);
+  const [membershipAttempt, setMembershipAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [prevOpen, setPrevOpen] = useState(open);
   const busyRef = useRef(false);
+  const closingRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (open && artefacts.length > 0) {
-      setPage(clampedInitial);
-      setErrorMessage(null);
-      setBusy(false);
-      setSheetIndex(1);
-    } else if (!open) {
-      setSheetIndex(0);
-    }
-  }
-
+  /** Restore the selected identity whenever geometry or candidate order changes. */
   useLayoutEffect(() => {
-    if (open) {
-      busyRef.current = false;
+    if (!open || artefacts.length === 0) {
+      return;
     }
-  }, [open]);
+    const selectedId = selectedArtefactIdRef.current;
+    const selectedIndex = Math.max(
+      0,
+      artefacts.findIndex((artefact) => artefact.id === selectedId),
+    );
+    scrollRef.current?.scrollTo({ x: selectedIndex * snap, y: 0, animated: false });
+  }, [artefacts, open, snap]);
 
   useEffect(() => {
     if (!open) {
       return;
     }
     let cancelled = false;
-    void getFeaturedArtefactIds().then((ids) => {
-      if (!cancelled) {
-        setFeaturedIds(ids);
-      }
-    });
+    void getGalleryPickerState(artefacts.map((artefact) => artefact.id))
+      .then((state) => {
+        if (!cancelled) {
+          setFeaturedIds(state.featuredIds);
+          setGalleryFull(state.isFull);
+          setMembershipError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMembershipError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMembershipLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [open, activeEntry]);
+  }, [artefacts, membershipAttempt, open]);
 
-  useLayoutEffect(() => {
-    if (!open || artefacts.length === 0) {
+  const selectAtOffset = (event: NativeSyntheticEvent<NativeScrollEvent>, targetX?: number) => {
+    if (artefacts.length === 0 || snap <= 0) {
       return;
     }
-    scrollRef.current?.scrollTo({ x: clampedInitial * snap, y: 0, animated: false });
-  }, [open, clampedInitial, snap, artefacts.length]);
-
-  const onIndexChange = (index: number) => {
-    setSheetIndex(index);
-    if (index === 0) {
-      onClose();
-    }
-  };
-
-  const onScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>, targetX?: number) => {
     const x = targetX ?? event.nativeEvent.contentOffset.x;
-    const next = Math.max(0, Math.min(artefacts.length - 1, Math.round(x / snap)));
-    setPage(next);
+    const index = Math.max(0, Math.min(artefacts.length - 1, Math.round(x / snap)));
+    const artefactId = artefacts[index]?.id ?? null;
+    selectedArtefactIdRef.current = artefactId;
+    setSelectedArtefactId(artefactId);
+    setErrorMessage(null);
   };
 
-  const selected = artefacts[page];
+  const selected = artefacts.find((artefact) => artefact.id === selectedArtefactId);
   const alreadyFeatured = selected ? featuredIds.has(selected.id) : false;
-  const openDetent = contentHeight > 0 ? contentHeight : screenHeight;
+  const addDisabled =
+    busy || membershipLoading || membershipError || galleryFull || alreadyFeatured || !selected;
 
+  /**
+   * Start the transactional commit. From this point until resolution, the only
+   * reachable detent is the open content detent and Cancel is disabled; callers
+   * therefore cannot create a dismissed-session mutation/navigation race.
+   */
   const confirmAdd = () => {
-    if (!selected || alreadyFeatured || busyRef.current) {
+    if (addDisabled || !selected || busyRef.current) {
       return;
     }
     const artefactId = selected.id;
@@ -139,53 +176,62 @@ export function GalleryAddSheet({ entry, initialPage, open, onClose }: GalleryAd
     setBusy(true);
     setErrorMessage(null);
 
-    void getGallery()
-      .then(async (before) => {
-        let existingIndex = -1;
-        for (let index = 0; index < before.length; index += 1) {
-          if (before[index].artefact.id === artefactId) {
-            existingIndex = index;
-            break;
-          }
-        }
-        await addArtefactToGallery(artefactId);
-        let nextIndex = before.length;
-        if (existingIndex >= 0) {
-          nextIndex = existingIndex;
-        }
-        setPendingGalleryPage(nextIndex);
+    void addArtefactToGallery(artefactId)
+      .then(() => {
+        setPendingGalleryArtefact(artefactId);
         bumpGalleryVersion();
+        closingRef.current = true;
+        setSheetIndex(0);
         onClose();
         push("/gallery");
       })
-      .catch(() => {
-        setErrorMessage("Couldn't add to Gallery");
+      .catch((error: unknown) => {
+        if (isGalleryCapacityError(error)) {
+          setGalleryFull(true);
+          setErrorMessage(`Gallery is full (${GALLERY_CAPACITY} artefacts).`);
+        } else {
+          setErrorMessage("Couldn't add this artefact to Gallery. Try again.");
+        }
         busyRef.current = false;
         setBusy(false);
       });
   };
 
-  if (!activeEntry || artefacts.length === 0) {
+  const requestClose = () => {
+    if (busyRef.current) {
+      return;
+    }
+    closingRef.current = true;
+    setSheetIndex(0);
+    onClose();
+  };
+
+  if (artefacts.length === 0) {
     return null;
   }
 
   return (
     <ModalBottomSheet
       index={sheetIndex}
-      detents={[0, openDetent]}
-      onIndexChange={onIndexChange}
+      detents={busy ? [programmatic(0), "content"] : [0, "content"]}
+      onIndexChange={(index) => {
+        if (index === 0) {
+          requestClose();
+          return;
+        }
+        setSheetIndex(index);
+      }}
+      onSettle={(index) => {
+        if (index === 0 && closingRef.current) {
+          onClosed();
+        }
+      }}
       animateIn
       extendUnderStatusBar
       scrimColor="rgba(0,0,0,0.35)"
       surface={<View style={[StyleSheet.absoluteFill, styles.surface]} />}
     >
-      <View
-        style={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) }]}
-        onLayout={(event) => {
-          const { height } = event.nativeEvent.layout;
-          setContentHeight((previous) => (Math.abs(previous - height) < 0.5 ? previous : height));
-        }}
-      >
+      <View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <View style={styles.handle} />
         <Text className="mb-4 text-center font-sans-medium text-base text-primary">
           Add to Gallery
@@ -206,9 +252,9 @@ export function GalleryAddSheet({ entry, initialPage, open, onClose }: GalleryAd
             paddingVertical: 24,
             backgroundColor: SHEET_SURFACE,
           }}
-          onMomentumScrollEnd={onScrollEnd}
+          onMomentumScrollEnd={selectAtOffset}
           onScrollEndDrag={(event) => {
-            onScrollEnd(event, event.nativeEvent.targetContentOffset?.x);
+            selectAtOffset(event, event.nativeEvent.targetContentOffset?.x);
           }}
         >
           {artefacts.map((artefact, index) => (
@@ -223,17 +269,20 @@ export function GalleryAddSheet({ entry, initialPage, open, onClose }: GalleryAd
                 backgroundColor: SHEET_SURFACE,
               }}
             >
-              <GalleryFrame artefact={artefact} wellWidth={wellWidth} />
+              <GalleryFrame artefact={artefact} wellWidth={wellWidth} viewportWidth={screenWidth} />
             </View>
           ))}
         </ScrollView>
 
         {artefacts.length > 1 ? (
           <View style={styles.dots}>
-            {artefacts.map((artefact, index) => (
+            {artefacts.map((artefact) => (
               <View
                 key={artefact.id}
-                style={[styles.dot, index === page ? styles.dotActive : styles.dotIdle]}
+                style={[
+                  styles.dot,
+                  artefact.id === selectedArtefactId ? styles.dotActive : styles.dotIdle,
+                ]}
               />
             ))}
           </View>
@@ -241,42 +290,61 @@ export function GalleryAddSheet({ entry, initialPage, open, onClose }: GalleryAd
           <View style={{ height: 16 }} />
         )}
 
-        {errorMessage ? (
-          <Text className="px-4 text-center text-sm text-red-600">{errorMessage}</Text>
-        ) : alreadyFeatured ? (
-          <Text className="px-4 text-center text-sm text-stone-500">Already in Gallery</Text>
-        ) : (
-          <View className="h-5" />
-        )}
+        <View className="min-h-5 flex-row items-center justify-center gap-2 px-4">
+          {errorMessage ? (
+            <Text className="text-center text-sm text-red-600">{errorMessage}</Text>
+          ) : membershipLoading ? (
+            <Text className="text-center text-sm text-stone-500">Checking Gallery…</Text>
+          ) : membershipError ? (
+            <>
+              <Text className="text-center text-sm text-red-600">Couldn&apos;t check Gallery.</Text>
+              <Pressable
+                onPress={() => {
+                  setMembershipLoading(true);
+                  setMembershipError(false);
+                  setMembershipAttempt((attempt) => attempt + 1);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Retry checking Gallery"
+              >
+                <Text className="font-sans-medium text-sm text-red-700">Try again</Text>
+              </Pressable>
+            </>
+          ) : alreadyFeatured ? (
+            <Text className="text-center text-sm text-stone-500">Already in Gallery</Text>
+          ) : galleryFull ? (
+            <Text className="text-center text-sm text-stone-500">
+              Gallery is full ({GALLERY_CAPACITY} artefacts)
+            </Text>
+          ) : null}
+        </View>
 
         <View className="mt-4 flex-row gap-3 px-4">
           <Pressable
-            onPress={onClose}
+            disabled={busy}
+            onPress={requestClose}
             accessibilityRole="button"
             accessibilityLabel="Cancel"
+            accessibilityState={{ disabled: busy }}
             className="flex-1 items-center rounded-2xl bg-stone-200 py-3.5"
-            style={{ borderCurve: "continuous" }}
+            style={{ borderCurve: "continuous", opacity: busy ? 0.5 : 1 }}
           >
             <Text className="font-sans-medium text-base text-primary">Cancel</Text>
           </Pressable>
           <Pressable
-            disabled={busy || alreadyFeatured}
-            onPress={() => {
-              void confirmAdd();
-            }}
+            disabled={addDisabled}
+            onPress={confirmAdd}
             accessibilityRole="button"
             accessibilityLabel="Add to Gallery"
-            className={`flex-1 items-center rounded-2xl py-3.5 ${busy || alreadyFeatured ? "bg-stone-300" : "bg-primary"}`}
-            style={{
-              borderCurve: "continuous",
-              opacity: busy || alreadyFeatured ? 0.55 : 1,
-            }}
+            accessibilityState={{ disabled: addDisabled, busy }}
+            className={`flex-1 items-center rounded-2xl py-3.5 ${addDisabled ? "bg-stone-300" : "bg-primary"}`}
+            style={{ borderCurve: "continuous", opacity: addDisabled ? 0.55 : 1 }}
           >
             {busy ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text
-                className={`font-sans-medium text-base ${alreadyFeatured ? "text-stone-500" : "text-white"}`}
+                className={`font-sans-medium text-base ${addDisabled ? "text-stone-500" : "text-white"}`}
               >
                 Add to Gallery
               </Text>
