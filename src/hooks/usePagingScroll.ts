@@ -21,6 +21,9 @@ export function usePagingScroll({ pageSize, axis = "x" }: UsePagingScrollOptions
   const scrollRef = useAnimatedRef<ScrollView>();
   const scrollOffset = useSharedValue(0);
 
+  // This stability is a correctness contract with native/third-party refs and
+  // layout effects, not a render optimization. React Compiler caching is not a
+  // semantic guarantee that a callback identity survives dependency changes.
   const resolvePageSize = useCallback(() => {
     if (typeof pageSize === "number") {
       return pageSize;

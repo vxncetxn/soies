@@ -9,7 +9,7 @@
 | Layer | Choice |
 |-------|--------|
 | Framework | Expo 57, React Native 0.86, React 19 |
-| Compiler | [React Compiler](https://docs.expo.dev/guides/react-compiler) (`experiments.reactCompiler` in `app.json`; `babel.config.js` with `panicThreshold: 'all_errors'` — diagnostics are **hard build failures**). Validation: `pnpm lint` (Oxlint including native `react/react-compiler`), `pnpm lint:rc`, `pnpm healthcheck:rc`, `pnpm check`. Do not reintroduce manual `useMemo` / `useCallback` / `memo` without a measured re-render problem (`memo(CalendarMonthWithDots)` is the intentional exception for uncompiled flash-calendar). |
+| Compiler | [React Compiler](https://docs.expo.dev/guides/react-compiler) (`experiments.reactCompiler` in `app.json`; `babel.config.js` with `panicThreshold: 'all_errors'` — diagnostics are **hard build failures**). Validation: `pnpm lint` (Oxlint including native `react/react-compiler`), `pnpm lint:rc`, `pnpm healthcheck:rc`, `pnpm check`. Do not reintroduce manual `useMemo` / `useCallback` / `memo` as a render optimization without a measured re-render problem (`memo(CalendarMonthWithDots)` is the intentional exception for uncompiled flash-calendar). `useCallback` is also permitted when stable identity is an explicit correctness contract with native or third-party APIs; document that contract at the call site. |
 | Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based, native tabs) |
 | Styling | [Uniwind](https://docs.uniwind.dev/) + Tailwind CSS v4 (`className` on native views) |
 | Animation | Reanimated 4 + Worklets (UI-thread springs, scroll handlers, morphs). Shared values use `.get()` / `.set()` for React Compiler compatibility. |
@@ -203,8 +203,9 @@ pnpm fmt / pnpm fmt:check
 pnpm typecheck          # tsc --noEmit
 pnpm lint               # oxlint (includes native react/react-compiler)
 pnpm lint:rc            # targeted Oxlint React Compiler rule
-pnpm healthcheck:rc     # pinned react-compiler-healthcheck (expect 47/47 or better)
-pnpm check              # fmt:check + typecheck + lint + healthcheck:rc
+pnpm healthcheck:rc     # pinned react-compiler-healthcheck (expect all components to compile)
+pnpm test               # repository and Gallery regression tests
+pnpm check              # fmt:check + typecheck + lint + healthcheck:rc + test
 pnpm exec expo export --platform ios --clear   # production transform (prints React Compiler enabled)
 pnpm eas build --profile ios-simulator --platform ios
 ```

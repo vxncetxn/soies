@@ -32,6 +32,16 @@ import type { Entry, GalleryArtefact } from "../data/entries";
 
 import { getGallery, isPrintArtefact, removeArtefactFromGallery } from "../data/entries";
 import {
+  closeGalleryFocus,
+  completeGalleryFocus,
+  openGalleryFocus,
+} from "../gallery/galleryFocusSession";
+import {
+  artefactIdAtGalleryOffset,
+  navigateToPendingGalleryArtefact,
+  resolveGalleryIdentityPage,
+} from "../gallery/galleryPaging";
+import {
   clearPendingGalleryArtefact,
   getPendingGalleryArtefact,
 } from "../gallery/pendingGalleryPage";
@@ -114,10 +124,11 @@ export default function GalleryPager() {
   // Native resize restoration needs the last settled identity but rendering
   // does not; a ref avoids an extra React pass on every completed swipe.
   const activeArtefactIdRef = useRef<string | null>(null);
-  const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
-  const [focusOpen, setFocusOpen] = useState(false);
-  const pendingRemoveRef = useRef<string | null>(null);
+  const [focusSession, setFocusSession] = useState<ReturnType<
+    typeof openGalleryFocus<FocusTarget>
+  > | null>(null);
   const previousPageWidthRef = useRef(screenWidth);
+  const previousOrderRef = useRef("");
   const measuredContentWidthRef = useRef(0);
   const [contentLayoutVersion, setContentLayoutVersion] = useState(0);
   const pageWidth = screenWidth;
@@ -150,12 +161,7 @@ export default function GalleryPager() {
         if (!cancelled) {
           setGalleryArtefacts(next);
           setLoadError(null);
-          if (
-            !activeArtefactIdRef.current ||
-            !next.some(
-              (galleryArtefact) => galleryArtefact.artefact.id === activeArtefactIdRef.current,
-            )
-          ) {
+          if (!activeArtefactIdRef.current) {
             activeArtefactIdRef.current = next[0]?.artefact.id ?? null;
           }
         }
@@ -180,39 +186,50 @@ export default function GalleryPager() {
     if (pendingArtefactId == null || galleryArtefacts.length === 0) {
       return;
     }
-    const index = galleryArtefacts.findIndex(
-      (galleryArtefact) => galleryArtefact.artefact.id === pendingArtefactId,
-    );
-    if (index < 0) {
-      return;
-    }
     // A lazy first mount can have React rows before the native ScrollView has
-    // measured them. Keep the identity pending until the target page exists in
-    // native content and `jumpToIndex` can issue a real scroll command.
-    if (measuredContentWidthRef.current < (index + 1) * pageWidth) {
-      return;
-    }
-    if (!jumpToIndex(index, false)) {
-      return;
-    }
-    activeArtefactIdRef.current = pendingArtefactId;
-    clearPendingGalleryArtefact(pendingArtefactId);
+    // measured them. Keep the identity pending until refreshed rows and the
+    // corresponding native page are both ready for a real scroll command.
+    navigateToPendingGalleryArtefact({
+      galleryArtefacts,
+      pendingArtefactId,
+      measuredContentWidth: measuredContentWidthRef.current,
+      pageWidth,
+      jumpToIndex,
+      onNavigated: (artefactId) => {
+        activeArtefactIdRef.current = artefactId;
+        clearPendingGalleryArtefact(artefactId);
+      },
+    });
   }, [contentLayoutVersion, galleryArtefacts, jumpToIndex, pageWidth]);
 
   useLayoutEffect(() => {
+    const previousPageWidth = previousPageWidthRef.current;
     const sizeChanged = previousPageWidthRef.current !== pageWidth;
+    const order = galleryArtefacts.map(({ artefact }) => artefact.id).join("\0");
+    const orderChanged = previousOrderRef.current !== order;
     previousPageWidthRef.current = pageWidth;
-    if (!sizeChanged || galleryArtefacts.length === 0) {
+    previousOrderRef.current = order;
+    if ((!sizeChanged && !orderChanged) || galleryArtefacts.length === 0) {
       return;
     }
-    const index = Math.max(
-      0,
-      galleryArtefacts.findIndex(
-        (galleryArtefact) => galleryArtefact.artefact.id === activeArtefactIdRef.current,
-      ),
-    );
-    jumpToIndex(index, false);
-  }, [galleryArtefacts, jumpToIndex, pageWidth]);
+    // Deletion deliberately animates its own clamp after the refreshed rows
+    // arrive. Let that effect own this transition rather than pre-empting it.
+    if (animateClampAfterDeleteRef.current) {
+      return;
+    }
+    const fallbackIndex =
+      previousPageWidth > 0 ? Math.round(scrollOffset.get() / previousPageWidth) : 0;
+    const resolved = resolveGalleryIdentityPage({
+      galleryArtefacts,
+      activeArtefactId: activeArtefactIdRef.current,
+      fallbackIndex,
+    });
+    if (!resolved) {
+      return;
+    }
+    activeArtefactIdRef.current = resolved.artefactId;
+    jumpToIndex(resolved.index, false);
+  }, [galleryArtefacts, jumpToIndex, pageWidth, scrollOffset]);
 
   useLayoutEffect(() => {
     if (!animateClampAfterDeleteRef.current) {
@@ -243,19 +260,22 @@ export default function GalleryPager() {
       });
   };
 
-  const onScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const settleAtOffset = (offset: number) => {
     if (pageWidth <= 0 || galleryArtefacts.length === 0) {
       return;
     }
-    const index = Math.max(
-      0,
-      Math.min(
-        galleryArtefacts.length - 1,
-        Math.round(event.nativeEvent.contentOffset.x / pageWidth),
-      ),
-    );
-    activeArtefactIdRef.current = galleryArtefacts[index]?.artefact.id ?? null;
+    activeArtefactIdRef.current = artefactIdAtGalleryOffset(galleryArtefacts, offset, pageWidth);
   };
+
+  const onScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    settleAtOffset(event.nativeEvent.contentOffset.x);
+  };
+
+  const onScrollEndDrag = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    settleAtOffset(event.nativeEvent.targetContentOffset?.x ?? event.nativeEvent.contentOffset.x);
+  };
+
+  const focusTarget = focusSession?.target ?? null;
 
   const focusMenuItems: FocusMenuItem[] = focusTarget
     ? [
@@ -263,19 +283,17 @@ export default function GalleryPager() {
           label: "Remove from Gallery",
           icon: "trash",
           onPress: () => {
-            pendingRemoveRef.current = focusTarget.galleryArtefact.artefact.id;
-            setFocusOpen(false);
+            setFocusSession((current) => closeGalleryFocus(current, { remove: true }));
           },
         },
       ]
     : [];
 
   const finishFocusClose = () => {
-    const artefactId = pendingRemoveRef.current;
-    pendingRemoveRef.current = null;
-    setFocusTarget(null);
-    if (artefactId) {
-      handleDelete(artefactId);
+    const completion = completeGalleryFocus(focusSession);
+    setFocusSession(completion.next);
+    if (completion.removeTarget) {
+      handleDelete(completion.removeTarget.galleryArtefact.artefact.id);
     }
   };
 
@@ -325,6 +343,7 @@ export default function GalleryPager() {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onScroll={onScroll}
+        onScrollEndDrag={onScrollEndDrag}
         onMomentumScrollEnd={onScrollEnd}
         onContentSizeChange={(width) => {
           measuredContentWidthRef.current = width;
@@ -347,8 +366,9 @@ export default function GalleryPager() {
             wellWidth={well.width}
             viewportWidth={screenWidth}
             onRequestFocus={(target) => {
-              setFocusTarget(target);
-              setFocusOpen(true);
+              // The closing session owns its native settle callback. Ignore
+              // another frame until that callback releases the session.
+              setFocusSession((current) => openGalleryFocus(current, target));
             }}
           />
         ))}
@@ -405,7 +425,7 @@ export default function GalleryPager() {
       {focusTarget ? (
         <FocusOverlay
           triggerRef={focusTarget.triggerRef}
-          open={focusOpen}
+          open={focusSession?.phase === "open"}
           subject={
             <GalleryFrame
               artefact={focusTarget.galleryArtefact.artefact}
@@ -414,7 +434,9 @@ export default function GalleryPager() {
             />
           }
           menuItems={focusMenuItems}
-          onRequestClose={() => setFocusOpen(false)}
+          onRequestClose={() =>
+            setFocusSession((current) => closeGalleryFocus(current, { remove: false }))
+          }
           onCloseComplete={finishFocusClose}
           accessibilityDismissLabel="Dismiss Gallery options"
         />

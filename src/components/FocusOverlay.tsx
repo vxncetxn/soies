@@ -171,7 +171,10 @@ const FocusOverlay = ({
   const closeSequenceSV = useSharedValue(0);
   const [closeSequence, setCloseSequence] = useState(0);
 
-  useEffect(() => {
+  // Synchronize before the animation layout effect below. Reduced-motion can
+  // settle a close immediately, so a passive effect would leave that callback
+  // observing the preceding render's owner.
+  useLayoutEffect(() => {
     onCloseCompleteRef.current = onCloseComplete;
   }, [onCloseComplete]);
 

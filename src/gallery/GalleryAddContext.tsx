@@ -17,7 +17,6 @@ type GalleryAddSession = {
 
 type GalleryAddContextValue = {
   openGalleryAdd: (entry: Entry, initialPage: number) => void;
-  closeGalleryAdd: () => void;
 };
 
 const GalleryAddContext = createContext<GalleryAddContextValue | null>(null);
@@ -40,10 +39,6 @@ export function GalleryAddProvider({ children }: { children: ReactNode }) {
     setSession({ id, entry, initialPage, open: true });
   };
 
-  const closeGalleryAdd = () => {
-    setSession((current) => (current ? { ...current, open: false } : null));
-  };
-
   // Native settle can arrive after another session has opened. Mutate only the
   // session that owned the callback so an old sheet cannot close the new one.
   const closeSession = (sessionId: number) => {
@@ -55,7 +50,7 @@ export function GalleryAddProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <GalleryAddContext.Provider value={{ openGalleryAdd, closeGalleryAdd }}>
+    <GalleryAddContext.Provider value={{ openGalleryAdd }}>
       {children}
       {session ? (
         <GalleryAddSheet

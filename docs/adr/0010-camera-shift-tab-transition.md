@@ -1,5 +1,5 @@
 ---
-status: superseded
+status: accepted
 ---
 
 # Home↔Gallery uses the default lazy tab lifecycle

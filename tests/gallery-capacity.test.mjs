@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { runMigrations } from "../src/db/migrations.ts";
+import { restoreArtefact, softDeleteArtefact } from "../src/db/repositories/artefacts.ts";
 import {
   addGalleryMembership,
   GALLERY_CAPACITY,
@@ -182,15 +183,11 @@ test("parent tombstone and Undo preserve active Gallery membership", async () =>
         .get().count,
     );
 
-  gallery.database
-    .prepare("UPDATE artefacts SET deleted_at = ? WHERE id = ?")
-    .run(100, "undo-target");
+  await softDeleteArtefact("undo-target", 100, gallery);
   assert.equal(visibleCount(), 0);
   assert.equal(gallery.count(), 1);
 
-  gallery.database
-    .prepare("UPDATE artefacts SET deleted_at = NULL WHERE id = ?")
-    .run("undo-target");
+  await restoreArtefact("undo-target", 101, gallery);
   assert.equal(visibleCount(), 1);
   assert.equal(gallery.count(), 1);
 });

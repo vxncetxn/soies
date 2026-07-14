@@ -5,7 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "android": "expo run:android",
-    "check": "pnpm fmt:check && pnpm typecheck && pnpm lint && pnpm healthcheck:rc",
+    "check": "pnpm fmt:check && pnpm typecheck && pnpm lint && pnpm healthcheck:rc && pnpm test",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "healthcheck:rc": "react-compiler-healthcheck",
@@ -14,7 +14,7 @@
     "lint:fix": "oxlint --fix",
     "lint:rc": "oxlint -A all -D react/react-compiler --react-plugin src",
     "start": "expo start",
-    "test": "node --no-warnings --experimental-strip-types --experimental-sqlite --test tests/*.test.mjs",
+    "test": "node --no-warnings --experimental-strip-types --experimental-sqlite --experimental-loader ./tests/typescript-loader.mjs --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "web": "expo start --web"
   },

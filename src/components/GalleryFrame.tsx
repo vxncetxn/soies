@@ -31,11 +31,11 @@ import LongPressable from "./LongPressable";
 import { renderArtefactContent } from "./renderArtefactContent";
 
 /** Astro portrait figure aspect (width / height). */
-export const FRAME_WELL_ASPECT = 3 / 4;
+const FRAME_WELL_ASPECT = 3 / 4;
 /** Outer board vs well (Astro figure:after). */
 export const FRAME_BOARD_SCALE = 1.45;
 /** Inner mat vs well (Astro figure:before). */
-export const FRAME_MAT_SCALE = 1.32;
+const FRAME_MAT_SCALE = 1.32;
 
 function wellSizeForMaxWidth(maxWellWidth: number): { width: number; height: number } {
   return { width: maxWellWidth, height: maxWellWidth / FRAME_WELL_ASPECT };
@@ -151,7 +151,12 @@ const GalleryFrame = ({
       />
       <View
         pointerEvents="none"
-        style={[styles.matHighlight, { width: matSize.width * 0.7, height: matSize.height * 0.62 }]}
+        // Extend beyond the opaque well so the centre light remains visible in
+        // the surrounding mat ring instead of being fully occluded.
+        style={[
+          styles.matHighlight,
+          { width: matSize.width * 0.96, height: matSize.height * 0.94 },
+        ]}
       />
       <View style={[styles.well, { width: wellW, height: wellH }]}>
         {/*
