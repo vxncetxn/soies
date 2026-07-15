@@ -70,40 +70,43 @@ async function createFixture() {
   };
 }
 
-test("migration starts with five empty slots and preserves legacy Gallery rows", async () => {
+test("migration creates only the current application schema and starts with five empty slots", async () => {
   const fixture = createExecutor();
   await runMigrations(fixture);
-  fixture.database
-    .prepare(
-      "INSERT INTO entries (id, title, type, date, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )
-    .run("entry", "Legacy", "paper", "2026-07-15", 0, 1, 1);
-  fixture.database
-    .prepare(
-      "INSERT INTO artefacts (id, entry_id, type, sort_order, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )
-    .run("artefact", "entry", "paper", 0, "{}", 1, 1);
-  fixture.database
-    .prepare(
-      "INSERT INTO gallery_items (id, artefact_id, sort_order, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-    )
-    .run("gallery", "artefact", 0, 1, 1);
 
-  // Recreate the exact v3→v4 boundary with a populated legacy table. The new
-  // migration must add only Widget Slot state and leave that row untouched.
-  fixture.database.exec("DROP TABLE featured_widget_slots");
-  fixture.database.exec("PRAGMA user_version = 3");
-  await runMigrations(fixture);
+  const applicationTables = fixture.database
+    .prepare(
+      `SELECT name
+       FROM sqlite_schema
+       WHERE type = 'table'
+         AND name NOT LIKE 'sqlite_%'
+         AND name NOT LIKE 'entries_fts%'
+         AND name NOT LIKE 'artefacts_fts%'
+       ORDER BY name`,
+    )
+    .all()
+    .map(({ name }) => name);
+  assert.deepEqual(applicationTables, [
+    "artefacts",
+    "entries",
+    "entry_tags",
+    "featured_widget_slots",
+    "tags",
+    "users",
+  ]);
+  assert.deepEqual(
+    fixture.database
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' ORDER BY name")
+      .all(),
+    [],
+  );
+  assert.equal(fixture.database.prepare("PRAGMA user_version").get().user_version, 3);
 
   const slots = await readFeaturedWidgetSlots(fixture);
   assert.equal(slots.length, FEATURED_WIDGET_SLOT_COUNT);
   assert.deepEqual(
     slots.map(({ slotIndex, state }) => ({ slotIndex, state })),
     [1, 2, 3, 4, 5].map((slotIndex) => ({ slotIndex, state: "empty" })),
-  );
-  assert.equal(
-    fixture.database.prepare("SELECT COUNT(*) AS count FROM gallery_items").get().count,
-    1,
   );
 });
 

@@ -55,16 +55,6 @@ const MIGRATION_V1: Migration = {
       PRIMARY KEY (entry_id, tag_id)
     )`,
     "CREATE INDEX idx_entry_tags_tag ON entry_tags(tag_id, deleted_at)",
-    `CREATE TABLE gallery_items (
-      id          TEXT PRIMARY KEY,
-      artefact_id TEXT NOT NULL REFERENCES artefacts(id),
-      sort_order  INTEGER NOT NULL DEFAULT 0,
-      added_at    INTEGER NOT NULL,
-      updated_at  INTEGER NOT NULL,
-      deleted_at  INTEGER
-    )`,
-    "CREATE INDEX idx_gallery_items_order ON gallery_items(sort_order, deleted_at)",
-    "CREATE UNIQUE INDEX idx_gallery_items_artefact_active ON gallery_items(artefact_id) WHERE deleted_at IS NULL",
     `CREATE VIRTUAL TABLE entries_fts USING fts5(
       entry_rowid UNINDEXED,
       title,
@@ -86,53 +76,15 @@ const MIGRATION_V2: Migration = {
 };
 
 /**
- * Keep Gallery capacity authoritative at the storage seam. Repository callers
- * receive a typed preflight error, while these triggers also protect future
- * sync/import adapters and concurrent writes that do not share that code path.
- * Existing over-capacity rows are tombstoned newest-last before the triggers
- * are installed; their artefacts remain intact in the journal.
- */
-const MIGRATION_V3: Migration = {
-  version: 3,
-  statements: [
-    `UPDATE gallery_items
-     SET deleted_at = updated_at
-     WHERE deleted_at IS NULL
-       AND id NOT IN (
-         SELECT id
-         FROM gallery_items
-         WHERE deleted_at IS NULL
-         ORDER BY sort_order, added_at DESC
-         LIMIT 10
-       )`,
-    `CREATE TRIGGER gallery_capacity_before_insert
-     BEFORE INSERT ON gallery_items
-     WHEN NEW.deleted_at IS NULL
-       AND (SELECT COUNT(*) FROM gallery_items WHERE deleted_at IS NULL) >= 10
-     BEGIN
-       SELECT RAISE(ABORT, 'GALLERY_CAPACITY_REACHED');
-     END`,
-    `CREATE TRIGGER gallery_capacity_before_revive
-     BEFORE UPDATE OF deleted_at ON gallery_items
-     WHEN OLD.deleted_at IS NOT NULL
-       AND NEW.deleted_at IS NULL
-       AND (SELECT COUNT(*) FROM gallery_items WHERE deleted_at IS NULL) >= 10
-     BEGIN
-       SELECT RAISE(ABORT, 'GALLERY_CAPACITY_REACHED');
-     END`,
-  ],
-};
-
-/**
- * Five stable widget positions, intentionally independent from Gallery.
+ * Five stable widget positions.
  *
  * Empty positions have no active row. Keeping the slot number as the primary
  * key makes replacement deterministic, while the partial unique index protects
  * the one-slot-per-artefact invariant without preventing a tombstoned row from
  * being replaced later.
  */
-const MIGRATION_V4: Migration = {
-  version: 4,
+const MIGRATION_V3: Migration = {
+  version: 3,
   statements: [
     `CREATE TABLE featured_widget_slots (
       slot_index  INTEGER PRIMARY KEY CHECK(slot_index BETWEEN 1 AND 5),
@@ -147,7 +99,12 @@ const MIGRATION_V4: Migration = {
   ],
 };
 
-const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4];
+/**
+ * Current clean-install baseline. Earlier development databases are discarded
+ * before this sequence runs, so its contiguous versions contain only schema a
+ * newly installed app needs rather than compatibility steps for old builds.
+ */
+const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3];
 
 export async function runMigrations(db: DB): Promise<void> {
   const versionResult = await db.execute("PRAGMA user_version");
