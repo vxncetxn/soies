@@ -27,7 +27,7 @@ const FeaturedArtefactsButton = () => {
         accessibilityRole="button"
         accessibilityLabel="Open Featured Artefacts"
       >
-        <View className="border-controls-border bg-controls-background items-center justify-center rounded-full border p-2">
+        <View className="items-center justify-center rounded-full border border-controls-border bg-controls-background p-2">
           <Icon name="photo" size={24} color="#79716B" />
         </View>
       </Pressable>

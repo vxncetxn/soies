@@ -46,7 +46,7 @@ export default function Layout() {
                     <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
                       <DatabaseProvider>
                         <FeaturedWidgetsProvider>
-                          <StyledSafeAreaView className="bg-background flex-1">
+                          <StyledSafeAreaView className="flex-1 bg-background">
                             <Stack screenOptions={{ headerShown: false }}>
                               <Stack.Screen name="(tabs)" />
                             </Stack>

@@ -42,18 +42,18 @@ const ScribbleToolStrip = ({
           accessibilityRole="button"
           accessibilityLabel="Undo stroke"
           hitSlop={8}
-          className="border-controls-border bg-controls-background rounded-full border px-3 py-1.5"
+          className="rounded-full border border-controls-border bg-controls-background px-3 py-1.5"
         >
-          <Text className="text-secondary font-sans-medium text-sm">Undo</Text>
+          <Text className="font-sans-medium text-sm text-secondary">Undo</Text>
         </Pressable>
         <Pressable
           onPress={onRedo}
           accessibilityRole="button"
           accessibilityLabel="Redo stroke"
           hitSlop={8}
-          className="border-controls-border bg-controls-background rounded-full border px-3 py-1.5"
+          className="rounded-full border border-controls-border bg-controls-background px-3 py-1.5"
         >
-          <Text className="text-secondary font-sans-medium text-sm">Redo</Text>
+          <Text className="font-sans-medium text-sm text-secondary">Redo</Text>
         </Pressable>
       </View>
 

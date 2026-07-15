@@ -55,7 +55,7 @@ const BloomBar = ({
         collapsable={false}
         style={originFadeStyle}
         pointerEvents={open ? "none" : "auto"}
-        className={`border-controls-border bg-controls-background flex-row items-center gap-3 self-start rounded-4xl border px-3 py-2 ${className ?? ""}`}
+        className={`flex-row items-center gap-3 self-start rounded-4xl border border-controls-border bg-controls-background px-3 py-2 ${className ?? ""}`}
       >
         {slots.map((slot, index) => (
           <Pressable

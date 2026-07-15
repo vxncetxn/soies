@@ -466,7 +466,7 @@ const BloomPanel = ({
           pointerEvents="auto"
           className={
             variant === "menu"
-              ? "border-controls-border bg-controls-background border"
+              ? "border border-controls-border bg-controls-background"
               : "bg-controls-background"
           }
         >

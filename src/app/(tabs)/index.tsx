@@ -315,7 +315,7 @@ export default function Index() {
   };
 
   return (
-    <View className="bg-background relative flex-1">
+    <View className="relative flex-1 bg-background">
       <HomeHeader
         date={effectiveDate}
         titles={entries.map((entry) => entry.title)}
@@ -324,12 +324,12 @@ export default function Index() {
 
       {error ? (
         <View className="flex-1 items-center justify-center gap-4 px-5">
-          <Text className="text-primary text-center">Couldn&apos;t load entries for this day.</Text>
+          <Text className="text-center text-primary">Couldn&apos;t load entries for this day.</Text>
           <Pressable
             onPress={retry}
             accessibilityRole="button"
             accessibilityLabel="Retry loading entries"
-            className="border-controls-border bg-controls-background rounded-full border px-5 py-2"
+            className="rounded-full border border-controls-border bg-controls-background px-5 py-2"
           >
             <Text className="text-primary">Try again</Text>
           </Pressable>
@@ -340,7 +340,7 @@ export default function Index() {
         </View>
       ) : entries.length === 0 ? (
         <View className="flex-1 items-center justify-center px-5">
-          <Text className="text-primary text-center">No entries for this day.</Text>
+          <Text className="text-center text-primary">No entries for this day.</Text>
         </View>
       ) : (
         <DayPager

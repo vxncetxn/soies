@@ -494,7 +494,7 @@ const Stack = ({
                   onPress={collapse}
                   accessibilityRole="button"
                   accessibilityLabel="Close entry"
-                  className="border-controls-border bg-controls-background rounded-full border p-3"
+                  className="rounded-full border border-controls-border bg-controls-background p-3"
                 >
                   <Icon name="x-mark" size={22} color="#79716B" />
                 </Pressable>

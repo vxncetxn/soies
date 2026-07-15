@@ -216,7 +216,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
         renderPreview={(index) => {
           const draft = artefacts[index];
           return (
-            <View className="bg-paper h-14 w-10 overflow-hidden rounded-sm">
+            <View className="h-14 w-10 overflow-hidden rounded-sm bg-paper">
               {draft ? (
                 <StyledImage
                   source={draft.imageUri}

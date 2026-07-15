@@ -28,7 +28,7 @@ const Print = ({
   children,
 }: PropsWithChildren<PrintProps>) => {
   return (
-    <View className="bg-paper relative flex aspect-print h-full w-full items-center gap-4 overflow-hidden pt-8">
+    <View className="relative flex aspect-print h-full w-full items-center gap-4 overflow-hidden bg-paper pt-8">
       <StyledImage
         className="aspect-print-image w-[86.79%]"
         source={imagePath}

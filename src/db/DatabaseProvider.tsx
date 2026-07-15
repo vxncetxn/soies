@@ -51,13 +51,13 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
 
   if (error) {
     return (
-      <View className="bg-background flex-1 items-center justify-center gap-4 px-6">
-        <Text className="text-primary text-center">Couldn&apos;t load your journal.</Text>
+      <View className="flex-1 items-center justify-center gap-4 bg-background px-6">
+        <Text className="text-center text-primary">Couldn&apos;t load your journal.</Text>
         <Pressable
           onPress={retry}
           accessibilityRole="button"
           accessibilityLabel="Retry loading database"
-          className="border-controls-border bg-controls-background rounded-full border px-5 py-2"
+          className="rounded-full border border-controls-border bg-controls-background px-5 py-2"
         >
           <Text className="text-primary">Try again</Text>
         </Pressable>
@@ -67,7 +67,7 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
 
   if (!ready) {
     return (
-      <View className="bg-background flex-1 items-center justify-center">
+      <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator />
       </View>
     );
