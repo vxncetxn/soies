@@ -5,7 +5,7 @@
  * revision changes and two-generation cleanup can be exhaustively unit-tested.
  */
 /** Bump whenever frame geometry or capture rendering changes incompatibly. */
-export const WIDGET_FRAME_RENDERER_VERSION = 1;
+export const WIDGET_FRAME_RENDERER_VERSION = 2;
 /** Restricts cleanup to files owned by this feature. */
 export const WIDGET_FRAME_PREFIX = "featured-artefact-";
 

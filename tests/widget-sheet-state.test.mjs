@@ -5,6 +5,7 @@ import {
   FEATURED_WIDGET_PHASE_FADE_MS,
   featuredCarouselTarget,
   featuredPhaseForSlot,
+  featuredWidgetControlsForSelection,
   featuredWidgetSheetGeometry,
   getPickerActionState,
   initialFeaturedWidgetSheetPhase,
@@ -69,4 +70,24 @@ test("full capacity skips picker and rotation preserves the user's visible slot"
 test("reference controls perform no mutation", () => {
   const state = { slot: 2, artefactId: "unchanged" };
   assert.equal(performFeaturedWidgetStubControl(state), state);
+});
+
+test("management controls follow the currently visible slot state", () => {
+  const slots = [
+    { slotIndex: 1, state: "featured" },
+    { slotIndex: 2, state: "empty" },
+    { slotIndex: 3, state: "unavailable" },
+  ];
+
+  assert.deepEqual(featuredWidgetControlsForSelection(slots, 2), [
+    { label: "Add Artefact", icon: "plus" },
+  ]);
+  assert.deepEqual(featuredWidgetControlsForSelection(slots, 1), [
+    { label: "Replace", icon: "pencil" },
+    { label: "Delete", icon: "trash" },
+  ]);
+  assert.deepEqual(featuredWidgetControlsForSelection(slots, 3), [
+    { label: "Replace", icon: "pencil" },
+    { label: "Delete", icon: "trash" },
+  ]);
 });

@@ -5,9 +5,13 @@
  * - picker action precedence keeps disabled copy deterministic;
  * - initial/selection transitions preserve one mounted sheet session;
  * - carousel targeting distinguishes a new centering command from rotation;
+ * - management controls derive from the currently centered slot binding;
  * - reference controls intentionally return their input unchanged.
  */
-import type { FeaturedWidgetSlotIndex } from "../db/repositories/featuredWidgetSlots";
+import type {
+  FeaturedWidgetSlot,
+  FeaturedWidgetSlotIndex,
+} from "../db/repositories/featuredWidgetSlots";
 
 /** Short enough to read as one body changing content, not two sheets swapping. */
 export const FEATURED_WIDGET_PHASE_FADE_MS = 200;
@@ -68,6 +72,33 @@ export function featuredCarouselTarget({
   selectedSlot: FeaturedWidgetSlotIndex;
 }): FeaturedWidgetSlotIndex {
   return previousCenteredSlot === centeredSlot ? selectedSlot : centeredSlot;
+}
+
+export type FeaturedWidgetControl = {
+  /** User-facing stub label; the selected slot decides which set is visible. */
+  label: "Replace" | "Delete" | "Add Artefact";
+  /** Existing Soies symbol paired with the action label. */
+  icon: "pencil" | "trash" | "plus";
+};
+
+const EMPTY_SLOT_CONTROLS: readonly FeaturedWidgetControl[] = [
+  { label: "Add Artefact", icon: "plus" },
+];
+const BOUND_SLOT_CONTROLS: readonly FeaturedWidgetControl[] = [
+  { label: "Replace", icon: "pencil" },
+  { label: "Delete", icon: "trash" },
+];
+
+/**
+ * Empty positions can only add; both available and Recently Deleted bindings
+ * already reserve an Artefact, so their reference controls remain replace/delete.
+ */
+export function featuredWidgetControlsForSelection(
+  slots: readonly Pick<FeaturedWidgetSlot, "slotIndex" | "state">[],
+  selectedSlot: FeaturedWidgetSlotIndex,
+): readonly FeaturedWidgetControl[] {
+  const state = slots.find((slot) => slot.slotIndex === selectedSlot)?.state ?? "empty";
+  return state === "empty" ? EMPTY_SLOT_CONTROLS : BOUND_SLOT_CONTROLS;
 }
 
 /**

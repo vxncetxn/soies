@@ -27,7 +27,7 @@ const featured = (slotIndex) => ({
   frameRevision: 7,
 });
 
-test("snapshot always maps all five keyed configurations and localized metadata", () => {
+test("snapshot always maps all five keyed configurations and localized accessibility", () => {
   const snapshot = buildFeaturedWidgetSnapshot(
     [featured(1), empty(2), unavailable(3), featured(4), empty(5)],
     (slot) => (slot.state === "featured" ? `file:///frame-${slot.slotIndex}.png` : undefined),
@@ -35,8 +35,10 @@ test("snapshot always maps all five keyed configurations and localized metadata"
   );
 
   assert.deepEqual(Object.keys(snapshot.slots), ["slot1", "slot2", "slot3", "slot4", "slot5"]);
-  assert.equal(snapshot.slots.slot1.entryTitle, "Entry 1");
-  assert.equal(snapshot.slots.slot1.displayDate, "15 July 2026");
+  assert.equal(
+    snapshot.slots.slot1.accessibilityLabel,
+    "Featured Artefact 1, from Entry 1, 15 July 2026.",
+  );
   assert.equal(snapshot.slots.slot2.state, "empty");
   assert.equal(snapshot.slots.slot3.state, "unavailable");
   assert.equal(snapshot.slots.slot4.frameUri, "file:///frame-4.png");

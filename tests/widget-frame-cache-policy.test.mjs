@@ -11,7 +11,7 @@ test("artefact revision and renderer version invalidate frame filenames", () => 
   const first = widgetFrameFileName("artefact/id", 10);
   const changed = widgetFrameFileName("artefact/id", 11);
   assert.notEqual(first, changed);
-  assert.match(first, /^featured-artefact-artefact_id-10-r\d+\.png$/);
+  assert.equal(first, "featured-artefact-artefact_id-10-r2.png");
 });
 
 test("cleanup protects the immediately previous publication for one later pass", () => {

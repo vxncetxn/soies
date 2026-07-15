@@ -13,13 +13,13 @@ The `featured_widget_slots` table stores only assignment intent. Its primary key
 
 Assignment chooses the lowest genuinely empty slot transactionally and returns typed assigned, duplicate, or full outcomes. The in-app sheet always presents all five positions. Empty and unavailable positions use branded framed placeholders; live positions use a cached raster rather than retaining five Paper/Print/Ink trees.
 
-Frame PNGs are derived local cache data. A single-flight capture host lazily renders the shared `ArtefactFrame`, waits for layout, Print image, and Ink readiness, and writes a high-resolution transparent PNG into Expo Widgets' shared `widgetsDirectory`. The filename includes the Artefact revision and frame renderer version. Artefact or Ink changes invalidate the image; Entry title/date changes only alter snapshot metadata.
+Frame PNGs are derived local cache data. A single-flight capture host lazily renders the shared `ArtefactFrame`, waits for layout, Print image, and Ink readiness, and writes a high-resolution transparent PNG into Expo Widgets' shared `widgetsDirectory`. The transparent canvas derives asymmetric crop insets from the frame's downward outer shadow, retaining its visible blur without wasting equal space above and below. WidgetKit's default margins are disabled, but the occupied layout supplies its own small content inset so the shadow never touches the widget edge. The filename includes the Artefact revision and frame renderer version. Artefact or Ink changes invalidate the image; Entry title/date changes only alter snapshot accessibility and deep-link data.
 
 Publication sends one snapshot containing all five keyed states. Reconciliation runs after first paint and on foreground, immediately publishes empty/unavailable states, captures only missing or stale frames, and removes unreferenced captures only after a later successful publish. A capture or assignment failure leaves the picker retryable. A publication failure retains the committed assignment and retries because durable user intent takes precedence over transient extension refresh.
 
 Widget links carry the slot and, when occupied, the exact date, Entry ID, and Artefact ID. Home consumes each command once, navigates to the day, jumps to the matching Entry, and expands its pager at the Artefact. Missing or deleted sources fall back to the five-slot sheet centered on the originating slot.
 
-Android widget generation and every Featured Artefact affordance on Android/web are deferred. The four management controls shown in the reference sheet remain enabled silent no-ops for this milestone.
+Android widget generation and every Featured Artefact affordance on Android/web are deferred. Management controls follow the centered slot: an empty slot shows **Add Artefact**, while a bound or unavailable slot shows **Replace** and **Delete**. Those actions and Help remain enabled silent no-ops for this milestone.
 
 ## Consequences
 

@@ -3,7 +3,11 @@
  *
  * A request first checks the revisioned shared cache. On a miss it mounts one
  * ArtefactFrame far off-screen, waits for WidgetFrameSubject's layout/image
- * barrier, captures a transparent PNG, and copies it into `widgetsDirectory`.
+ * barrier, and captures it inside a shadow-sized transparent canvas before
+ * copying the PNG into `widgetsDirectory`. The gutter is load-bearing:
+ * ArtefactFrame's board shadow draws beyond its own layout bounds and an
+ * edge-to-edge capture clips it. The downward shadow uses a larger bottom than
+ * top inset, avoiding transparent pixels that would only shrink the widget.
  * The host is otherwise absent, so Home never retains five live Paper/Print/Ink
  * trees for the management carousel.
  *
@@ -32,7 +36,8 @@ import { captureRef, releaseCapture } from "react-native-view-shot";
 
 import type { Artefact } from "../data/entries";
 
-import ArtefactFrame, { FRAME_BOARD_SCALE } from "../components/ArtefactFrame";
+import ArtefactFrame from "../components/ArtefactFrame";
+import { FRAME_BOARD_SCALE } from "../components/artefactFrameGeometry";
 import { CaptureGate } from "./CaptureGate";
 import { withReleasedCapture } from "./captureTemporaryFile";
 import {
@@ -40,6 +45,10 @@ import {
   installWidgetFrame,
   removeWidgetFrame,
 } from "./widgetFrameCache";
+import {
+  WIDGET_FRAME_EXPORT_BOARD_WIDTH_PX,
+  widgetFrameGeometryForBoard,
+} from "./widgetFrameGeometry";
 import { WidgetFrameSubject } from "./WidgetFrameSubject";
 
 export type CaptureWidgetFrameArgs = {
@@ -69,8 +78,6 @@ type WidgetFrameCaptureContextValue = {
 const WidgetFrameCaptureContext = createContext<WidgetFrameCaptureContextValue | null>(null);
 /** Bounds layout/image stalls and native capture hangs for each queued job. */
 const CAPTURE_TIMEOUT_MS = 10_000;
-/** High-resolution transparent output, independent of the device scale. */
-const EXPORT_FRAME_WIDTH_PX = 900;
 /** Stable Home geometry input keeps captures consistent across device widths. */
 const CANONICAL_VIEWPORT_WIDTH = 390;
 
@@ -87,7 +94,7 @@ export function WidgetFrameCaptureHost({ children }: { children: ReactNode }) {
   const [job, setJob] = useState<CaptureJob | null>(null);
   /** Synchronous identity visible to callbacks before React commits state. */
   const jobRef = useRef<CaptureJob | null>(null);
-  /** Native view-shot target containing exactly one framed subject. */
+  /** Native view-shot target containing one frame plus its transparent shadow gutter. */
   const shotRef = useRef<View>(null);
   /** Deduplicates readiness callbacks from layout/photo/Ink in the same frame. */
   const capturingRef = useRef(false);
@@ -192,9 +199,14 @@ export function WidgetFrameCaptureHost({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(() => ({ captureWidgetFrame }), [captureWidgetFrame]);
-  const frameWidth = EXPORT_FRAME_WIDTH_PX / PixelRatio.get();
-  const frameHeight = (frameWidth * 4) / 3;
-  const wellWidth = frameWidth / FRAME_BOARD_SCALE;
+  const pixelRatio = PixelRatio.get();
+  const exportGeometry = widgetFrameGeometryForBoard(WIDGET_FRAME_EXPORT_BOARD_WIDTH_PX);
+  const canvasWidth = exportGeometry.canvasWidth / pixelRatio;
+  const canvasHeight = exportGeometry.canvasHeight / pixelRatio;
+  const boardWidth = exportGeometry.boardWidth / pixelRatio;
+  const boardLeft = exportGeometry.boardLeft / pixelRatio;
+  const boardTop = exportGeometry.boardTop / pixelRatio;
+  const wellWidth = boardWidth / FRAME_BOARD_SCALE;
 
   return (
     <WidgetFrameCaptureContext.Provider value={value}>
@@ -204,12 +216,13 @@ export function WidgetFrameCaptureHost({ children }: { children: ReactNode }) {
           <View
             ref={shotRef}
             collapsable={false}
-            style={{ width: frameWidth, height: frameHeight }}
+            style={[styles.captureCanvas, { width: canvasWidth, height: canvasHeight }]}
           >
             <ArtefactFrame
               artefact={job.artefact}
               wellWidth={wellWidth}
               viewportWidth={CANONICAL_VIEWPORT_WIDTH}
+              style={[styles.captureFrame, { left: boardLeft, top: boardTop }]}
             >
               <WidgetFrameSubject
                 // A retry for the same revision needs a fresh one-shot barrier;
@@ -239,5 +252,15 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: -10000,
     top: 0,
+  },
+  // The transparent parent, rather than ArtefactFrame itself, is the view-shot
+  // target. Its bounds are the exact crop boundary used later by both image
+  // surfaces, so the live shadow and cached shadow terminate identically.
+  captureCanvas: {
+    overflow: "hidden",
+    backgroundColor: "transparent",
+  },
+  captureFrame: {
+    position: "absolute",
   },
 });

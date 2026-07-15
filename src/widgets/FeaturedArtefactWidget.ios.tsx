@@ -14,7 +14,8 @@
  * Map:
  * - the serialized root selects one stable key and defaults to Slot 1;
  * - inline branches cover empty, unavailable, and missing-raster states;
- * - occupied layout presents metadata plus the complete full-colour frame;
+ * - occupied layout gives the shadow-safe frame canvas all space inside a
+ *   deliberate eight-point widget inset;
  * - adaptive colour, URL, and VoiceOver copy live inside the isolated function.
  *
  * Expo's Babel plugin serializes only the function marked `"widget"`; ordinary
@@ -35,7 +36,6 @@ import {
   lineLimit,
   padding,
   resizable,
-  truncationMode,
   widgetAccentedRenderingMode,
   widgetURL,
 } from "@expo/ui/swift-ui/modifiers";
@@ -64,30 +64,54 @@ function FeaturedArtefactWidgetLayout(
     accessibilityLabel: `Featured Artefact ${slotIndex} is empty. Feature an artefact in Soies.`,
   };
   const dark = environment.colorScheme === "dark";
-  // Hex values serialize into SwiftUI; the WidgetEnvironment supplies the
-  // semantic appearance because app-side React Native tokens are unavailable.
-  const background = dark ? "#211F1D" : "#F5F2ED";
+  // Hex values serialize into SwiftUI. These exactly match `bg-background` in
+  // global.css (#EEEEEE/#44403B); importing a theme helper would not survive
+  // expo-widgets serializing only this function into the extension.
+  const background = dark ? "#44403B" : "#EEEEEE";
   const textColor = dark ? "#F8F5F1" : "#282421";
+  // WidgetKit's default margins are disabled in app.json so the frame can grow,
+  // but this controlled inset keeps even the faint shadow tail off the edge.
+  const contentInset = 8;
   const stateMessage =
-    slot.state === "unavailable" ? "Artefact in Recently Deleted" : "Feature an artefact in Soies";
+    slot.state === "unavailable"
+      ? "Artefact in Recently Deleted"
+      : slot.state === "featured"
+        ? "Open Soies to refresh this widget"
+        : "Feature an artefact in Soies";
 
   return (
     <VStack
-      alignment="leading"
+      alignment="center"
       spacing={0}
       modifiers={[
-        padding({ all: 14 }),
+        padding({ all: contentInset }),
+        frame({ maxWidth: 1000, maxHeight: 1000, alignment: "center" }),
         containerBackground(background, "widget"),
         widgetURL(slot.url),
         accessibilityElement("ignore"),
         accessibilityLabel(slot.accessibilityLabel),
       ]}
     >
-      {slot.state !== "featured" ? (
+      {slot.state === "featured" && slot.frameUri ? (
+        <Image
+          uiImage={slot.frameUri}
+          modifiers={[
+            resizable(),
+            // 114:139 is the tight asymmetric crop around the 3:4 board shadow.
+            aspectRatio({ ratio: 114 / 139, contentMode: "fit" }),
+            frame({ maxWidth: 1000, maxHeight: 1000, alignment: "center" }),
+            layoutPriority(1),
+            widgetAccentedRenderingMode("fullColor"),
+          ]}
+        />
+      ) : (
         <VStack
           alignment="center"
           spacing={10}
-          modifiers={[frame({ maxWidth: 1000, maxHeight: 1000, alignment: "center" })]}
+          modifiers={[
+            padding({ all: 16 }),
+            frame({ maxWidth: 1000, maxHeight: 1000, alignment: "center" }),
+          ]}
         >
           <Text modifiers={[font({ size: 20, weight: "semibold" }), foregroundStyle(textColor)]}>
             Soies
@@ -101,61 +125,6 @@ function FeaturedArtefactWidgetLayout(
           >
             {stateMessage}
           </Text>
-        </VStack>
-      ) : (
-        <VStack alignment="leading" spacing={4}>
-          <Text
-            modifiers={[
-              font({ textStyle: "subheadline", weight: "semibold" }),
-              foregroundStyle(textColor),
-              lineLimit(1),
-              truncationMode("tail"),
-            ]}
-          >
-            From {slot.entryTitle ?? "Soies"}
-          </Text>
-          <Text
-            modifiers={[
-              font({ textStyle: "caption" }),
-              foregroundStyle({ type: "hierarchical", style: "secondary" }),
-              lineLimit(1),
-            ]}
-          >
-            {slot.displayDate ?? ""}
-          </Text>
-          {slot.frameUri ? (
-            <Image
-              uiImage={slot.frameUri}
-              modifiers={[
-                resizable(),
-                aspectRatio({ ratio: 3 / 4, contentMode: "fit" }),
-                frame({ maxWidth: 1000, maxHeight: 252, alignment: "center" }),
-                layoutPriority(1),
-                widgetAccentedRenderingMode("fullColor"),
-              ]}
-            />
-          ) : (
-            <VStack
-              alignment="center"
-              spacing={10}
-              modifiers={[frame({ maxWidth: 1000, maxHeight: 1000, alignment: "center" })]}
-            >
-              <Text
-                modifiers={[font({ size: 20, weight: "semibold" }), foregroundStyle(textColor)]}
-              >
-                Soies
-              </Text>
-              <Text
-                modifiers={[
-                  font({ textStyle: "body", weight: "medium" }),
-                  foregroundStyle(textColor),
-                  lineLimit(2),
-                ]}
-              >
-                Open Soies to refresh this widget
-              </Text>
-            </VStack>
-          )}
         </VStack>
       )}
     </VStack>

@@ -42,10 +42,10 @@
               "displayName": "Featured Artefact",
               "description": "Keep a Soies artefact on your Home Screen.",
               "supportedFamilies": ["systemLarge"],
-              "contentMarginsDisabled": false,
+              "contentMarginsDisabled": true,
               "ios": {
                 "supportedFamilies": ["systemLarge"],
-                "contentMarginsDisabled": false,
+                "contentMarginsDisabled": true,
                 "configuration": {
                   "title": "Featured Artefact",
                   "description": "Choose which featured artefact this widget displays.",

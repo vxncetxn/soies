@@ -6,9 +6,10 @@
  * stay inside the same fixed body and animate opacity over 200 ms, so selection
  * never dismisses, reopens, or asks the native sheet to resize.
  *
- * Replace, Delete, Add New, and Help are intentionally enabled silent no-ops in
- * this milestone. Keeping their handlers explicit makes the reference layout
- * testable without implying that a mutation has been shipped.
+ * Replace, Delete, Add Artefact, and Help are intentionally enabled silent
+ * no-ops in this milestone. The visible management set still follows the
+ * centered slot: bound slots show Replace/Delete and empty slots show Add
+ * Artefact, without implying that those mutations have shipped.
  *
  * Map:
  * - `PickerPhase` snaps raw live Artefacts and owns retry/duplicate/full copy;
@@ -39,16 +40,19 @@ import type {
   FeaturedWidgetSlotIndex,
 } from "../db/repositories/featuredWidgetSlots";
 
-import ArtefactFrame, { wellSizeFittingBoard } from "../components/ArtefactFrame";
+import ArtefactFrame from "../components/ArtefactFrame";
+import { FRAME_BOARD_SCALE } from "../components/artefactFrameGeometry";
 import { getCollapsedArtefactLayout } from "../components/artefactLayout";
 import { Icon } from "../components/Icon";
 import { renderArtefactContent } from "../components/renderArtefactContent";
 import { isPrintArtefact } from "../data/entries";
 import { getFeaturedWidgetPickerState } from "../db/repositories/featuredWidgetSlots";
 import { cachedWidgetFrameUri } from "./widgetFrameCache";
+import { type WidgetFrameGeometry, widgetFrameGeometryFittingBoard } from "./widgetFrameGeometry";
 import {
   FEATURED_WIDGET_PHASE_FADE_MS,
   featuredCarouselTarget,
+  featuredWidgetControlsForSelection,
   featuredWidgetSheetGeometry,
   getPickerActionState,
   performFeaturedWidgetStubControl,
@@ -75,6 +79,12 @@ type FeaturedWidgetsSheetProps = {
 const SHEET_SURFACE = "#F5F5F4";
 /** Shared physical gap makes snap offsets equal measured page width plus spacing. */
 const CAROUSEL_GAP = 20;
+/** Fixed label box keeps every slot title on one baseline across frame states. */
+const FEATURED_SLOT_LABEL_HEIGHT = 18;
+/** Separates the fixed label box from the shared padded frame canvas. */
+const FEATURED_SLOT_LABEL_GAP = 8;
+/** Retains the reference board scale while its soft shadow may cross the page gutter. */
+const FEATURED_FRAME_BOARD_WIDTH_FRACTION = 0.75;
 /** Stable fallback avoids allocating a new empty array during picker fade-out. */
 const EMPTY_ARTEFACTS: Artefact[] = [];
 
@@ -248,7 +258,7 @@ function PickerPhase({
 
   return (
     <View style={styles.phaseContent}>
-      <Text className="text-primary text-center font-sans-medium text-lg">Choose an artefact</Text>
+      <Text className="text-center font-sans-medium text-lg text-primary">Choose an artefact</Text>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -347,16 +357,14 @@ function PickerPhase({
 /** Use the same frame geometry for empty, unavailable, and missing-cache states. */
 function FramedPlaceholder({
   slot,
-  pageWidth,
-  previewHeight,
+  geometry,
   viewportWidth,
 }: {
   slot: FeaturedWidgetSlot;
-  pageWidth: number;
-  previewHeight: number;
+  /** Same canvas/board measurements used by an occupied cached PNG. */
+  geometry: WidgetFrameGeometry;
   viewportWidth: number;
 }) {
-  const well = wellSizeFittingBoard(pageWidth * 0.76, previewHeight * 0.86);
   const prompt =
     slot.state === "unavailable"
       ? "Artefact in Recently Deleted"
@@ -368,8 +376,9 @@ function FramedPlaceholder({
   return (
     <ArtefactFrame
       artefact={placeholderArtefact}
-      wellWidth={well.width}
+      wellWidth={geometry.boardWidth / FRAME_BOARD_SCALE}
       viewportWidth={viewportWidth}
+      style={[styles.liveFrame, { left: geometry.boardLeft, top: geometry.boardTop }]}
     >
       <View className="flex-1 items-center justify-center bg-stone-50 px-8">
         <Icon name="photo" size={40} color="#A8A29E" />
@@ -409,6 +418,10 @@ function FeaturedPhase({
   const sidePad = Math.max(0, (viewportWidth - pageWidth) / 2);
   const previewHeight = Math.max(56, Math.min(availableHeight - 240, 380));
   const snapOffsets = slots.map((_, index) => index * snap);
+  const frameGeometry = widgetFrameGeometryFittingBoard(
+    pageWidth * FEATURED_FRAME_BOARD_WIDTH_FRACTION,
+    Math.max(0, previewHeight - FEATURED_SLOT_LABEL_HEIGHT - FEATURED_SLOT_LABEL_GAP),
+  );
 
   useLayoutEffect(() => {
     if (!active) {
@@ -449,9 +462,11 @@ function FeaturedPhase({
     performFeaturedWidgetStubControl(selectedSlotRef.current);
   };
 
+  const controls = featuredWidgetControlsForSelection(slots, selectedSlot);
+
   return (
     <View style={styles.phaseContent}>
-      <Text className="text-primary text-center font-sans-medium text-lg">Featured Artefacts</Text>
+      <Text className="text-center font-sans-medium text-lg text-primary">Featured Artefacts</Text>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -482,31 +497,44 @@ function FeaturedPhase({
                 justifyContent: "center",
               }}
             >
-              <Text className="mb-2 font-sans-medium text-xs tracking-widest text-stone-500">
+              <Text
+                className="font-sans-medium text-xs tracking-widest text-stone-500"
+                style={styles.slotLabel}
+              >
                 SLOT {slot.slotIndex}
               </Text>
-              {showImage ? (
-                <ExpoImage
-                  source={{ uri: frameUri }}
-                  contentFit="contain"
-                  style={{ width: pageWidth * 0.82, height: previewHeight * 0.88 }}
-                  accessibilityLabel={
-                    slot.state === "featured"
-                      ? `Featured artefact from ${slot.entryTitle}`
-                      : undefined
-                  }
-                  onError={() => {
-                    setFailedImages((current) => new Set(current).add(frameUri));
-                  }}
-                />
-              ) : (
-                <FramedPlaceholder
-                  slot={slot}
-                  pageWidth={pageWidth}
-                  previewHeight={previewHeight}
-                  viewportWidth={viewportWidth}
-                />
-              )}
+              <View
+                style={[
+                  styles.frameCanvas,
+                  {
+                    width: frameGeometry.canvasWidth,
+                    height: frameGeometry.canvasHeight,
+                    marginTop: FEATURED_SLOT_LABEL_GAP,
+                  },
+                ]}
+              >
+                {showImage ? (
+                  <ExpoImage
+                    source={{ uri: frameUri }}
+                    contentFit="contain"
+                    style={StyleSheet.absoluteFill}
+                    accessibilityLabel={
+                      slot.state === "featured"
+                        ? `Featured artefact from ${slot.entryTitle}`
+                        : undefined
+                    }
+                    onError={() => {
+                      setFailedImages((current) => new Set(current).add(frameUri));
+                    }}
+                  />
+                ) : (
+                  <FramedPlaceholder
+                    slot={slot}
+                    geometry={frameGeometry}
+                    viewportWidth={viewportWidth}
+                  />
+                )}
+              </View>
             </View>
           );
         })}
@@ -533,11 +561,7 @@ function FeaturedPhase({
       )}
 
       <View className="mt-1 flex-row items-start justify-center gap-6">
-        {[
-          { label: "Replace", icon: "pencil" as const },
-          { label: "Delete", icon: "trash" as const },
-          { label: "Add New", icon: "plus" as const },
-        ].map((action) => (
+        {controls.map((action) => (
           <Pressable
             key={action.label}
             onPress={noOp}
@@ -557,7 +581,7 @@ function FeaturedPhase({
         onPress={noOp}
         accessibilityRole="button"
         accessibilityLabel="How to add a widget"
-        className="bg-primary mx-5 mt-4 items-center rounded-2xl py-4"
+        className="mx-5 mt-4 items-center rounded-2xl bg-primary py-4"
         style={{ borderCurve: "continuous" }}
       >
         <Text className="font-sans-medium text-base text-white">How to add a widget</Text>
@@ -720,5 +744,22 @@ const styles = StyleSheet.create({
   },
   dotIdle: {
     backgroundColor: "#D6D3D1",
+  },
+  // A fixed line box means conditional frame content cannot move the slot label.
+  slotLabel: {
+    height: FEATURED_SLOT_LABEL_HEIGHT,
+    lineHeight: FEATURED_SLOT_LABEL_HEIGHT,
+    textAlign: "center",
+  },
+  // Cached PNGs fill this canvas; live placeholders use the captured board origin.
+  // The shared crop boundary makes the visible shadow identical in both paths.
+  frameCanvas: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  liveFrame: {
+    position: "absolute",
   },
 });

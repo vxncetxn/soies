@@ -2,8 +2,9 @@
  * widgetSnapshot — serializable boundary between app state and WidgetKit.
  *
  * Every publication contains `slot1` through `slot5`, even when repository
- * input is missing. The mapper adds localized display metadata, exact URLs,
- * and accessibility copy while keeping derived image lookup injectable.
+ * input is missing. The mapper adds exact URLs and localized accessibility copy
+ * while keeping derived image lookup injectable. Entry metadata is not sent as
+ * separate display fields because the frame now owns the whole widget surface.
  *
  * Map:
  * - slot-key helpers constrain AppIntent configuration to 1–5;
@@ -25,8 +26,6 @@ export type FeaturedWidgetSlotSnapshot = {
   state: FeaturedWidgetSnapshotState;
   /** Shared-container URI; omitted when capture is unavailable or stale. */
   frameUri?: string;
-  entryTitle?: string;
-  displayDate?: string;
   /** Full-widget tap destination. */
   url: string;
   /** One semantic label replaces the decorative SwiftUI subtree. */
@@ -103,8 +102,6 @@ export function buildFeaturedWidgetSnapshot(
       {
         state: "featured",
         ...(frameUri ? { frameUri } : {}),
-        entryTitle: slot.entryTitle,
-        displayDate: formatDate(slot.entryDate),
         url: occupiedWidgetUrl(slotIndex, slot.entryDate, slot.entryId, slot.artefact.id),
         accessibilityLabel: `Featured Artefact ${slotIndex}, from ${slot.entryTitle}, ${formatDate(slot.entryDate)}.`,
       },
