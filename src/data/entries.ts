@@ -29,13 +29,20 @@ export type UnknownArtefact = {
 
 export type Artefact = PaperArtefact | PrintArtefact | UnknownArtefact;
 
-export type PaperEntry = {
+type EntryIdentity = {
+  /** Stable database identity used by widget deep links and exact entry jumps. */
+  id: string;
+  /** Local calendar day (`YYYY-MM-DD`) that owns this entry. */
+  date: string;
+};
+
+export type PaperEntry = EntryIdentity & {
   title: string;
   type: "paper";
   artefacts: PaperArtefact[];
 };
 
-export type PrintEntry = {
+export type PrintEntry = EntryIdentity & {
   title: string;
   type: "print";
   artefacts: PrintArtefact[];
@@ -48,7 +55,7 @@ export type PrintEntry = {
  * round-trips verbatim and renders a placeholder instead of being silently
  * coerced into a Print. Forward-compatible across future sync (ADR-0003).
  */
-export type UnknownEntry = {
+export type UnknownEntry = EntryIdentity & {
   title: string;
   type: string;
   artefacts: Artefact[];
@@ -63,26 +70,9 @@ export type Tag = {
   updatedAt: number;
 };
 
-export type GalleryArtefact = {
-  galleryId: string;
-  artefact: Artefact;
-  entryId: string;
-  entryTitle: string;
-  addedAt: number;
-};
-
 export { getEntriesByDate, getEntryDates, getAllEntriesByDate } from "../db/repositories/entries";
 export { searchEntries } from "../db/repositories/search";
 export { listTags } from "../db/repositories/tags";
-export {
-  getGallery,
-  addArtefactToGallery,
-  removeArtefactFromGallery,
-  getGalleryPickerState,
-  GalleryCapacityError,
-  isGalleryCapacityError,
-  GALLERY_CAPACITY,
-} from "../db/repositories/gallery";
 export { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
 
 export function isUnknownArtefact(artefact: Artefact): artefact is UnknownArtefact {

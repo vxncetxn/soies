@@ -1,6 +1,6 @@
 # soies — feature documentation
 
-This directory documents the three interactions that make up the Home
+This directory documents the interactions that make up the Home
 experience. For domain terminology (`Entry`, `Artefact`, `Paper`, `Print`), read
 [`CONTEXT.md`](../CONTEXT.md). For the whole repository map, read
 [`overview.md`](./overview.md).
@@ -10,6 +10,7 @@ experience. For domain terminology (`Entry`, `Artefact`, `Paper`, `Print`), read
 | 1 | Stack expand/collapse | `Stack`, `CollapsedDeck`, `ArtefactWrapper` | [01-stack-expand-collapse.md](./01-stack-expand-collapse.md) |
 | 2 | Blooming calendar | `HomeHeader`, `BloomButton`, `BloomPanel`, `CalendarOverlay` | [02-calendar-morph-overlay.md](./02-calendar-morph-overlay.md) |
 | 3 | Page scrubber | `ScrollIndicator`, `DayPager`, expanded `Stack` | [03-scroll-indicator.md](./03-scroll-indicator.md) |
+| 4 | Featured Artefact widgets | `FeaturedWidgetsSheet`, `WidgetFrameCaptureHost`, `FeaturedArtefactWidget` | [ADR 0011](./adr/0011-stable-raster-backed-featured-widget-slots.md) |
 
 ## How the features fit together
 
@@ -25,6 +26,9 @@ flowchart TD
   Entry --> ArtefactPager["Expanded artefact pager"]
   ArtefactPager --> ArtefactRail["Horizontal ScrollIndicator"]
   Entry --> Focus["FocusOverlay in morph portal"]
+  Focus --> Picker["Featured Artefact picker sheet"]
+  Picker --> Slots["Five framed Widget Slots"]
+  Slots --> Widget["Configured iOS Home Screen widget"]
 ```
 
 - The calendar updates the route date while `BloomPanel` closes, so the next

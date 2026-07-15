@@ -123,7 +123,31 @@ const MIGRATION_V3: Migration = {
   ],
 };
 
-const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3];
+/**
+ * Five stable widget positions, intentionally independent from Gallery.
+ *
+ * Empty positions have no active row. Keeping the slot number as the primary
+ * key makes replacement deterministic, while the partial unique index protects
+ * the one-slot-per-artefact invariant without preventing a tombstoned row from
+ * being replaced later.
+ */
+const MIGRATION_V4: Migration = {
+  version: 4,
+  statements: [
+    `CREATE TABLE featured_widget_slots (
+      slot_index  INTEGER PRIMARY KEY CHECK(slot_index BETWEEN 1 AND 5),
+      artefact_id TEXT NOT NULL REFERENCES artefacts(id),
+      assigned_at INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      deleted_at  INTEGER
+    )`,
+    `CREATE UNIQUE INDEX idx_featured_widget_slots_artefact_active
+     ON featured_widget_slots(artefact_id)
+     WHERE deleted_at IS NULL`,
+  ],
+};
+
+const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4];
 
 export async function runMigrations(db: DB): Promise<void> {
   const versionResult = await db.execute("PRAGMA user_version");

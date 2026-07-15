@@ -174,8 +174,8 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
         onEnteringComplete={() => setEnteringIndex(null)}
         suppressArtefactFocusRef={suppressArtefactFocusRef}
         renderPreview={(index) => (
-          <View className="h-14 w-10 items-center justify-center overflow-hidden rounded-sm bg-paper">
-            <Text numberOfLines={3} className="px-0.5 font-mono text-[6px] text-primary">
+          <View className="bg-paper h-14 w-10 items-center justify-center overflow-hidden rounded-sm">
+            <Text numberOfLines={3} className="text-primary px-0.5 font-mono text-[6px]">
               {artefacts[index]?.text || " "}
             </Text>
           </View>

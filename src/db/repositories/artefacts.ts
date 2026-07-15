@@ -181,10 +181,9 @@ export async function softDeleteArtefact(
   await withTransaction(tx, async (db) => {
     await db.execute("UPDATE artefacts SET deleted_at = ? WHERE id = ?", [deletedAt, artefactId]);
 
-    // Gallery membership is an independent child state. Keep it active but
-    // hidden by getGallery's parent join so Undo makes the artefact reappear in
-    // exactly the same featured position. An explicit Remove from Gallery is
-    // the only operation that tombstones this membership row.
+    // Widget-slot assignment is independent child state. Keep it active while
+    // the source is deleted so publication emits an unavailable placeholder;
+    // Undo then restores the exact same stable numbered binding.
 
     const artefactRowid = await getArtefactRowid(db, artefactId);
     if (artefactRowid != null) {

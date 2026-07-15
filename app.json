@@ -1,6 +1,6 @@
 {
   "expo": {
-    "scheme": "acme",
+    "scheme": "soies",
     "userInterfaceStyle": "automatic",
     "orientation": "default",
     "web": {
@@ -32,7 +32,44 @@
       ],
       "expo-image",
       "expo-asset",
-      "expo-widgets",
+      [
+        "expo-widgets",
+        {
+          "enableAndroid": false,
+          "widgets": [
+            {
+              "name": "FeaturedArtefactWidget",
+              "displayName": "Featured Artefact",
+              "description": "Keep a Soies artefact on your Home Screen.",
+              "supportedFamilies": ["systemLarge"],
+              "contentMarginsDisabled": false,
+              "ios": {
+                "supportedFamilies": ["systemLarge"],
+                "contentMarginsDisabled": false,
+                "configuration": {
+                  "title": "Featured Artefact",
+                  "description": "Choose which featured artefact this widget displays.",
+                  "parameters": {
+                    "featuredSlot": {
+                      "title": "Featured Artefact",
+                      "type": "enum",
+                      "values": [
+                        { "name": "Featured Artefact 1", "value": "slot1" },
+                        { "name": "Featured Artefact 2", "value": "slot2" },
+                        { "name": "Featured Artefact 3", "value": "slot3" },
+                        { "name": "Featured Artefact 4", "value": "slot4" },
+                        { "name": "Featured Artefact 5", "value": "slot5" }
+                      ],
+                      "default": "slot1"
+                    }
+                  }
+                }
+              },
+              "android": null
+            }
+          ]
+        }
+      ],
       "expo-localization",
       [
         "expo-image-picker",
@@ -62,6 +99,7 @@
     "slug": "soies",
     "ios": {
       "bundleIdentifier": "com.anonymous.soies",
+      "deploymentTarget": "17.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow soies to use the camera to create Print entries.",

@@ -14,7 +14,7 @@ const StyledTabList = forwardRef<Animated.View, PropsWithChildren<ViewProps>>(
         {...props}
         style={[props.style, fadeStyle]}
         pointerEvents="box-none"
-        className="absolute bottom-4 left-1/2 z-50 -translate-x-1/2 flex-row rounded-4xl border border-controls-border bg-controls-background"
+        className="border-controls-border bg-controls-background absolute bottom-4 left-1/2 z-50 -translate-x-1/2 flex-row rounded-4xl border"
       >
         {children}
       </Animated.View>

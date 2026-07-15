@@ -6,7 +6,6 @@ import { addDaysISO, todayISO } from "../utils/date";
 import { withTransaction } from "./executor";
 import { insertArtefact } from "./repositories/artefacts";
 import { insertEntry } from "./repositories/entries";
-import { addArtefactToGallery } from "./repositories/gallery";
 import { createTag, setEntryTags } from "./repositories/tags";
 import { getOrCreateUser } from "./repositories/users";
 
@@ -74,7 +73,6 @@ type PreparedArtefact = {
   data: string;
   createdAt: number;
   updatedAt: number;
-  featureInGallery: boolean;
 };
 
 type PreparedEntry = {
@@ -96,8 +94,8 @@ type PreparedEntry = {
  *   1. Prepare — generate UUIDs/timestamps, materialise the bundled mock image
  *      once, and copy it per artefact into the file store. Builds a list of
  *      {@link PreparedEntry}s with every field resolved.
- *   2. Commit — run every insert (user, entries, artefacts, tags, gallery
- *      membership) inside a single transaction, passing the transaction through
+ *   2. Commit — run every insert (user, entries, artefacts, and tags) inside a
+ *      single transaction, passing the transaction through
  *      to the repositories so their row+FTS writes are atomic too.
  *
  * If anything fails mid-seed the whole transaction rolls back, leaving the DB
@@ -113,7 +111,6 @@ export async function seed(): Promise<void> {
 
   const now = Date.now();
   const preparedEntries: PreparedEntry[] = [];
-  let galleryArtefactId: string | null = null;
 
   for (const day of SEED_DATA) {
     for (let entryIndex = 0; entryIndex < day.entries.length; entryIndex += 1) {
@@ -139,11 +136,6 @@ export async function seed(): Promise<void> {
           data = JSON.stringify({ text: seedArtefact.text, imagePath });
         }
 
-        const featureInGallery = seedEntry.title === "kiyomizudera" && artefactIndex === 0;
-        if (featureInGallery) {
-          galleryArtefactId = artefactId;
-        }
-
         preparedArtefacts.push({
           id: artefactId,
           type: seedEntry.type,
@@ -151,7 +143,6 @@ export async function seed(): Promise<void> {
           data,
           createdAt: artefactTimestamp,
           updatedAt: artefactTimestamp,
-          featureInGallery,
         });
       }
 
@@ -206,10 +197,6 @@ export async function seed(): Promise<void> {
         const tag = await createTag(tagName, tx);
         await setEntryTags(entry.id, [tag.id], tx);
       }
-    }
-
-    if (galleryArtefactId) {
-      await addArtefactToGallery(galleryArtefactId, tx);
     }
   });
 }

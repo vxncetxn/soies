@@ -27,9 +27,11 @@ import Animated, {
 } from "react-native-reanimated";
 
 import type { Entry } from "../data/entries";
+import type { WidgetDeepLinkTarget } from "../widgets/widgetDeepLink";
 
 import { CREATE_HOME_EXIT_END, CREATE_SLIDE_DISTANCE } from "../constants/animation";
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
+import { shouldCollapseStackForWidgetTarget } from "../widgets/widgetDeepLink";
 import { useCreateContext } from "./CreateContext";
 import { EntryPreview, ScrollIndicator } from "./ScrollIndicator";
 import Stack from "./Stack";
@@ -51,6 +53,11 @@ type DayPagerProps = {
   onScroll: ReturnType<typeof useAnimatedScrollHandler>;
   // Callback to report the measured pager height back to the parent.
   onPagerHeightChange: (height: number) => void;
+  // Stable entry/artefact command from a consumed widget URL. The existing
+  // index-keyed Stack lifecycle remains unchanged.
+  widgetTarget: Extract<WidgetDeepLinkTarget, { kind: "artefact" }> | null;
+  // Stack calls this only after it has selected and expanded the exact child.
+  onWidgetTargetConsumed: () => void;
 };
 
 const DayPager = ({
@@ -61,6 +68,8 @@ const DayPager = ({
   currentPage,
   onScroll,
   onPagerHeightChange,
+  widgetTarget,
+  onWidgetTargetConsumed,
 }: DayPagerProps) => {
   // Animated ref to the ScrollView so we can imperatively `scrollTo` when the
   // user jumps to an entry via the side indicator.
@@ -100,6 +109,18 @@ const DayPager = ({
   useLayoutEffect(() => {
     scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
   }, [entries, scrollRef]);
+
+  useLayoutEffect(() => {
+    if (!widgetTarget || pagerHeight === 0) {
+      return;
+    }
+    const entryIndex = entries.findIndex((entry) => entry.id === widgetTarget.entryId);
+    if (entryIndex < 0) {
+      return;
+    }
+    scrollRef.current?.scrollTo({ x: 0, y: entryIndex * pagerHeight, animated: false });
+    scrollOffset.set(entryIndex * pagerHeight);
+  }, [entries, pagerHeight, scrollOffset, scrollRef, widgetTarget]);
 
   /**
    * Jump directly to a given entry index (called by the ScrollIndicator when
@@ -148,7 +169,17 @@ const DayPager = ({
                   style={{ height: pagerHeight }}
                   className="items-center justify-center px-5"
                 >
-                  <Stack entry={entry} />
+                  <Stack
+                    entry={entry}
+                    widgetArtefactId={
+                      widgetTarget?.entryId === entry.id ? widgetTarget.artefactId : null
+                    }
+                    collapseForWidgetTarget={shouldCollapseStackForWidgetTarget(
+                      entry.id,
+                      widgetTarget,
+                    )}
+                    onWidgetTargetConsumed={onWidgetTargetConsumed}
+                  />
                 </View>
               ))}
             </Animated.ScrollView>

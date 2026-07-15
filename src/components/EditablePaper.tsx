@@ -309,7 +309,7 @@ const EditablePaper = ({
         // slip through while maxChars is loose.
         maxLength={maxChars}
         textAlignVertical="top"
-        className="h-full w-full p-6 font-paper text-base text-primary"
+        className="text-primary h-full w-full p-6 font-paper text-base"
         style={styles.input}
       />
       {inkOverlayUri && !scribbleActive ? <InkOverlay uri={inkOverlayUri} /> : null}

@@ -241,7 +241,7 @@ const CreateScreenChrome = ({
 
   const barMenuNode = (
     <View className="py-2">
-      <Text className="px-4 py-3 text-base text-secondary">More options coming soon</Text>
+      <Text className="text-secondary px-4 py-3 text-base">More options coming soon</Text>
     </View>
   );
 
@@ -276,7 +276,7 @@ const CreateScreenChrome = ({
             accessibilityRole="button"
             accessibilityLabel="Cancel create entry"
             accessibilityState={{ disabled: saving }}
-            className="rounded-full border border-controls-border bg-controls-background p-3"
+            className="border-controls-border bg-controls-background rounded-full border p-3"
           >
             <Icon name="x-mark" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
           </Pressable>
@@ -348,7 +348,7 @@ const CreateScreenChrome = ({
             disabled={saving}
             accessibilityRole="button"
             accessibilityLabel="Save entry"
-            className="rounded-full border border-controls-border bg-controls-background p-3"
+            className="border-controls-border bg-controls-background rounded-full border p-3"
           >
             {saving ? (
               <ActivityIndicator size="small" color={CONTROL_ICON_COLOR} />
@@ -419,7 +419,7 @@ const CreateScreenChrome = ({
         >
           <View className="mb-3 flex-row items-center gap-2">
             <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
-            <Text className="font-mono text-xs tracking-widest text-secondary">{typeLabel}</Text>
+            <Text className="text-secondary font-mono text-xs tracking-widest">{typeLabel}</Text>
           </View>
           <View>
             <TextInput
@@ -477,7 +477,7 @@ const CreateScreenChrome = ({
               className="items-center justify-center"
               pointerEvents="none"
             >
-              <Text className="font-mono text-sm text-secondary">
+              <Text className="text-secondary font-mono text-sm">
                 {scribbleActive ? "Scribble" : counterLabel}
               </Text>
             </View>
@@ -488,7 +488,7 @@ const CreateScreenChrome = ({
                 accessibilityLabel="Save ink"
                 hitSlop={8}
               >
-                <Text className="font-sans-medium text-base text-primary">Save</Text>
+                <Text className="text-primary font-sans-medium text-base">Save</Text>
               </Pressable>
             ) : (
               <View className="flex-row items-center" style={{ gap: 24 }}>

@@ -1,6 +1,5 @@
 import { todayISO } from "../utils/date";
 import { getEntriesByDate, getEntryDates } from "./repositories/entries";
-import { getGallery } from "./repositories/gallery";
 import { searchEntries } from "./repositories/search";
 import { findTagIdByName } from "./repositories/tags";
 
@@ -35,14 +34,5 @@ export async function verifySeedData(): Promise<void> {
   const tagMatches = await searchEntries({ tagIds: [tagId] });
   if (!tagMatches.some((entry) => entry.title === "kiyomizudera")) {
     throw new Error("verifySeedData: tag filter failed for kiyomizudera");
-  }
-
-  const gallery = await getGallery();
-  if (gallery.length === 0) {
-    throw new Error("verifySeedData: expected gallery items");
-  }
-
-  if (!gallery.some((item) => item.entryTitle === "kiyomizudera")) {
-    throw new Error("verifySeedData: expected kiyomizudera print in gallery");
   }
 }

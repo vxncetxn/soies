@@ -1,11 +1,9 @@
 /**
  * FocusOverlay — long-press / ellipsis actions overlay (measure-and-morph).
  *
- * Home and Gallery share one morph system: a measured trigger, blurred
- * backdrop, frozen subject clone, and a staggered menu. Home's Stack preloads
- * its overlay; Gallery mounts one pager-owned overlay only for the active
- * opening/open/closing target. Starting from a logically closed ref preserves
- * the opening morph when that shared Gallery overlay first mounts open.
+ * A measured trigger, blurred backdrop, frozen subject clone, and staggered
+ * menu share one progress clock. Home's Stack preloads this overlay so opening
+ * never allocates the clone tree on the interaction frame.
  */
 import { BlurView } from "expo-blur";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -163,9 +161,8 @@ const FocusOverlay = ({
   const androidBlurProps = useAndroidBlurTargetProps();
   const progress = useSharedValue(0);
   const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
-  // Start from closed even when this overlay mounts for an already-selected
-  // Gallery target. Gallery owns one transient overlay and mounts it on demand;
-  // treating its first `open` as a transition preserves the opening morph.
+  // Start from closed even when a transient owner mounts for an already-open
+  // target; treating the first `open` as a transition preserves the morph.
   const previousOpenRef = useRef(false);
   const onCloseCompleteRef = useRef(onCloseComplete);
   const closeSequenceSV = useSharedValue(0);

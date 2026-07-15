@@ -1,6 +1,6 @@
 /**
  * Shared per-artefact content renderer (Paper / Print / unknown placeholder).
- * Used by CollapsedDeck, GalleryFrame, and the Add-to-Gallery picker.
+ * Used by CollapsedDeck, ArtefactFrame, and capture/picker surfaces.
  */
 import { ReactNode } from "react";
 import { Text, View } from "react-native";
@@ -22,8 +22,8 @@ export function renderArtefactContent(artefact: Artefact, key?: string | number)
 
   if (isUnknownArtefact(artefact)) {
     return (
-      <View key={key} className="flex h-full w-full items-center justify-center bg-paper p-4">
-        <Text className="text-center text-primary">Unsupported artefact</Text>
+      <View key={key} className="bg-paper flex h-full w-full items-center justify-center p-4">
+        <Text className="text-primary text-center">Unsupported artefact</Text>
       </View>
     );
   }

@@ -24,12 +24,20 @@ _Avoid_: Photo entry, image post
 A calendar date (`YYYY-MM-DD`) that groups zero or more entries.
 _Avoid_: Page, session
 
-**Gallery**:
-A curated, ordered collection of featured Artefacts for browsing outside the day pager.
-_Avoid_: Album, folder
+**Featured Artefact**:
+An Artefact assigned to a Widget Slot for framed presentation in the app and its configured Widget.
+_Avoid_: Favourite, pinned artefact
+
+**Widget Slot**:
+One of five stable, numbered content positions. An Artefact is assigned to a slot; any number of installed Widgets may display that same slot.
+_Avoid_: Widget instance, dynamic queue
+
+**Widget**:
+An installed iOS Home Screen instance configured to display one Widget Slot.
+_Avoid_: Widget Slot, Featured Artefact
 
 **Frame**:
-The portrait presentation that exhibits a Gallery Artefact (wraps the live Paper/Print surface); not a separate persisted entity.
+The portrait presentation that exhibits an Artefact in Featured Artefacts and Widgets. It wraps live content for capture, but is derived presentation rather than a persisted entity.
 _Avoid_: Exhibit, feature card, mat
 
 **Tombstone**:

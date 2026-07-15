@@ -100,10 +100,10 @@ const IndicatorItem = ({ orientation, index, currentPage }: IndicatorItemProps) 
           : "h-4 w-5 items-center justify-center"
       }
     >
-      <Animated.View style={inactiveStyle} className="h-1.5 w-1.5 rounded-full bg-icon" />
+      <Animated.View style={inactiveStyle} className="bg-icon h-1.5 w-1.5 rounded-full" />
       <Animated.View
         style={activeStyle}
-        className="absolute rounded-full bg-secondary"
+        className="bg-secondary absolute rounded-full"
         pointerEvents="none"
       >
         <View className={orientation === "vertical" ? "h-4 w-1.5" : "h-1.5 w-4"} />
@@ -356,15 +356,15 @@ export const ScrollIndicator = ({
           style={expandedStyle}
           className={
             orientation === "vertical"
-              ? "flex-row items-center gap-3 rounded-4xl border border-controls-border bg-controls-background p-3"
-              : "items-center gap-2 rounded-4xl border border-controls-border bg-controls-background p-3"
+              ? "border-controls-border bg-controls-background flex-row items-center gap-3 rounded-4xl border p-3"
+              : "border-controls-border bg-controls-background items-center gap-2 rounded-4xl border p-3"
           }
         >
           {previews}
           {rail}
         </Animated.View>
       ) : (
-        <View className="rounded-4xl border border-controls-border bg-controls-background">
+        <View className="border-controls-border bg-controls-background rounded-4xl border">
           {rail}
         </View>
       )}
@@ -414,7 +414,7 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
   if (isPrintArtefact(artefact)) {
     return (
       <View
-        className="aspect-print h-20 items-center gap-0.5 overflow-hidden border border-controls-border bg-paper pt-1.5 shadow-sm"
+        className="border-controls-border bg-paper aspect-print h-20 items-center gap-0.5 overflow-hidden border pt-1.5 shadow-sm"
         pointerEvents="none"
       >
         <StyledImage
@@ -424,7 +424,7 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
           cachePolicy="memory-disk"
           transition={0}
         />
-        <Text className="font-paper text-primary" numberOfLines={1} style={{ fontSize: 6 }}>
+        <Text className="text-primary font-paper" numberOfLines={1} style={{ fontSize: 6 }}>
           {artefact.text}
         </Text>
       </View>
@@ -434,10 +434,10 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
   if (isUnknownArtefact(artefact)) {
     return (
       <View
-        className="aspect-print h-20 items-center justify-center overflow-hidden border border-controls-border bg-paper p-1.5 shadow-sm"
+        className="border-controls-border bg-paper aspect-print h-20 items-center justify-center overflow-hidden border p-1.5 shadow-sm"
         pointerEvents="none"
       >
-        <Text className="font-paper text-primary" numberOfLines={3} style={{ fontSize: 6 }}>
+        <Text className="text-primary font-paper" numberOfLines={3} style={{ fontSize: 6 }}>
           Unsupported artefact
         </Text>
       </View>
@@ -446,11 +446,11 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
 
   return (
     <View
-      className="aspect-a4 h-20 overflow-hidden border border-controls-border bg-paper p-1.5 shadow-sm"
+      className="border-controls-border bg-paper aspect-a4 h-20 overflow-hidden border p-1.5 shadow-sm"
       pointerEvents="none"
     >
       <Text
-        className="font-paper text-primary"
+        className="text-primary font-paper"
         numberOfLines={9}
         style={{ fontSize: 6, lineHeight: 8 }}
       >

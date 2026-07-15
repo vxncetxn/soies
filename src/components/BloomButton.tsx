@@ -93,7 +93,7 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
           collapsable={false}
           style={triggerStyle}
           pointerEvents={open ? "none" : "auto"}
-          className={`self-start rounded-4xl border border-controls-border bg-controls-background ${className ?? ""}`}
+          className={`border-controls-border bg-controls-background self-start rounded-4xl border ${className ?? ""}`}
         >
           <Pressable ref={ref} {...props} onPress={handleTriggerPress}>
             {children}

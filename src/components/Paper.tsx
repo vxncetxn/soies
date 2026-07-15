@@ -16,9 +16,9 @@ const Paper = ({
   onInkError,
 }: PropsWithChildren<PaperProps>) => {
   return (
-    <View className="relative aspect-a4 h-full w-full overflow-hidden bg-paper">
+    <View className="bg-paper relative aspect-a4 h-full w-full overflow-hidden">
       <View className="h-full w-full p-6">
-        <Text className="font-paper text-base text-primary">{children}</Text>
+        <Text className="text-primary font-paper text-base">{children}</Text>
       </View>
       {inkOverlayPath ? (
         <InkOverlay uri={inkOverlayPath} onDisplay={onInkDisplay} onError={onInkError} />

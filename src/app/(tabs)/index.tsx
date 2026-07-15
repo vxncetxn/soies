@@ -27,8 +27,8 @@
  * native commit during the close. DayPager resets its scroll to the top on
  * entries change, and Stack resets its persisted artefact page on entry change.
  */
-import { useLocalSearchParams } from "expo-router";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,7 +43,16 @@ import {
   seedEntriesCache,
   setCachedEntries,
 } from "../../data/entriesCache";
+import { isFeaturedWidgetSourceAvailable } from "../../db/repositories/featuredWidgetSlots";
 import { todayISO } from "../../utils/date";
+import { useFeaturedWidgets } from "../../widgets/FeaturedWidgetsContext";
+import {
+  hasExactWidgetSource,
+  nextWidgetDeepLinkConsumption,
+  widgetTargetForEntries,
+  type WidgetDeepLinkTarget,
+  type WidgetSearchParams,
+} from "../../widgets/widgetDeepLink";
 
 // Module-level cache of the measured pager height. The pager height only
 // depends on the screen + safe areas, which don't change between navigations,
@@ -70,12 +79,15 @@ const EMPTY_ENTRIES: Entry[] = [];
 let entriesPreloaded = false;
 
 export default function Index() {
-  const { date } = useLocalSearchParams<{ date?: string }>();
+  const searchParams = useLocalSearchParams<WidgetSearchParams>();
+  const router = useRouter();
+  const { openFeatured } = useFeaturedWidgets();
   const { entriesVersion } = useEntriesVersion();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
 
-  const effectiveDate = date ?? todayISO();
+  const routeDate = Array.isArray(searchParams.date) ? searchParams.date[0] : searchParams.date;
+  const effectiveDate = routeDate ?? todayISO();
   const [entries, setEntries] = useState<Entry[]>(
     () => getCachedEntries(effectiveDate) ?? EMPTY_ENTRIES,
   );
@@ -91,6 +103,83 @@ export default function Index() {
   const [error, setError] = useState<Error | null>(null);
   // Bumped by `retry` to retrigger the load effect after an error.
   const [attempt, setAttempt] = useState(0);
+  const [pendingWidgetTarget, setPendingWidgetTarget] = useState<Extract<
+    WidgetDeepLinkTarget,
+    { kind: "artefact" }
+  > | null>(null);
+  const consumedWidgetSignatureRef = useRef<string | null>(null);
+  const widgetValidationRequestRef = useRef(0);
+
+  /**
+   * Consume widget-only query parameters once, then clear them while retaining
+   * `date` as ordinary Home navigation state. Clearing resets the signature on
+   * the next render, so tapping the exact same installed widget works again.
+   */
+  useEffect(() => {
+    const consumption = nextWidgetDeepLinkConsumption(
+      consumedWidgetSignatureRef.current,
+      searchParams,
+    );
+    consumedWidgetSignatureRef.current = consumption.signature;
+    if (!consumption.target) {
+      return;
+    }
+
+    router.setParams({
+      widgetSlot: undefined,
+      widgetEntryId: undefined,
+      widgetArtefactId: undefined,
+    });
+    if (consumption.target.kind === "slot") {
+      setPendingWidgetTarget(null);
+      openFeatured(consumption.target.slotIndex);
+      return;
+    }
+
+    const target = consumption.target;
+    const request = widgetValidationRequestRef.current + 1;
+    widgetValidationRequestRef.current = request;
+    void isFeaturedWidgetSourceAvailable(target.date, target.entryId, target.artefactId)
+      .then(async (available) => {
+        if (widgetValidationRequestRef.current !== request) {
+          return;
+        }
+        if (available) {
+          // Home intentionally skips DB revalidation on ordinary cache hits to
+          // protect the calendar close animation. A widget command is different:
+          // exact identity beats that optimization, so repair a stale/missing
+          // cached day before deciding the source has disappeared.
+          const cached = getCachedEntries(target.date);
+          const cachedHasTarget = cached ? hasExactWidgetSource(cached, target) : false;
+          if (!cachedHasTarget) {
+            const freshEntries = await getEntriesByDate(target.date);
+            if (widgetValidationRequestRef.current !== request) {
+              return;
+            }
+            const freshHasTarget = hasExactWidgetSource(freshEntries, target);
+            if (!freshHasTarget) {
+              setPendingWidgetTarget(null);
+              openFeatured(target.slotIndex);
+              return;
+            }
+            setCachedEntries(target.date, freshEntries);
+            if (target.date === effectiveDate) {
+              setEntries(freshEntries);
+            }
+          }
+          setPendingWidgetTarget(target);
+        } else {
+          setPendingWidgetTarget(null);
+          openFeatured(target.slotIndex);
+        }
+      })
+      .catch(() => {
+        if (widgetValidationRequestRef.current === request) {
+          setPendingWidgetTarget(null);
+          openFeatured(target.slotIndex);
+        }
+      });
+  }, [effectiveDate, openFeatured, router, searchParams]);
 
   // "Adjust state during render" (see
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
@@ -183,6 +272,21 @@ export default function Index() {
 
   const retry = () => setAttempt((previous) => previous + 1);
 
+  const widgetTargetForPager = widgetTargetForEntries(pendingWidgetTarget, effectiveDate, entries);
+
+  useEffect(() => {
+    if (!pendingWidgetTarget || loading || error || pendingWidgetTarget.date !== effectiveDate) {
+      return;
+    }
+    if (!widgetTargetForPager) {
+      const fallbackFrame = requestAnimationFrame(() => {
+        openFeatured(pendingWidgetTarget.slotIndex);
+        setPendingWidgetTarget(null);
+      });
+      return () => cancelAnimationFrame(fallbackFrame);
+    }
+  }, [effectiveDate, error, loading, openFeatured, pendingWidgetTarget, widgetTargetForPager]);
+
   const computedHeight = Math.max(0, window.height - insets.top - insets.bottom);
   const [pagerHeight, setPagerHeight] = useState(cachedPagerHeight || computedHeight);
   const scrollOffset = useSharedValue(0);
@@ -211,7 +315,7 @@ export default function Index() {
   };
 
   return (
-    <View className="relative flex-1 bg-background">
+    <View className="bg-background relative flex-1">
       <HomeHeader
         date={effectiveDate}
         titles={entries.map((entry) => entry.title)}
@@ -220,12 +324,12 @@ export default function Index() {
 
       {error ? (
         <View className="flex-1 items-center justify-center gap-4 px-5">
-          <Text className="text-center text-primary">Couldn&apos;t load entries for this day.</Text>
+          <Text className="text-primary text-center">Couldn&apos;t load entries for this day.</Text>
           <Pressable
             onPress={retry}
             accessibilityRole="button"
             accessibilityLabel="Retry loading entries"
-            className="rounded-full border border-controls-border bg-controls-background px-5 py-2"
+            className="border-controls-border bg-controls-background rounded-full border px-5 py-2"
           >
             <Text className="text-primary">Try again</Text>
           </Pressable>
@@ -236,7 +340,7 @@ export default function Index() {
         </View>
       ) : entries.length === 0 ? (
         <View className="flex-1 items-center justify-center px-5">
-          <Text className="text-center text-primary">No entries for this day.</Text>
+          <Text className="text-primary text-center">No entries for this day.</Text>
         </View>
       ) : (
         <DayPager
@@ -247,6 +351,8 @@ export default function Index() {
           currentPage={currentPage}
           onScroll={onScroll}
           onPagerHeightChange={handlePagerHeightChange}
+          widgetTarget={widgetTargetForPager}
+          onWidgetTargetConsumed={() => setPendingWidgetTarget(null)}
         />
       )}
     </View>

@@ -37,8 +37,8 @@ import type { Entry } from "../data/entries";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
-import { useGalleryAdd } from "../gallery/GalleryAddContext";
 import { useShare } from "../share/ShareContext";
+import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import CollapsedDeck, { useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
 import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
@@ -52,15 +52,27 @@ const StyledPortal = withUniwind(Portal);
 
 type StackProps = {
   entry: Entry;
+  /** Exact child requested by a consumed widget URL; null for normal Home use. */
+  widgetArtefactId?: string | null;
+  /** Closes an existing portal before another entry handles a warm widget tap. */
+  collapseForWidgetTarget?: boolean;
+  /** Clears the one-shot command after the expanded pager owns the target. */
+  onWidgetTargetConsumed?: () => void;
 };
 
-const Stack = ({ entry }: StackProps) => {
+const Stack = ({
+  entry,
+  widgetArtefactId = null,
+  collapseForWidgetTarget = false,
+  onWidgetTargetConsumed,
+}: StackProps) => {
   // `chromeProgress` is a screen-level shared value (via ExpandContext) that
   // drives header/chrome fade-out while *any* entry is expanded. We bump it
   // to 1 on expand and back to 0 on collapse.
   const { chromeProgress } = useExpandContext();
   const { openShare } = useShare();
-  const { openGalleryAdd } = useGalleryAdd();
+  const { supported: featuredWidgetsSupported, openPicker: openWidgetPicker } =
+    useFeaturedWidgets();
   const { width: SCREEN_WIDTH } = useWindowDimensions();
 
   // Layout math (see docs/01 for the full diagram):
@@ -76,16 +88,19 @@ const Stack = ({ entry }: StackProps) => {
   // Which artefact page is currently active. Persisted across expand/collapse
   // cycles so re-expanding lands you on the same page you left on.
   const [activePage, setActivePage] = useState(0);
+  // Reset to null after consumption so a later tap on the same installed
+  // widget is treated as a new one-shot command.
+  const [handledWidgetArtefactId, setHandledWidgetArtefactId] = useState<string | null>(null);
   // Tracks which entry `activePage` / `scrollOffset` currently reflect so we
   // can reset them during render when the DayPager reuses this Stack across
   // dates (see adjust-state block below).
   const [prevEntry, setPrevEntry] = useState(entry);
-  // Share / Add-to-Gallery are deferred until FocusOverlay reports its close
+  // Share / Feature-in-Widget are deferred until FocusOverlay reports its close
   // spring has settled. Store the exact session requested by the tap so a
   // list/date update during the animation cannot switch the artefact underneath.
   const pendingShareRef = useRef<{ entry: Entry; page: number } | null>(null);
-  const pendingGalleryAddRef = useRef<{ entry: Entry; page: number } | null>(null);
-  type PendingFocusAction = "share" | "galleryAdd" | null;
+  const pendingWidgetPickerRef = useRef<{ entry: Entry; page: number } | null>(null);
+  type PendingFocusAction = "share" | "widgetPicker" | null;
   const pendingFocusActionRef = useRef<PendingFocusAction>(null);
 
   // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
@@ -124,9 +139,35 @@ const Stack = ({ entry }: StackProps) => {
     setActivePage(0);
   }
 
+  // A warm widget tap can target a different Stack while this one still owns
+  // an expanded portal. Adjust before commit so the new target is the only
+  // fullscreen tree mounted; the layout effect below also resets this Stack's
+  // private animation clock without touching the new owner's shared chrome.
+  if (collapseForWidgetTarget && isExpanded) {
+    setIsExpanded(false);
+    setFocusOpen(false);
+  }
+
+  const widgetTargetPage = widgetArtefactId
+    ? entry.artefacts.findIndex((artefact) => artefact.id === widgetArtefactId)
+    : -1;
+  if (widgetArtefactId && handledWidgetArtefactId !== widgetArtefactId && widgetTargetPage >= 0) {
+    setHandledWidgetArtefactId(widgetArtefactId);
+    setActivePage(widgetTargetPage);
+    setIsExpanded(true);
+  } else if (!widgetArtefactId && handledWidgetArtefactId) {
+    setHandledWidgetArtefactId(null);
+  }
+
   useLayoutEffect(() => {
     scrollOffset.set(0);
   }, [entry, scrollOffset]);
+
+  useLayoutEffect(() => {
+    if (collapseForWidgetTarget) {
+      progress.set(0);
+    }
+  }, [collapseForWidgetTarget, progress]);
 
   // Worklet that copies the horizontal scroll offset into `scrollOffset`. Runs
   // on the UI thread so the artefacts and indicator track scrolling with no
@@ -227,9 +268,9 @@ const Stack = ({ entry }: StackProps) => {
     setFocusOpen(false);
   };
 
-  const openGalleryAddFromFocus = () => {
-    pendingFocusActionRef.current = "galleryAdd";
-    pendingGalleryAddRef.current = { entry, page: activePage };
+  const openWidgetPickerFromFocus = () => {
+    pendingFocusActionRef.current = "widgetPicker";
+    pendingWidgetPickerRef.current = { entry, page: activePage };
     setFocusOpen(false);
   };
 
@@ -246,18 +287,26 @@ const Stack = ({ entry }: StackProps) => {
       return;
     }
 
-    if (action === "galleryAdd") {
-      const pending = pendingGalleryAddRef.current;
-      pendingGalleryAddRef.current = null;
+    if (action === "widgetPicker") {
+      const pending = pendingWidgetPickerRef.current;
+      pendingWidgetPickerRef.current = null;
       if (pending) {
-        openGalleryAdd(pending.entry, pending.page);
+        openWidgetPicker(pending.entry, pending.page);
       }
     }
   };
 
   const focusMenuItems: FocusMenuItem[] = [
     { label: "Edit", icon: "pencil", onPress: () => {} },
-    { label: "Add to Gallery", icon: "photo", onPress: openGalleryAddFromFocus },
+    ...(featuredWidgetsSupported
+      ? [
+          {
+            label: "Feature in Widget",
+            icon: "photo" as const,
+            onPress: openWidgetPickerFromFocus,
+          },
+        ]
+      : []),
     { label: "Share", icon: "share", onPress: openShareFromFocus },
     { label: "Delete", icon: "trash", onPress: () => {} },
   ];
@@ -294,6 +343,26 @@ const Stack = ({ entry }: StackProps) => {
     scrollOffset.set(index * PAGE_WIDTH);
     setActivePage(index);
   };
+
+  useLayoutEffect(() => {
+    if (!widgetArtefactId || widgetTargetPage < 0) {
+      return;
+    }
+    scrollOffset.set(widgetTargetPage * PAGE_WIDTH);
+    scrollRef.current?.scrollTo({ x: widgetTargetPage * PAGE_WIDTH, y: 0, animated: false });
+    progress.set(withSpring(1, SPRING_CONFIG));
+    chromeProgress.set(withSpring(1, SPRING_CONFIG));
+    onWidgetTargetConsumed?.();
+  }, [
+    PAGE_WIDTH,
+    chromeProgress,
+    onWidgetTargetConsumed,
+    progress,
+    scrollOffset,
+    scrollRef,
+    widgetArtefactId,
+    widgetTargetPage,
+  ]);
 
   return (
     <>
@@ -425,7 +494,7 @@ const Stack = ({ entry }: StackProps) => {
                   onPress={collapse}
                   accessibilityRole="button"
                   accessibilityLabel="Close entry"
-                  className="rounded-full border border-controls-border bg-controls-background p-3"
+                  className="border-controls-border bg-controls-background rounded-full border p-3"
                 >
                   <Icon name="x-mark" size={22} color="#79716B" />
                 </Pressable>

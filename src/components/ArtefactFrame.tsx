@@ -1,23 +1,19 @@
 /**
- * GalleryFrame — Astro portrait mat chrome around a live Artefact.
+ * ArtefactFrame — Astro portrait mat chrome around one live or cached Artefact.
  *
  * Exact source geometry (`temp/frames.astro`, portrait branch): the subject is
- * `object-cover` inside a 3:4 well (`18vw`×`24vw`) with `2vw` padding; the mat
- * is 132% of the well and the outer board is 145%. This module preserves those
- * well/mat/board ratios and their back-to-front order.
+ * inside a 3:4 well (`18vw`×`24vw`); the mat is 132% of the well and the outer
+ * board is 145%. This module is the only owner of those ratios, so in-app
+ * previews and widget captures cannot drift into subtly different frames.
  *
- * The live app deliberately adapts the subject treatment: user-authored Paper,
- * Print, and Ink are contained rather than cropped, and no extra source padding
- * is added inside the artefact itself. Paper owns its text padding; Print owns
- * its top padding and caption gap. Each artefact is first laid out at its
- * natural Home size, uniformly scaled into a protected inner inset, then given
- * Home's subtle collapsed-card shadow. The inset keeps white pages clear of the
- * well's inner edge, while the reduced frame shadow stack preserves the source's
- * board depth and light mat centre without copying every web layer.
+ * Live Paper, Print, and Ink are contained rather than cropped. Each artefact
+ * is first laid out at its natural Home size, uniformly scaled into a protected
+ * inner inset, then given Home's subtle collapsed-card shadow. Capture callers
+ * may provide `children` with explicit image-readiness callbacks; normal callers
+ * receive the standard live artefact renderer.
  */
 import { type ReactNode } from "react";
-import { Pressable, StyleSheet, View, type ViewStyle } from "react-native";
-import Animated, { type AnimatedRef } from "react-native-reanimated";
+import { StyleSheet, View, type ViewStyle } from "react-native";
 
 import type { Artefact } from "../data/entries";
 
@@ -28,8 +24,6 @@ import {
   PRINT_ASPECT_RATIO,
   type KnownArtefactType,
 } from "./artefactLayout";
-import { Icon } from "./Icon";
-import LongPressable from "./LongPressable";
 import { renderArtefactContent } from "./renderArtefactContent";
 
 /** Astro portrait figure aspect (width / height). */
@@ -38,19 +32,18 @@ const FRAME_WELL_ASPECT = 3 / 4;
 export const FRAME_BOARD_SCALE = 1.45;
 /** Inner mat vs well (Astro figure:before). */
 const FRAME_MAT_SCALE = 1.32;
-// Reserve 4% of the well width on every edge. This is deliberately quieter
-// than the web reference's 2vw padding, but it guarantees that no artefact can
-// cover the well's inset shadow at the top or bottom.
+// Reserve 4% of the well width on every edge so no artefact can cover the
+// well's inset shadow at the top or bottom.
 const FRAME_CONTENT_INSET_SCALE = 0.04;
-// Match Home's collapsed SHADOW_SM (1px offset, 2px blur, 5% opacity). Against
-// the white well this is just enough to reveal a white page boundary.
+// Match Home's collapsed SHADOW_SM. Against the white well this is just enough
+// to reveal a white page boundary without competing with the board shadow.
 const FRAME_ARTEFACT_SHADOW = "0 1px 2px rgba(0,0,0,0.05)";
 
 function wellSizeForMaxWidth(maxWellWidth: number): { width: number; height: number } {
   return { width: maxWellWidth, height: maxWellWidth / FRAME_WELL_ASPECT };
 }
 
-/** Largest 3:4 well whose board (well × 1.45) fits inside maxBoard bounds. */
+/** Largest 3:4 well whose board (well × 1.45) fits inside both bounds. */
 export function wellSizeFittingBoard(
   maxBoardWidth: number,
   maxBoardHeight: number,
@@ -62,7 +55,7 @@ export function wellSizeFittingBoard(
   return wellSizeForMaxWidth(wellW);
 }
 
-/** Fit artefact aspect inside the 3:4 well (CSS object-fit: contain). */
+/** Fit an artefact aspect inside the 3:4 well (CSS object-fit: contain). */
 function containSize(
   wellW: number,
   wellH: number,
@@ -86,40 +79,28 @@ function artefactKind(artefact: Artefact): KnownArtefactType | "unknown" {
 }
 
 function artefactAspect(artefact: Artefact): number {
-  if (isPrintArtefact(artefact)) {
-    return PRINT_ASPECT_RATIO;
-  }
-  return PAPER_ASPECT_RATIO;
+  return isPrintArtefact(artefact) ? PRINT_ASPECT_RATIO : PAPER_ASPECT_RATIO;
 }
 
-type GalleryFrameProps = {
+type ArtefactFrameProps = {
   artefact: Artefact;
-  /** Inner well width (3:4 height derived). Mat/board scale out from this. */
+  /** Inner well width (3:4 height derived); mat and board scale out from it. */
   wellWidth: number;
-  /** Viewport width used to derive the artefact's natural Home layout. */
+  /** Viewport width used to derive the artefact's canonical Home layout. */
   viewportWidth: number;
-  /** Present only for the interactive frame that FocusOverlay must measure. */
-  triggerRef?: AnimatedRef<Animated.View>;
-  /** Adds long-press/ellipsis affordances around the otherwise presentational frame. */
-  interactive?: boolean;
-  /** Opens the pager-owned shared FocusOverlay for this frame. */
-  onRequestFocus?: () => void;
-  /** Optional stage styling supplied by a presentation surface. */
+  /** Optional stage styling supplied by the surrounding presentation. */
   style?: ViewStyle;
-  /** Optional pre-rendered subject; defaults to the artefact's live content. */
+  /** Optional capture-aware subject; defaults to the live artefact content. */
   children?: ReactNode;
 };
 
-const GalleryFrame = ({
+const ArtefactFrame = ({
   artefact,
   wellWidth,
   viewportWidth,
-  triggerRef,
-  interactive = false,
-  onRequestFocus,
   style,
   children,
-}: GalleryFrameProps) => {
+}: ArtefactFrameProps) => {
   const wellW = wellWidth;
   const wellH = wellWidth / FRAME_WELL_ASPECT;
   const boardSize = { width: wellW * FRAME_BOARD_SCALE, height: wellH * FRAME_BOARD_SCALE };
@@ -141,32 +122,12 @@ const GalleryFrame = ({
     natural.width / natural.height,
   );
   const scale = target.width / natural.width;
-
   const content = children ?? renderArtefactContent(artefact);
 
-  const frame = (
-    <Animated.View
-      ref={triggerRef}
-      // Only the focus trigger needs a native node for UI-thread measurement.
-      // Clones and picker frames may remain collapsible to reduce native views.
-      collapsable={triggerRef ? false : undefined}
-      style={[
-        styles.stage,
-        {
-          width: boardSize.width,
-          height: boardSize.height,
-        },
-        style,
-      ]}
-    >
-      <View
-        pointerEvents="none"
-        style={[styles.board, { width: boardSize.width, height: boardSize.height }]}
-      />
-      <View
-        pointerEvents="none"
-        style={[styles.mat, { width: matSize.width, height: matSize.height }]}
-      />
+  return (
+    <View style={[styles.stage, boardSize, style]}>
+      <View pointerEvents="none" style={[styles.board, boardSize]} />
+      <View pointerEvents="none" style={[styles.mat, matSize]} />
       <View
         pointerEvents="none"
         // Extend beyond the opaque well so the centre light remains visible in
@@ -177,12 +138,9 @@ const GalleryFrame = ({
         ]}
       />
       <View style={[styles.well, { width: wellW, height: wellH }]}>
-        {/*
-          Same contain pattern as ShareArtefactCard: outer slot is the fitted
-          size; inner keeps Home natural size so fixed Print/Paper chrome scales
-          uniformly via transformOrigin top-left.
-        */}
-        <View style={[styles.artefact, { width: target.width, height: target.height }]}>
+        {/* Keep the inner tree at Home's natural dimensions and scale it as a
+            unit; fixed Print/Paper chrome therefore remains proportional. */}
+        <View style={[styles.artefact, target]}>
           <View
             style={{
               width: natural.width,
@@ -195,27 +153,6 @@ const GalleryFrame = ({
           </View>
         </View>
       </View>
-    </Animated.View>
-  );
-
-  if (!interactive) {
-    return frame;
-  }
-
-  return (
-    <View className="relative items-center justify-center">
-      <LongPressable onLongPress={onRequestFocus} accessibilityRole="button">
-        {frame}
-      </LongPressable>
-      <Pressable
-        onPress={onRequestFocus}
-        accessibilityRole="button"
-        accessibilityLabel="Gallery artefact options"
-        className="absolute -top-12 -right-2 z-[110] rounded-full p-2"
-        hitSlop={8}
-      >
-        <Icon name="ellipsis-horizontal" size={20} color="#79716B" />
-      </Pressable>
     </View>
   );
 };
@@ -259,4 +196,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default GalleryFrame;
+export default ArtefactFrame;

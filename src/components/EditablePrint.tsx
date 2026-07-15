@@ -303,7 +303,7 @@ const EditablePrint = ({
   return (
     <Animated.View style={pinStyle}>
       <Animated.View
-        className="aspect-print overflow-hidden bg-paper"
+        className="bg-paper aspect-print overflow-hidden"
         style={[
           scaleStyle,
           {
@@ -318,7 +318,7 @@ const EditablePrint = ({
           onPress={focusCaption}
           accessibilityRole="button"
           accessibilityLabel="Edit print caption"
-          className="h-full w-full items-center gap-4 bg-paper pt-8"
+          className="bg-paper h-full w-full items-center gap-4 pt-8"
         >
           <StyledImage
             className="aspect-print-image w-[86.79%]"
@@ -354,7 +354,7 @@ const EditablePrint = ({
               placeholderTextColor="#79716B"
               maxLength={maxChars}
               textAlignVertical="top"
-              className="w-full font-paper text-base text-primary"
+              className="text-primary w-full font-paper text-base"
               style={[styles.input, { maxHeight: PRINT_LINE_HEIGHT * PRINT_MAX_CAPTION_LINES }]}
             />
           </View>

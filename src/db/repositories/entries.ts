@@ -29,6 +29,8 @@ export type InsertEntryInput = {
 function mapEntryRow(row: EntryRow, artefacts: Artefact[]): Entry {
   if (row.type === "paper") {
     return {
+      id: row.id,
+      date: row.date,
       title: row.title,
       type: "paper",
       artefacts: artefacts as PaperArtefact[],
@@ -37,6 +39,8 @@ function mapEntryRow(row: EntryRow, artefacts: Artefact[]): Entry {
 
   if (row.type === "print") {
     return {
+      id: row.id,
+      date: row.date,
       title: row.title,
       type: "print",
       artefacts: artefacts as PrintArtefact[],
@@ -48,6 +52,8 @@ function mapEntryRow(row: EntryRow, artefacts: Artefact[]): Entry {
   // The artefacts are already mapped (UnknownArtefact for any unknown child
   // type), so the row round-trips and renders a placeholder (ADR-0003).
   return {
+    id: row.id,
+    date: row.date,
     title: row.title,
     type: row.type,
     artefacts,

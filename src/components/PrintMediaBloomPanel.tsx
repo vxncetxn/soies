@@ -39,7 +39,7 @@ export function PrintMediaBloomPanel({
 
     return (
       <View className="py-2">
-        <Text className="px-4 py-3 text-base text-primary">{permissionMessage}</Text>
+        <Text className="text-primary px-4 py-3 text-base">{permissionMessage}</Text>
         <Pressable
           onPress={() => {
             onDismiss();
@@ -49,7 +49,7 @@ export function PrintMediaBloomPanel({
           accessibilityLabel="Open Settings"
           className="px-4 py-3"
         >
-          <Text className="text-base text-primary">Open Settings</Text>
+          <Text className="text-primary text-base">Open Settings</Text>
         </Pressable>
         <Pressable
           onPress={onDismiss}
@@ -57,7 +57,7 @@ export function PrintMediaBloomPanel({
           accessibilityLabel="Dismiss"
           className="px-4 py-3"
         >
-          <Text className="text-base text-secondary">OK</Text>
+          <Text className="text-secondary text-base">OK</Text>
         </Pressable>
       </View>
     );
@@ -66,14 +66,14 @@ export function PrintMediaBloomPanel({
   if (screen === "error") {
     return (
       <View className="py-2">
-        <Text className="px-4 py-3 text-base text-primary">{errorMessage}</Text>
+        <Text className="text-primary px-4 py-3 text-base">{errorMessage}</Text>
         <Pressable
           onPress={onBackToMedia}
           accessibilityRole="button"
           accessibilityLabel="Try again"
           className="px-4 py-3"
         >
-          <Text className="text-base text-primary">Try again</Text>
+          <Text className="text-primary text-base">Try again</Text>
         </Pressable>
         <Pressable
           onPress={onDismiss}
@@ -81,7 +81,7 @@ export function PrintMediaBloomPanel({
           accessibilityLabel="Dismiss"
           className="px-4 py-3"
         >
-          <Text className="text-base text-secondary">OK</Text>
+          <Text className="text-secondary text-base">OK</Text>
         </Pressable>
       </View>
     );
@@ -96,7 +96,7 @@ export function PrintMediaBloomPanel({
           accessibilityLabel="Back to main menu"
           className="px-4 py-3"
         >
-          <Text className="text-base text-primary">‹ Back</Text>
+          <Text className="text-primary text-base">‹ Back</Text>
         </Pressable>
       ) : null}
       <Pressable
@@ -106,7 +106,7 @@ export function PrintMediaBloomPanel({
         accessibilityLabel="Take picture"
         className="px-4 py-3"
       >
-        <Text className="text-base text-primary">Take picture</Text>
+        <Text className="text-primary text-base">Take picture</Text>
       </Pressable>
       <Pressable
         onPress={() => onPick("library")}
@@ -115,7 +115,7 @@ export function PrintMediaBloomPanel({
         accessibilityLabel="Camera roll"
         className="px-4 py-3"
       >
-        <Text className="text-base text-primary">Camera roll</Text>
+        <Text className="text-primary text-base">Camera roll</Text>
       </Pressable>
     </View>
   );

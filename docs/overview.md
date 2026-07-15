@@ -1,6 +1,6 @@
 # soies — Project overview
 
-**soies** is a personal journaling app built with Expo SDK 57 and React Native. Users browse dated **entries** (stacks of **artefacts**) day by day, expand stacks to read individual papers or prints, and navigate dates via a blooming calendar panel. Domain terminology lives in [`CONTEXT.md`](./CONTEXT.md).
+**soies** is a personal journaling app built with Expo SDK 57 and React Native. Users browse dated **entries** (stacks of **artefacts**) day by day, expand stacks to read individual papers or prints, and navigate dates via a blooming calendar panel. Domain terminology lives in [`CONTEXT.md`](../CONTEXT.md).
 
 ---
 
@@ -37,13 +37,15 @@ Known-good pattern: `scheduleOnRN(setCreate, null)` / `scheduleOnRN(setOutgoing,
 
 ```mermaid
 flowchart TD
-  Root["src/app/_layout.tsx<br/>fonts, portals, blur target, StrictMode"]
-  Tabs["src/app/(tabs)/_layout.tsx<br/>Home + Gallery tabs"]
+  Root["src/app/_layout.tsx<br/>providers, portals, StrictMode"]
+  Widgets["FeaturedWidgetsProvider<br/>sheet, capture, publication"]
+  Tabs["src/app/(tabs)/_layout.tsx<br/>Featured launcher + Home + Create"]
   Home["src/app/(tabs)/index.tsx<br/>day pager home"]
-  Gallery["src/app/(tabs)/gallery.tsx<br/>horizontal framed artefacts"]
+  Extension["FeaturedArtefactWidget<br/>one Large configurable iOS widget"]
   Root --> Tabs
+  Root --> Widgets
   Tabs --> Home
-  Tabs --> Gallery
+  Widgets --> Extension
   Home --> Header["HomeHeader"]
   Home --> Pager["DayPager → Stack"]
   Header --> Calendar["BloomButton + BloomPanel + CalendarOverlay"]
@@ -57,14 +59,14 @@ flowchart TD
 | File | Role |
 |------|------|
 | [`package.json`](../package.json) | Dependencies, scripts (`start`, `ios`, `android`, `lint`, `lint:rc`, `healthcheck:rc`, `check`, `typecheck`, `fmt`). Entry point: **`expo-router/entry`** (canonical; custom `index.js` and `.pnpm` `watchFolders` were removed after the Metro matrix proved them unnecessary). `expo.autolinking.ios.buildFromSource` forces Reanimated + Worklets to compile from source on iOS. |
-| [`app.json`](../app.json) | Expo app config: bundle IDs, plugins (router, fonts, nano-icons, widgets), EAS project ID, and **`experiments.reactCompiler`**. |
+| [`app.json`](../app.json) | Expo app config: `soies` URL scheme, iOS 17 deployment target, one five-choice `systemLarge` widget, bundle IDs, plugins, EAS project ID, and **`experiments.reactCompiler`**. Android widget generation is explicitly disabled. |
 | [`babel.config.js`](../babel.config.js) | `babel-preset-expo` + React Compiler options (`panicThreshold: "all_errors"` → hard build failures). |
 | [`eas.json`](../eas.json) | EAS Build profiles: `development`, `preview`, `production`, `ios-simulator`, `development-simulator`. |
 | [`metro.config.js`](../metro.config.js) | Metro + Uniwind (`cssEntryFile`, `dtsFile`) only. No `unstable_enableSymlinks` (Metro 0.84 always-on; Expo Doctor rejects the override). No extra `watchFolders`. |
 | [`tsconfig.json`](../tsconfig.json) | TypeScript (extends Expo base, `strict: true`). |
 | [`.oxlintrc.json`](../.oxlintrc.json) / [`.oxfmtrc.json`](../.oxfmtrc.json) | Lint and format (oxlint with native React Compiler rules, oxfmt). |
 | [`.github/workflows/quality.yml`](../.github/workflows/quality.yml) | CI: `pnpm check` + production iOS `expo export`. |
-| [`CONTEXT.md`](./CONTEXT.md) | Ubiquitous language: Entry, Artefact, Paper, Print, Day, Gallery, Frame, Tombstone, Undo. |
+| [`CONTEXT.md`](../CONTEXT.md) | Ubiquitous language: Entry, Artefact, Featured Artefact, Widget Slot, Widget, Frame, Tombstone, Undo. |
 | [`AGENTS.md`](../AGENTS.md) / [`CLAUDE.md`](../CLAUDE.md) | Pointers for AI assistants (Expo **v57** docs). |
 | [`README.md`](../README.md) | Minimal Expo Router + Uniwind starter notes. |
 
@@ -75,9 +77,8 @@ flowchart TD
 | File | Role |
 |------|------|
 | [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), **`bloom`** (BloomPanel calendar/menus), **`create`** (create flow). Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. |
-| [`src/app/(tabs)/_layout.tsx`](../src/app/(tabs)/_layout.tsx) | **Tab layout.** Native-style tabs (Home, Gallery) with custom styled triggers. Wraps tabs in `ExpandProvider` so expand/collapse can hide chrome app-wide. |
-| [`src/app/(tabs)/index.tsx`](../src/app/(tabs)/index.tsx) | **Home screen.** Reads optional `?date=` from the URL, loads entries for that day, renders `HomeHeader` + vertical `DayPager`. Tracks scroll offset as shared values for the header title and scroll indicator. |
-| [`src/app/(tabs)/gallery.tsx`](../src/app/(tabs)/gallery.tsx) | **Gallery tab.** Horizontal paging strip of framed featured Artefacts; no HomeHeader. |
+| [`src/app/(tabs)/_layout.tsx`](../src/app/(tabs)/_layout.tsx) | **Tab layout.** Keeps Home centered, with the iOS-only Featured Artefacts launcher at bottom-left and Create at bottom-right. Wraps the route in `ExpandProvider`; Android/web resolve the Featured launcher to `null`. |
+| [`src/app/(tabs)/index.tsx`](../src/app/(tabs)/index.tsx) | **Home screen.** Reads date and one-shot widget commands from the URL, loads entries for that day, and renders `HomeHeader` + vertical `DayPager`. An occupied widget command targets an exact entry/artefact; an empty or unavailable command opens Featured Artefacts at its slot. |
 
 ---
 
@@ -88,8 +89,8 @@ flowchart TD
 | File | Role |
 |------|------|
 | [`HomeHeader.tsx`](../src/components/HomeHeader.tsx) | Top bar: formatted date button (opens calendar bloom), animated entry titles as you scroll days, action buttons. Composes `BloomButton` / `BloomPanel`, `CalendarOverlay`, and create entry. |
-| [`DayPager.tsx`](../src/components/DayPager.tsx) | Vertical pager of **entries** for one day. One full-screen “page” per entry (`Stack`). Vertical `ScrollIndicator` on the side; fades chrome while a stack is expanded. |
-| [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — collapsed deck vs expanded horizontal artefact pager. Tap to expand (portals to `overlay` host). Long-press opens focus overlay. Horizontal scroll indicator when expanded. |
+| [`DayPager.tsx`](../src/components/DayPager.tsx) | Vertical pager of **entries** for one day. One full-screen page per entry (`Stack`). It can jump to a stable entry ID from a widget command without changing Home's index-keyed reuse lifecycle. |
+| [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — collapsed deck vs expanded horizontal artefact pager. Tap to expand; long-press or ellipsis opens Focus. A widget target immediately expands at the matching artefact ID. |
 | [`CollapsedDeck.tsx`](../src/components/CollapsedDeck.tsx) | Renders the stacked-card collapsed view; `useWrappedArtefacts` builds wrapped `Paper` / `Print` children. |
 | [`ArtefactWrapper.tsx`](../src/components/ArtefactWrapper.tsx) | Animated wrapper per artefact: interpolates position/size/shadow between collapsed stack layout and expanded pager layout. |
 | [`Paper.tsx`](../src/components/Paper.tsx) | Text-only artefact renderer (A4 aspect, paper background). |
@@ -101,9 +102,8 @@ flowchart TD
 |------|------|
 | [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** used by the calendar (fullscreen) and create menus. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
 | [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Month calendar (`flash-calendar`) with dots on days that have entries. Selecting a date navigates home with `?date=`. |
-| [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: blurred backdrop, measured subject clone, parameterized menu. Shared by Home stacks and Gallery frames. |
-| [`GalleryFrame.tsx`](../src/components/GalleryFrame.tsx) | Portrait mat chrome wrapping live Paper/Print (and future artefact kinds). |
-| [`GalleryPager.tsx`](../src/components/GalleryPager.tsx) | Horizontal paging Gallery strip + shared Focus Remove; lands on pending artefact identity after Add. |
+| [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: blurred backdrop, measured subject clone, and menu. On iOS, **Feature in Widget** appears immediately before Share and opens the picker for that Entry. |
+| [`ArtefactFrame.tsx`](../src/components/ArtefactFrame.tsx) | Single source of portrait frame geometry for live capture, cached Featured Artefact previews, and branded empty/unavailable prompts. |
 | [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) | **Unused** legacy morph overlay (no callsite). Kept for reference; unsafe Worklets `onClose` bridge — do not reintroduce without hardening. |
 
 ### Shared UI & context
@@ -118,6 +118,21 @@ flowchart TD
 | [`Icon.tsx`](../src/components/Icon.tsx) | Nano icon set generated from `assets/icons/` via build-time glyph map. |
 | [`LongPressable.tsx`](../src/components/LongPressable.tsx) | `Pressable` with default long-press delay and haptic feedback. |
 
+### Featured Artefacts and iOS widget flow
+
+| File | Role |
+|------|------|
+| [`FeaturedArtefactsButton.ios.tsx`](../src/components/FeaturedArtefactsButton.ios.tsx) | Round bottom-left launcher for Featured Artefacts. Its platform fallback renders nothing on Android/web. |
+| [`FeaturedWidgetsContext.ios.tsx`](../src/widgets/FeaturedWidgetsContext.ios.tsx) | iOS controller for sheet sessions, transactional assignment, publication warnings, and coalesced first-paint/foreground reconciliation. The platform fallback exposes no feature affordances. |
+| [`FeaturedWidgetsSheet.tsx`](../src/widgets/FeaturedWidgetsSheet.tsx) | One fixed-height native bottom sheet. Raw picker and five-slot framed management phases remain mounted in the same body and cross-fade over 200 ms. |
+| [`WidgetFrameCaptureHost.tsx`](../src/widgets/WidgetFrameCaptureHost.tsx) | Lazily mounts one off-screen `ArtefactFrame`, waits for layout/Print/Ink readiness, and serializes high-resolution transparent PNG capture with a ten-second timeout. |
+| [`widgetFrameCache.ts`](../src/widgets/widgetFrameCache.ts) | Stores revisioned, renderer-versioned captures in `widgetsDirectory`; paths are derived cache state and stale files are removed only after a later successful publication. |
+| [`widgetSnapshot.ts`](../src/widgets/widgetSnapshot.ts) | Builds one atomic five-key snapshot containing empty, featured, or unavailable state plus metadata, deep links, and accessibility labels. |
+| [`FeaturedArtefactWidget.ios.tsx`](../src/widgets/FeaturedArtefactWidget.ios.tsx) | SwiftUI-backed `systemLarge` widget. Each installed instance reads its `featuredSlot` configuration and renders that key from the shared snapshot. |
+| [`widgetDeepLink.ts`](../src/widgets/widgetDeepLink.ts) | Parses and de-duplicates cold/warm slot commands before Home consumes and clears their URL parameters. |
+
+Selection captures first, commits the lowest genuinely empty slot in one database transaction, then publishes one snapshot containing all five positions. Duplicate artefacts are rejected and active unavailable bindings remain capacity reservations. Publication failure never rolls back user intent: the sheet shows the assigned slot, surfaces a non-blocking warning, and reconciliation retries later. Empty/unavailable states publish before any potentially slow recapture.
+
 ### Tabs
 
 | File | Role |
@@ -131,8 +146,12 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| [`entries.ts`](../src/data/entries.ts) | **Domain types** (`PaperArtefact`, `PrintArtefact`, `Entry`, `DayEntries`) and helpers. Persistence via `src/db/`. |
+| [`entries.ts`](../src/data/entries.ts) | **Domain types** (`PaperArtefact`, `PrintArtefact`, `Entry`, `DayEntries`) and helpers. Entry view models expose stable `id` and `date` for widget targeting. Persistence is in `src/db/`. |
 | [`mock-image.png`](../src/data/mock-image.png) | Sample image for print entries in seed/dev data. |
+
+### Widget persistence
+
+`featured_widget_slots` owns five numbered positions. A missing or tombstoned slot row is empty; an active row whose Entry or Artefact is soft-deleted is unavailable and still reserves capacity so Undo restores it in place. A partial unique index prevents one active Artefact from occupying more than one slot. Legacy `gallery_items` rows are intentionally neither migrated nor deleted; no current route, provider, repository, or seed path reads them.
 
 ---
 
@@ -178,18 +197,18 @@ flowchart TD
 
 | Path | Role |
 |------|------|
-| [`docs/README.md`](./README.md) | Index of the three main UI features and how they connect. Start here for deep dives. |
+| [`docs/README.md`](./README.md) | Index of the four main UI features and how they connect. Start here for deep dives. |
 | [`docs/01-stack-expand-collapse.md`](./01-stack-expand-collapse.md) | Stack expand/collapse, horizontal paging, portal overlay. |
 | [`docs/02-calendar-morph-overlay.md`](./02-calendar-morph-overlay.md) | Calendar + bloom/morph overlay technique. |
 | [`docs/03-scroll-indicator.md`](./03-scroll-indicator.md) | Scroll indicator (vertical day rail + horizontal artefact rail). |
 | [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md) | Physical-device stress matrix for RC / Worklets closure. |
-| [`docs/adr/`](./adr/) | Architecture decision records: soft-delete tombstones, unix-ms timestamps, opaque artefact blobs, op-sqlite, portal overlays. |
+| [`docs/adr/`](./adr/) | Architecture decision records: persistence, portal overlays, media/share seams, and stable raster-backed Widget Slots. |
 
 ---
 
 ## `ios/` and `android/` (generated)
 
-These native project folders are produced by `expo prebuild`. They contain Xcode / Gradle projects, CocoaPods (`Podfile`, `Podfile.lock`), and native module linking. Regenerate with `pnpm expo prebuild --clean` after native dependency or config changes.
+These native project folders are produced by `expo prebuild`. They contain Xcode / Gradle projects, CocoaPods (`Podfile`, `Podfile.lock`), and native module linking. Regenerate with `pnpm exec expo prebuild --clean` after native dependency or config changes.
 
 ---
 
@@ -204,7 +223,7 @@ pnpm typecheck          # tsc --noEmit
 pnpm lint               # oxlint (includes native react/react-compiler)
 pnpm lint:rc            # targeted Oxlint React Compiler rule
 pnpm healthcheck:rc     # pinned react-compiler-healthcheck (expect all components to compile)
-pnpm test               # repository and Gallery regression tests
+pnpm test               # repository and Featured Widget regression tests
 pnpm check              # fmt:check + typecheck + lint + healthcheck:rc + test
 pnpm exec expo export --platform ios --clear   # production transform (prints React Compiler enabled)
 pnpm eas build --profile ios-simulator --platform ios
@@ -216,7 +235,7 @@ CI (`.github/workflows/quality.yml`) runs `pnpm check` and an iOS `expo export` 
 
 ## Where to read next
 
-1. **Domain language** → [`CONTEXT.md`](./CONTEXT.md)
+1. **Domain language** → [`CONTEXT.md`](../CONTEXT.md)
 2. **How Home + Stack + Calendar fit together** → [`docs/README.md`](./README.md)
 3. **RC / Worklets physical stress** → [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md)
 4. **Persistence & sync direction** → [`docs/adr/`](./adr/)

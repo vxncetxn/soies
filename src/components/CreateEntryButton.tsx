@@ -102,7 +102,7 @@ const CreateEntryButton = () => {
         accessibilityLabel="Choose Paper"
         className="px-4 py-3"
       >
-        <Text className="text-base text-primary">Paper</Text>
+        <Text className="text-primary text-base">Paper</Text>
       </Pressable>
       <Pressable
         onPress={() => {
@@ -113,7 +113,7 @@ const CreateEntryButton = () => {
         accessibilityLabel="Choose Print"
         className="px-4 py-3"
       >
-        <Text className="text-base text-primary">Print</Text>
+        <Text className="text-primary text-base">Print</Text>
       </Pressable>
     </View>
   );
