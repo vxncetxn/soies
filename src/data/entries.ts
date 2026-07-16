@@ -1,8 +1,8 @@
 import type { InkDocument } from "./ink";
+import type { PaperDocument } from "./paperDocument";
 
-export type PaperArtefact = {
+export type PaperArtefact = PaperDocument & {
   id: string;
-  text: string;
   /**
    * Parsed Ink strokes — loaded only for edit/Scribble, not Home display.
    * Display uses `inkOverlayPath` alone (ADR-0008).
@@ -73,7 +73,7 @@ export type Tag = {
 export { getEntriesByDate, getEntryDates, getAllEntriesByDate } from "../db/repositories/entries";
 export { searchEntries } from "../db/repositories/search";
 export { listTags } from "../db/repositories/tags";
-export { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
+export { PRINT_TEXT_HARD_LIMIT } from "../constants/artefact";
 
 export function isUnknownArtefact(artefact: Artefact): artefact is UnknownArtefact {
   return "rawData" in artefact;

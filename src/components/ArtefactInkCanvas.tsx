@@ -16,6 +16,12 @@
  * The canvas deletes only failed/cancelled snapshots. This distinction matters
  * because the pager virtualizes off-window canvases while draft state still
  * needs their committed PNGs for Entry Submit.
+ *
+ * Paper authoring now rasterizes at expanded resolution from first mount. Its
+ * caller therefore scales pen widths and passes `interactionScale`; the native
+ * stroke coordinates, rendered line width, and JS eraser radius all stay in
+ * that same presentation coordinate system. Export still normalizes the canvas
+ * size into the durable Ink document, so final canonical rendering is unchanged.
  */
 import { Image } from "expo-image";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -56,6 +62,8 @@ type ArtefactInkCanvasProps = {
   penColor: string;
   penMinWidth: number;
   penMaxWidth: number;
+  /** Proportional raster scale used to keep the eraser's logical hit radius stable. */
+  interactionScale?: number;
   /** Initial strokes when mounting Scribble for an artefact that already has Ink. */
   initialDocument?: InkDocument | null;
   /** Disables touch ownership while the persistent canvas sits behind Default mode. */
@@ -88,6 +96,7 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
       penColor,
       penMinWidth,
       penMaxWidth,
+      interactionScale = 1,
       initialDocument = null,
       enabled = true,
       locked = false,
@@ -245,7 +254,11 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
         return;
       }
       const { locationX, locationY } = event.nativeEvent;
-      inkRef.current?.eraseStrokeNear(locationX, locationY, INK_ERASER_HIT_RADIUS);
+      inkRef.current?.eraseStrokeNear(
+        locationX,
+        locationY,
+        INK_ERASER_HIT_RADIUS * interactionScale,
+      );
     };
 
     const handleEraserStart = (event: GestureResponderEvent) => {

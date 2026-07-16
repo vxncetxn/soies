@@ -8,8 +8,10 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
-ios/
-android/
+# Expo's generated root native projects stay local. Nested native source inside
+# a tracked local module (for example modules/*/ios) must remain commit-visible.
+/ios/
+/android/
 
 # Other build artefacts
 assets/nanoicons/

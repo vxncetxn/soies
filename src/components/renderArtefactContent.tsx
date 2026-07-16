@@ -28,9 +28,5 @@ export function renderArtefactContent(artefact: Artefact, key?: string | number)
     );
   }
 
-  return (
-    <Paper key={key} inkOverlayPath={artefact.inkOverlayPath}>
-      {artefact.text}
-    </Paper>
-  );
+  return <Paper key={key} document={artefact} inkOverlayPath={artefact.inkOverlayPath} />;
 }

@@ -190,18 +190,6 @@ type BloomPanelProps = {
   variant?: "fullscreen" | "menu";
   contentKey?: string | number;
   hostName?: string;
-  /**
-   * Correction for when the ORIGIN trigger lives inside teleported content that
-   * is itself nested under padding (e.g. BloomBar inside the create overlay,
-   * which sits under the root SafeAreaView). For such triggers `measure()`
-   * reports declaration-site coordinates (shifted down by the ancestor padding),
-   * but the panel paints in window space — so without correction the panel
-   * blooms that far below the trigger. The caller passes the ancestor offset
-   * (typically the safe-area insets) and we subtract it from the measured origin
-   * so the panel lands exactly on the trigger. Defaults to {0,0} (inline
-   * triggers like BloomButton, whose measurement already matches paint space).
-   */
-  originOffset?: { x: number; y: number };
 };
 
 const BloomPanel = ({
@@ -214,7 +202,6 @@ const BloomPanel = ({
   variant = "menu",
   contentKey,
   hostName = "bloom",
-  originOffset,
 }: BloomPanelProps) => {
   // Transition guard: only animate when `open` actually flips. Initialized from
   // `open` so mount / StrictMode setup-cleanup replay does not schedule a
@@ -243,8 +230,6 @@ const BloomPanel = ({
   const insetBottom = useSharedValue(insets.bottom);
 
   const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
-  const originOffsetX = useSharedValue(originOffset?.x ?? 0);
-  const originOffsetY = useSharedValue(originOffset?.y ?? 0);
   const contentHeight = useSharedValue(200);
   const panelHeight = useSharedValue(200);
   const outgoingFade = useSharedValue(0);
@@ -278,11 +263,6 @@ const BloomPanel = ({
     insetTop.set(insets.top);
     insetBottom.set(insets.bottom);
   }, [insetBottom, insetTop, insets.bottom, insets.top]);
-
-  useEffect(() => {
-    originOffsetX.set(originOffset?.x ?? 0);
-    originOffsetY.set(originOffset?.y ?? 0);
-  }, [originOffset?.x, originOffset?.y, originOffsetX, originOffsetY]);
 
   useAnimatedReaction(
     () => contentHeight.get(),
@@ -400,22 +380,13 @@ const BloomPanel = ({
     const endRadius = variant === "fullscreen" ? 0 : BLOOM_MENU_RADIUS;
     const p = progress.get();
 
-    // Correct for a teleported trigger whose measure() is declaration-site (see
-    // originOffset docs). Only the ORIGIN end of the interpolation is shifted:
-    // the panel must START on the real trigger. The TARGET is computed from
-    // screen/inset values that are already in paint space, so it is left as-is.
-    const offX = originOffsetX.get();
-    const offY = originOffsetY.get();
-    const startX = o.x - offX;
-    const startY = o.y - offY;
-
     return {
       opacity: interpolate(p, [0, BLOOM_PANEL_FADE_END], [0, 1], "clamp"),
       width: interpolate(p, [0, 1], [o.width, targetWidth]),
       height: interpolate(p, [0, 1], [o.height, targetHeight]),
       transform: [
-        { translateX: interpolate(p, [0, 1], [startX, targetX]) },
-        { translateY: interpolate(p, [0, 1], [startY, targetY]) },
+        { translateX: interpolate(p, [0, 1], [o.x, targetX]) },
+        { translateY: interpolate(p, [0, 1], [o.y, targetY]) },
       ],
       borderRadius: interpolate(p, [0, 1], [BLOOM_TRIGGER_RADIUS, endRadius]),
     };

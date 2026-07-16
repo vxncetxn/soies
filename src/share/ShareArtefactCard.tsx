@@ -3,10 +3,12 @@
  * share preview and export. Unknown artefacts are filtered before they reach
  * this component; we never invent a placeholder that could be shared.
  *
- * Layout starts from the same canonical collapsed size as Home/Create, then
- * uniformly scales to the requested width. Print is narrower than Paper at that
- * base size; treating both as `screenWidth - 80` scales its fixed top padding,
- * image gap, and caption from the wrong geometry.
+ * Layout starts from each artefact's logical renderer canvas, then uniformly
+ * scales the complete canvas to the requested width. Paper always supplies its
+ * fixed 310-point canvas so Share cannot reflow saved paragraphs. Print is
+ * narrower and retains its Home-derived base size; treating both as
+ * `screenWidth - 80` would scale Print's fixed top padding, image gap, and
+ * caption from the wrong geometry.
  *
  * Export readiness is a small barrier over native layout, the Print photo, and
  * optional Ink. `onReady` fires once only after all required pixels report
@@ -18,7 +20,7 @@ import { useWindowDimensions, View } from "react-native";
 
 import type { PaperArtefact, PrintArtefact } from "../data/entries";
 
-import { getCollapsedArtefactLayout } from "../components/artefactLayout";
+import { getArtefactCanvasLayout } from "../components/artefactLayout";
 import Paper from "../components/Paper";
 import Print from "../components/Print";
 import { isPrintArtefact } from "../data/entries";
@@ -36,7 +38,7 @@ export function ShareArtefactCard({ artefact, width, onReady, onError }: ShareAr
   const { width: screenWidth } = useWindowDimensions();
   const isPrint = isPrintArtefact(artefact);
   const hasInk = Boolean(artefact.inkOverlayPath);
-  const { width: layoutWidth, height: layoutHeight } = getCollapsedArtefactLayout(
+  const { width: layoutWidth, height: layoutHeight } = getArtefactCanvasLayout(
     screenWidth,
     isPrint ? "print" : "paper",
   );
@@ -121,12 +123,11 @@ export function ShareArtefactCard({ artefact, width, onReady, onError }: ShareAr
             </Print>
           ) : (
             <Paper
+              document={artefact}
               inkOverlayPath={artefact.inkOverlayPath}
               onInkDisplay={onInkDisplay}
               onInkError={() => fail("ink")}
-            >
-              {caption}
-            </Paper>
+            />
           )}
         </View>
       </View>

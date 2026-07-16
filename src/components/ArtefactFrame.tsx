@@ -7,13 +7,17 @@
  * those ratios, so in-app previews and widget captures cannot drift into subtly
  * different frames.
  *
- * Live Paper, Print, and Ink are contained rather than cropped. Each artefact
- * is first laid out at its natural Home size, uniformly scaled into a protected
- * inner inset, then given Home's subtle collapsed-card shadow. Every shadow is
- * proportional to board width so a cached large render and a live small prompt
- * remain visually identical after fitting. Capture callers may provide
- * `children` with explicit image-readiness callbacks; normal callers receive
- * the standard live artefact renderer.
+ * Live Paper, Print, and Ink are contained rather than cropped. Paper starts
+ * from its fixed 310-point document canvas; Print retains its viewport-derived
+ * Home canvas. The complete subject is then uniformly scaled into a protected
+ * inner inset and given Home's subtle collapsed-card shadow. This distinction
+ * is the reason framed Paper now wraps at exactly the same words as unframed
+ * Paper instead of recomputing a smaller text column inside the frame.
+ *
+ * Every shadow is proportional to board width so a cached large render and a
+ * live small prompt remain visually identical after fitting. Capture callers
+ * may provide `children` with explicit image-readiness callbacks; normal
+ * callers receive the standard live artefact renderer.
  */
 import { type ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
@@ -28,7 +32,7 @@ import {
   frameEffectScaleForBoardWidth,
 } from "./artefactFrameGeometry";
 import {
-  getCollapsedArtefactLayout,
+  getArtefactCanvasLayout,
   PAPER_ASPECT_RATIO,
   PRINT_ASPECT_RATIO,
   type KnownArtefactType,
@@ -93,7 +97,7 @@ type ArtefactFrameProps = {
   artefact: Artefact;
   /** Inner well width (3:4 height derived); mat and board scale out from it. */
   wellWidth: number;
-  /** Viewport width used to derive the artefact's canonical Home layout. */
+  /** Viewport used only by Print's legacy canvas; Paper ignores it by contract. */
   viewportWidth: number;
   /** Optional stage styling supplied by the surrounding presentation. */
   style?: StyleProp<ViewStyle>;
@@ -123,7 +127,7 @@ const ArtefactFrame = ({
   const natural =
     kind === "unknown"
       ? containSize(wellW, wellH, artefactAspect(artefact))
-      : getCollapsedArtefactLayout(viewportWidth, kind);
+      : getArtefactCanvasLayout(viewportWidth, kind);
   const target = containSize(
     contentBounds.width,
     contentBounds.height,
@@ -146,8 +150,9 @@ const ArtefactFrame = ({
         ]}
       />
       <View style={[styles.well, { width: wellW, height: wellH, boxShadow: shadows.well }]}>
-        {/* Keep the inner tree at Home's natural dimensions and scale it as a
-            unit; fixed Print/Paper chrome therefore remains proportional. */}
+        {/* Keep the inner tree at its logical canvas dimensions and scale it as
+            one unit. Paper therefore preserves canonical line breaks, while
+            Print's fixed chrome remains proportional to its Home canvas. */}
         <View style={[styles.artefact, target, { boxShadow: shadows.artefact }]}>
           <View
             style={{

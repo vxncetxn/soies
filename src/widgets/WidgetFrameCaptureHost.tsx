@@ -78,7 +78,7 @@ type WidgetFrameCaptureContextValue = {
 const WidgetFrameCaptureContext = createContext<WidgetFrameCaptureContextValue | null>(null);
 /** Bounds layout/image stalls and native capture hangs for each queued job. */
 const CAPTURE_TIMEOUT_MS = 10_000;
-/** Stable Home geometry input keeps captures consistent across device widths. */
+/** Print still needs a stable legacy canvas; Paper ignores this and uses its own canonical one. */
 const CANONICAL_VIEWPORT_WIDTH = 390;
 
 export function useWidgetFrameCapture() {

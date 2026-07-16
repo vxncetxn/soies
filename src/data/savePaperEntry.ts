@@ -1,15 +1,17 @@
 import { randomUUID } from "expo-crypto";
 
 import type { DraftInk } from "./ink";
+import type { PaperDocument } from "./paperDocument";
 
 import { deleteInkOverlayFile, saveInkOverlayFile } from "../storage/files";
 import { serializeAnnotations } from "./ink";
+import { serializePaperDocument } from "./paperDocument";
 import { persistNewEntry } from "./saveEntryCore";
 
 export async function savePaperEntry(params: {
   date: string;
   title: string;
-  artefacts: { text: string; ink?: DraftInk | null }[];
+  artefacts: { document: PaperDocument; ink?: DraftInk | null }[];
 }): Promise<void> {
   const prepared: { id: string; data: string; annotations: string | null }[] = [];
 
@@ -21,7 +23,7 @@ export async function savePaperEntry(params: {
       // make that partial output invisible to the catch path.
       prepared.push({
         id,
-        data: JSON.stringify({ text: artefact.text }),
+        data: serializePaperDocument(artefact.document),
         annotations: null,
       });
       if (artefact.ink && artefact.ink.document.strokes.length > 0) {
@@ -29,7 +31,7 @@ export async function savePaperEntry(params: {
         await saveInkOverlayFile(artefact.ink.overlayUri, id);
         prepared[prepared.length - 1] = {
           id,
-          data: JSON.stringify({ text: artefact.text }),
+          data: serializePaperDocument(artefact.document),
           annotations,
         };
       }

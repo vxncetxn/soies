@@ -2,6 +2,7 @@ import type { Artefact } from "../../data/entries";
 import type { InkDocument } from "../../data/ink";
 
 import { parseAnnotations } from "../../data/ink";
+import { parsePaperDocument } from "../../data/paperDocument";
 import { inkOverlayUriForArtefact } from "../../storage/files";
 import { getDatabase } from "../client";
 import { type DbExecutor, withTransaction } from "../executor";
@@ -54,14 +55,14 @@ function inkDisplayFields(artefactId: string, hasInk: number) {
 export function mapArtefactRow(row: ArtefactRow): Artefact {
   if (row.type === "paper") {
     try {
-      const parsed = JSON.parse(row.data) as { text?: string };
+      const document = parsePaperDocument(JSON.parse(row.data));
       return {
         id: row.id,
-        text: parsed.text ?? "",
+        ...document,
         ...inkDisplayFields(row.id, row.has_ink),
       };
     } catch {
-      return { id: row.id, text: "" };
+      return { id: row.id, ...parsePaperDocument(null) };
     }
   }
 

@@ -10,6 +10,7 @@
  *     stay put on title focus so the keyboard covers them)
  *   - Scribble tool strip while drawing
  *   - document-plus add via discriminated `addConfig` + max-cap Tooltip
+ *   - Optional Type accessory rendered last in this root stacking context
  *
  * The artefact editor (pager + EditablePaper / EditablePrint) is passed as
  * `children` inside the paper-slide region.
@@ -92,6 +93,8 @@ export type CreateScreenChromeProps = {
   onScribbleSave: () => void;
   /** Tool strip rendered above the faded bottom controls while Scribbling. */
   scribbleTools?: ReactNode;
+  /** Type-only keyboard accessory; parent owns whether the node exists. */
+  floatingAccessory?: ReactNode;
   children: ReactNode;
 };
 
@@ -114,6 +117,7 @@ const CreateScreenChrome = ({
   scribbleActive,
   onScribbleSave,
   scribbleTools,
+  floatingAccessory,
   children,
 }: CreateScreenChromeProps) => {
   const insets = useSafeAreaInsets();
@@ -332,8 +336,7 @@ const CreateScreenChrome = ({
               }}
               panelNode={panelNode}
               contentKey={contentKey}
-              portalHostName="create"
-              originOffset={{ x: insets.left, y: insets.top }}
+              portalHostName="bloom"
             />
             <Tooltip
               visible={maxTooltipVisible}
@@ -525,6 +528,12 @@ const CreateScreenChrome = ({
           </View>
         </Animated.View>
       </Animated.View>
+
+      {/* Rendered after every chrome layer so a keyboard-following accessory
+          remains visible above the Paper and headers. Paper mounts this node
+          only in Type; it no longer needs an opacity-hidden lifetime workaround
+          because Create itself is not a native Portal. */}
+      {floatingAccessory}
     </Animated.View>
   );
 };

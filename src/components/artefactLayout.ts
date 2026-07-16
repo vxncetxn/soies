@@ -1,12 +1,23 @@
 /**
- * Canonical artefact layout metrics shared by Home, Create, and Share.
+ * Artefact layout metrics shared by Home, Create, frames, widgets, and Share.
  *
- * Paper establishes the collapsed deck height from the 40-point screen gutters.
- * Print deliberately reuses that height and derives its narrower width from the
- * 53:86 card ratio. Keeping this calculation in one module prevents fixed
- * chrome—32-point top padding, 16-point image/caption gap, and 16-point type—
- * from being scaled from different base widths in Share versus Home.
+ * This module deliberately exposes two different questions:
+ *   1. `getCollapsedArtefactLayout` answers how much responsive Stack/Create
+ *      space the card occupies on the current device. Paper establishes that
+ *      height from 40-point screen gutters; Print reuses the height and derives
+ *      its narrower width from the 53:86 card ratio.
+ *   2. `getArtefactCanvasLayout` answers which coordinate system content is
+ *      composed in. Paper always returns its fixed document canvas so text
+ *      cannot reflow by device or output surface. Print retains the responsive
+ *      canvas until its future bounded-caption migration.
+ *
+ * Keeping both questions explicit prevents presentation sizing from leaking
+ * into Paper typography, while preventing Print's fixed 32-point top padding,
+ * 16-point image/caption gap, and 16-point type from being scaled from different
+ * base widths in Share versus Home.
  */
+
+import { PAPER_CANVAS_HEIGHT, PAPER_CANVAS_WIDTH } from "./paperLayout";
 
 export const PAPER_ASPECT_RATIO = 210 / 297;
 export const PRINT_ASPECT_RATIO = 53 / 86;
@@ -33,4 +44,22 @@ export function getCollapsedArtefactLayout(
     width: type === "paper" ? paperWidth : paperHeight * PRINT_ASPECT_RATIO,
     height: paperHeight,
   };
+}
+
+/**
+ * Logical renderer size before a presentation surface scales the artefact.
+ * Paper ignores the live viewport so its text wraps identically everywhere;
+ * Print retains its established viewport-derived canvas for now.
+ */
+export function getArtefactCanvasLayout(
+  windowWidth: number,
+  type: KnownArtefactType,
+): {
+  width: number;
+  height: number;
+} {
+  if (type === "paper") {
+    return { width: PAPER_CANVAS_WIDTH, height: PAPER_CANVAS_HEIGHT };
+  }
+  return getCollapsedArtefactLayout(windowWidth, type);
 }

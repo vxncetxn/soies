@@ -4,8 +4,12 @@
  * This file intentionally has no Expo filesystem dependency so renderer
  * revision changes and two-generation cleanup can be exhaustively unit-tested.
  */
-/** Bump whenever frame geometry or capture rendering changes incompatibly. */
-export const WIDGET_FRAME_RENDERER_VERSION = 2;
+/**
+ * Bump whenever frame geometry or capture rendering changes incompatibly.
+ * Revision 4 invalidates both the earlier canonical-Paper capture and the new
+ * native TextKit typography, preventing stale React-Text PNGs in widget slots.
+ */
+export const WIDGET_FRAME_RENDERER_VERSION = 4;
 /** Restricts cleanup to files owned by this feature. */
 export const WIDGET_FRAME_PREFIX = "featured-artefact-";
 

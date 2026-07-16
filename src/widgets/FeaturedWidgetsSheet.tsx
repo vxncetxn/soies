@@ -42,10 +42,11 @@ import type {
 
 import ArtefactFrame from "../components/ArtefactFrame";
 import { FRAME_BOARD_SCALE } from "../components/artefactFrameGeometry";
-import { getCollapsedArtefactLayout } from "../components/artefactLayout";
+import { getArtefactCanvasLayout } from "../components/artefactLayout";
 import { Icon } from "../components/Icon";
 import { renderArtefactContent } from "../components/renderArtefactContent";
 import { isPrintArtefact } from "../data/entries";
+import { createPaperDocument } from "../data/paperDocument";
 import { getFeaturedWidgetPickerState } from "../db/repositories/featuredWidgetSlots";
 import { cachedWidgetFrameUri } from "./widgetFrameCache";
 import { type WidgetFrameGeometry, widgetFrameGeometryFittingBoard } from "./widgetFrameGeometry";
@@ -101,7 +102,7 @@ function RawArtefactPreview({
   maxHeight: number;
 }) {
   const kind = isPrintArtefact(artefact) ? "print" : "paper";
-  const natural = getCollapsedArtefactLayout(viewportWidth, kind);
+  const natural = getArtefactCanvasLayout(viewportWidth, kind);
   const scale = Math.min(maxWidth / natural.width, maxHeight / natural.height);
   const width = natural.width * scale;
   const height = natural.height * scale;
@@ -371,7 +372,10 @@ function FramedPlaceholder({
       : slot.state === "featured"
         ? "Open Soies to refresh"
         : "Feature an artefact in Soies";
-  const placeholderArtefact = { id: `slot-${slot.slotIndex}-placeholder`, text: "" };
+  const placeholderArtefact = {
+    id: `slot-${slot.slotIndex}-placeholder`,
+    ...createPaperDocument(),
+  };
 
   return (
     <ArtefactFrame

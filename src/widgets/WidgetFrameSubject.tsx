@@ -54,12 +54,11 @@ export function WidgetFrameSubject({ artefact, onReady, onError }: WidgetFrameSu
         renderArtefactContent(artefact)
       ) : (
         <Paper
+          document={artefact}
           inkOverlayPath={artefact.inkOverlayPath}
           onInkDisplay={() => barrier.markInkReady()}
           onInkError={() => barrier.fail("ink")}
-        >
-          {artefact.text}
-        </Paper>
+        />
       )}
     </View>
   );

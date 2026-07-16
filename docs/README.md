@@ -42,14 +42,17 @@ flowchart TD
 ## Root infrastructure
 
 `src/app/_layout.tsx` keeps `GestureHandlerRootView` outermost and wraps the app
-subtree in `StrictMode`. It mounts four portal hosts:
+subtree in `StrictMode`. It mounts three portal hosts:
 
 | Host | Consumer | Placement |
 |------|----------|-----------|
 | `overlay` | Expanded `Stack` | Inside the safe area |
 | `morph` | `FocusOverlay` | Full-screen root |
 | `bloom` | `BloomPanel` | Full-screen root |
-| `create` | Create flow | Full-screen root |
+
+Create is a full-screen absolute sibling at the root rather than a fourth
+Portal. Its Bloom menu still uses `bloom`; avoiding a Portal nested inside a
+Portal keeps Fabric's native parent hierarchy unambiguous during teardown.
 
 The root `BlurTargetView` supplies Android blur sampling through
 `BlurTargetViewContext`. `blurTarget` and `blurMethod` are omitted on iOS,

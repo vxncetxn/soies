@@ -76,7 +76,7 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), **`bloom`** (BloomPanel calendar/menus), **`create`** (create flow). Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. |
+| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (BloomPanel calendar/menus). Create is a root-owned absolute sibling so its own Bloom menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. |
 | [`src/app/(tabs)/_layout.tsx`](../src/app/(tabs)/_layout.tsx) | **Tab layout.** Keeps Home centered, with the iOS-only Featured Artefacts launcher at bottom-left and Create at bottom-right. Wraps the route in `ExpandProvider`; Android/web resolve the Featured launcher to `null`. |
 | [`src/app/(tabs)/index.tsx`](../src/app/(tabs)/index.tsx) | **Home screen.** Reads date and one-shot widget commands from the URL, loads entries for that day, and renders `HomeHeader` + vertical `DayPager`. An occupied widget command targets an exact entry/artefact; an empty or unavailable command opens Featured Artefacts at its slot. |
 

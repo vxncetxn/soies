@@ -13,6 +13,8 @@ import { PortalHost, PortalProvider } from "react-native-teleport";
 import { withUniwind } from "uniwind";
 
 import { BlurTargetViewProvider } from "../components/BlurTargetViewContext";
+import { CreateProvider } from "../components/CreateContext";
+import CreateOverlay from "../components/CreateOverlay";
 import { DatabaseProvider } from "../db/DatabaseProvider";
 import { ShareProvider } from "../share/ShareContext";
 import { FeaturedWidgetsProvider } from "../widgets/FeaturedWidgetsContext";
@@ -42,23 +44,32 @@ export default function Layout() {
               <SafeAreaProvider>
                 <StatusBar style="auto" />
                 <ShareProvider>
-                  <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
+                  <CreateProvider>
+                    {/* This provider contributes React context, not a native
+                        view. It must span the root overlays because BloomPanel
+                        reads the blur target before branching by platform. */}
                     <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
-                      <DatabaseProvider>
-                        <FeaturedWidgetsProvider>
-                          <StyledSafeAreaView className="flex-1 bg-background">
-                            <Stack screenOptions={{ headerShown: false }}>
-                              <Stack.Screen name="(tabs)" />
-                            </Stack>
-                            <StyledPortalHost name="overlay" className="absolute inset-0" />
-                          </StyledSafeAreaView>
-                        </FeaturedWidgetsProvider>
-                      </DatabaseProvider>
+                      <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
+                        <DatabaseProvider>
+                          <FeaturedWidgetsProvider>
+                            <StyledSafeAreaView className="flex-1 bg-background">
+                              <Stack screenOptions={{ headerShown: false }}>
+                                <Stack.Screen name="(tabs)" />
+                              </Stack>
+                              <StyledPortalHost name="overlay" className="absolute inset-0" />
+                            </StyledSafeAreaView>
+                          </FeaturedWidgetsProvider>
+                        </DatabaseProvider>
+                      </BlurTargetView>
+                      <StyledPortalHost name="morph" className="absolute inset-0" />
+                      {/* Create is already a root-level overlay and must remain in
+                          this Fabric hierarchy. Its BloomBar portals only the small
+                          menu into `bloom`; teleporting both levels caused duplicate
+                          native-parent teardown on iOS. */}
+                      <CreateOverlay />
+                      <StyledPortalHost name="bloom" className="absolute inset-0" />
                     </BlurTargetViewProvider>
-                  </BlurTargetView>
-                  <StyledPortalHost name="morph" className="absolute inset-0" />
-                  <StyledPortalHost name="bloom" className="absolute inset-0" />
-                  <StyledPortalHost name="create" className="absolute inset-0" />
+                  </CreateProvider>
                 </ShareProvider>
               </SafeAreaProvider>
             </PortalProvider>

@@ -1,10 +1,5 @@
-export type KnownArtefactType = "paper" | "print";
-
-/** Per-type text capacity limits — enforced in authoring UI, not by the DB. */
-export const ARTEFACT_TEXT_LIMITS: Record<KnownArtefactType, number> = {
-  paper: 10_000,
-  print: 500,
-};
+/** Print retains a defensive caption ceiling in addition to its two-line UI cap. */
+export const PRINT_TEXT_HARD_LIMIT = 500;
 
 /**
  * Max artefacts on one entry during create (and save guard). Not a DB constraint

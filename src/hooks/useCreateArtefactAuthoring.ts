@@ -1,5 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from "react";
-import { TextInput } from "react-native";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   runOnJS,
   useAnimatedReaction,
@@ -8,12 +7,17 @@ import {
   type SharedValue,
 } from "react-native-reanimated";
 
+import type { ArtefactTextInputHandle } from "../components/ArtefactTextInput";
 import type { CreateArtefactPagerHandle } from "../components/CreateArtefactPager";
 
 import { SPRING_CONFIG } from "../constants/animation";
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 
 const CHROME_CROSSFADE_END = 0.5;
+// UIKit focus/blur events can arrive after React Native's JS command returns.
+// Four hundred milliseconds spans the pager jump and native responder handoff
+// without leaving blur suppression active during normal typing interactions.
+const RESPONDER_TRANSFER_GUARD_MS = 400;
 
 export type CreateExpandMode = "default" | "type" | "scribble";
 
@@ -37,18 +41,41 @@ export function useCreateArtefactAuthoring(options?: {
   const keepExpandedOnBlurRef = useRef(false);
   const suppressArtefactFocusRef = useRef(false);
   const scribbleActiveRef = useRef(false);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
+  // Dismissal crosses three schedulers: React, UIKit responder callbacks, and
+  // the Create overlay's UI-thread spring. Once closing begins, late focus or
+  // blur events must not mutate the root-owned Create subtree while Fabric is
+  // already preparing to remove its native views.
+  const dismissingRef = useRef(false);
+  const inputRefs = useRef<(ArtefactTextInputHandle | null)[]>([]);
   /** Mirrors artefact list length for sync cap checks before setState flushes. */
   const artefactCountRef = useRef(1);
   const activeIndexRef = useRef(0);
   const keepClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncExpandModeFromProgress = useCallback((expanded: boolean) => {
+    if (dismissingRef.current) {
+      return;
+    }
     if (scribbleActiveRef.current) {
       setExpandMode(expanded ? "scribble" : "default");
       return;
     }
     setExpandMode(expanded ? "type" : "default");
+  }, []);
+
+  useEffect(() => {
+    // StrictMode rehearses setup → cleanup → setup in development. Cleanup
+    // freezes late native responder events, so setup must re-arm this session;
+    // otherwise the rehearsal permanently discards every Type transition.
+    dismissingRef.current = false;
+
+    return () => {
+      dismissingRef.current = true;
+      if (keepClearTimerRef.current) {
+        clearTimeout(keepClearTimerRef.current);
+        keepClearTimerRef.current = null;
+      }
+    };
   }, []);
 
   useAnimatedReaction(
@@ -91,7 +118,7 @@ export function useCreateArtefactAuthoring(options?: {
     keepClearTimerRef.current = setTimeout(() => {
       keepExpandedOnBlurRef.current = false;
       keepClearTimerRef.current = null;
-    }, 400);
+    }, RESPONDER_TRANSFER_GUARD_MS);
   }, []);
 
   const handlePrev = useCallback(() => {
@@ -120,11 +147,21 @@ export function useCreateArtefactAuthoring(options?: {
   );
 
   const enterScribble = useCallback(() => {
-    // Scribble only from Default — blur any focused title/artefact first.
-    inputRefs.current[activeIndexRef.current]?.blur();
+    // Native Paper blur is asynchronous. Hold the expanded sheet across that
+    // responder transition exactly as Prev/Next does; otherwise a late blur
+    // could spring Scribble back to Default after we have already opened it.
     scribbleActiveRef.current = true;
+    keepExpandedOnBlurRef.current = true;
+    if (keepClearTimerRef.current) {
+      clearTimeout(keepClearTimerRef.current);
+    }
+    inputRefs.current[activeIndexRef.current]?.blur();
     setExpandMode("scribble");
     expandProgress.set(withSpring(1, SPRING_CONFIG));
+    keepClearTimerRef.current = setTimeout(() => {
+      keepExpandedOnBlurRef.current = false;
+      keepClearTimerRef.current = null;
+    }, RESPONDER_TRANSFER_GUARD_MS);
   }, [expandProgress]);
 
   const exitScribble = useCallback(() => {
@@ -145,6 +182,32 @@ export function useCreateArtefactAuthoring(options?: {
     }
     inputRefs.current[activeIndexRef.current]?.blur();
   }, [exitScribble]);
+
+  /**
+   * Freeze focus-derived state and resign every native text responder before
+   * the parent starts the root Create overlay's close animation.
+   *
+   * UIKit delivers focus and blur asynchronously, so simply calling `blur()`
+   * from a Cancel press can leave callbacks racing Fabric's later subtree
+   * removal. The refs are switched synchronously first; the screen then gets a
+   * committed Default frame before CreatePaperScreen invokes `onClose`.
+   */
+  const prepareForDismiss = useCallback(() => {
+    if (dismissingRef.current) {
+      return;
+    }
+    dismissingRef.current = true;
+    if (keepClearTimerRef.current) {
+      clearTimeout(keepClearTimerRef.current);
+      keepClearTimerRef.current = null;
+    }
+    keepExpandedOnBlurRef.current = false;
+    scribbleActiveRef.current = false;
+    suppressArtefactFocusRef.current = true;
+    inputRefs.current.forEach((input) => input?.blur());
+    setExpandMode("default");
+    expandProgress.set(0);
+  }, [expandProgress]);
 
   /**
    * Append when under the cap. Returns the new index, or null if at max.
@@ -193,6 +256,7 @@ export function useCreateArtefactAuthoring(options?: {
     handlePrev,
     handleNext,
     handleBack,
+    prepareForDismiss,
     enterScribble,
     exitScribble,
     tryAppend,

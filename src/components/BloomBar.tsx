@@ -28,7 +28,6 @@ type BloomBarProps = {
   contentKey?: string | number;
   className?: string;
   portalHostName?: string;
-  originOffset?: { x: number; y: number };
 };
 
 const BloomBar = ({
@@ -42,7 +41,6 @@ const BloomBar = ({
   contentKey,
   className,
   portalHostName = "bloom",
-  originOffset,
 }: BloomBarProps) => {
   const barRef = useAnimatedRef<Animated.View>();
   const progress = useSharedValue(0);
@@ -86,7 +84,6 @@ const BloomBar = ({
         variant={variant}
         contentKey={contentKey}
         hostName={portalHostName}
-        originOffset={originOffset}
       />
     </>
   );

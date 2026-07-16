@@ -10,7 +10,7 @@ import type { ReactNode, Ref, RefObject } from "react";
  * the keyboard (no ScrollView — caption is only 2 lines).
  *
  * Caption capacity: hard max 2 lines (visual fit via mirror Text onTextLayout)
- * plus ARTEFACT_TEXT_LIMITS.print (500) as a ceiling. No scrolling in the field.
+ * plus PRINT_TEXT_HARD_LIMIT (500) as a ceiling. No scrolling in the field.
  * Tap anywhere on the card focuses the caption input.
  *
  * Scale (inner) and pin-translate (outer) are separate nodes so translate isn't
@@ -42,8 +42,10 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 
+import type { ArtefactTextInputHandle } from "./ArtefactTextInput";
+
 import { SPRING_CONFIG } from "../constants/animation";
-import { ARTEFACT_TEXT_LIMITS } from "../constants/artefact";
+import { PRINT_TEXT_HARD_LIMIT } from "../constants/artefact";
 import {
   getCollapsedArtefactLayout,
   PRINT_FONT_FAMILY,
@@ -76,7 +78,7 @@ type EditablePrintProps = {
   value: string;
   onChangeText: (text: string) => void;
   expandProgress: SharedValue<number>;
-  textInputRef: Ref<TextInput | null>;
+  textInputRef: Ref<ArtefactTextInputHandle | null>;
   /**
    * When true, blur must not collapse Type state — used while Prev/Next moves
    * focus to another artefact without dismissing the keyboard.
@@ -121,7 +123,7 @@ const EditablePrint = ({
   const expandedScale = EXPANDED_WIDTH / BASE_WIDTH;
 
   const [captionWidth, setCaptionWidth] = useState(0);
-  const [maxChars, setMaxChars] = useState(ARTEFACT_TEXT_LIMITS.print);
+  const [maxChars, setMaxChars] = useState(PRINT_TEXT_HARD_LIMIT);
 
   const handleCaptionLayout = (event: LayoutChangeEvent) => {
     setCaptionWidth(event.nativeEvent.layout.width);
@@ -158,7 +160,7 @@ const EditablePrint = ({
       return;
     }
 
-    let nextMaxChars = ARTEFACT_TEXT_LIMITS.print;
+    let nextMaxChars = PRINT_TEXT_HARD_LIMIT;
     const last = lines.length > 0 ? lines[lines.length - 1] : null;
     if (lines.length === PRINT_MAX_CAPTION_LINES && last && last.text.length > 0) {
       const avgCharWidth = last.width / last.text.length;
@@ -171,7 +173,7 @@ const EditablePrint = ({
 
   const handleChangeText = (next: string) => {
     if (next.length < value.length) {
-      setMaxChars(ARTEFACT_TEXT_LIMITS.print);
+      setMaxChars(PRINT_TEXT_HARD_LIMIT);
     }
     onChangeText(next);
   };
