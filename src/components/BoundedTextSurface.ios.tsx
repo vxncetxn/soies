@@ -4,7 +4,7 @@
  * Paper and Print pass different configuration but share this complete bridge:
  * atomic document serialization, native controlled-event normalization,
  * responder commands, paragraph preflight, physical line-cap enforcement,
- * vertical alignment, and presentation scaling. Keeping those responsibilities
+ * horizontal/vertical alignment, and presentation scaling. Keeping those responsibilities
  * here prevents either adapter from rebuilding a subtly different WYSIWYG or
  * IME path.
  */
@@ -108,6 +108,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
         contentPadding={configuration.contentPadding}
         maximumVisibleLines={configuration.maximumVisibleLines}
         allowsParagraphPresets={configuration.allowsParagraphPresets}
+        horizontalTextAlignment={configuration.horizontalAlignment}
         centersTextVertically={configuration.verticalAlignment === "center"}
         textColor={configuration.textColor}
         placeholderTextColor={configuration.placeholderTextColor}

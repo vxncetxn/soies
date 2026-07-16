@@ -2,7 +2,7 @@
  * Canonical artefact-layout contract.
  *
  * Viewports may change only presentation scale: Paper wrapping, Print crop and
- * both complete Print caption line boxes must remain device-independent.
+ * the complete Print caption line box must remain device-independent.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -14,6 +14,7 @@ import {
 import {
   PAPER_CANVAS_HEIGHT,
   PAPER_CANVAS_WIDTH,
+  PAPER_PRESET_METRICS,
   paperCanvasScaleForDisplayWidth,
 } from "../src/components/paperLayout.ts";
 import {
@@ -21,6 +22,7 @@ import {
   PRINT_CANVAS_WIDTH,
   PRINT_CAPTION_HEIGHT,
   PRINT_CAPTION_Y,
+  PRINT_FONT_SIZE,
   PRINT_IMAGE_HEIGHT,
   PRINT_LINE_HEIGHT,
   PRINT_MAX_CAPTION_LINES,
@@ -60,16 +62,18 @@ test("Print caption composition also uses one reference canvas on every device",
   assert.deepEqual(new Set(canvases.map(({ height }) => height)), new Set([referencePaperHeight]));
 });
 
-test("Print centers up to two complete caption lines in all white space below its photo", () => {
+test("Print centers one Default-sized caption line in all white space below its photo", () => {
+  assert.equal(PRINT_MAX_CAPTION_LINES, 1);
+  assert.equal(PRINT_FONT_SIZE, PAPER_PRESET_METRICS.default.fontSize);
   assert.equal(PRINT_CAPTION_Y, PRINT_TOP_PADDING + PRINT_IMAGE_HEIGHT);
   assert.equal(PRINT_CAPTION_HEIGHT, PRINT_CANVAS_HEIGHT - PRINT_CAPTION_Y);
   assert.ok(
     PRINT_CAPTION_HEIGHT >= PRINT_LINE_HEIGHT * PRINT_MAX_CAPTION_LINES,
-    "the complete two-line block must fit before vertical centering",
+    "the complete Default line must fit before vertical centering",
   );
   assert.ok(
     (PRINT_CAPTION_HEIGHT - PRINT_LINE_HEIGHT * PRINT_MAX_CAPTION_LINES) / 2 > 0,
-    "two lines should retain equal visible white space above and below",
+    "the line should retain equal visible white space above and below",
   );
   assert.equal(printCanvasScaleForDisplayWidth(PRINT_CANVAS_WIDTH), 1);
   assert.equal(printCanvasScaleForDisplayWidth(688), 688 / PRINT_CANVAS_WIDTH);

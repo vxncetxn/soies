@@ -6,10 +6,11 @@
  */
 /**
  * Bump whenever frame geometry or capture rendering changes incompatibly.
- * Revision 5 invalidates captures created before Print adopted its canonical
- * image/caption geometry and native bounded-text renderer.
+ * Revision 6 invalidates captures whose Print captions still use the former
+ * two-line, left-aligned policy; data revision alone cannot detect that visual
+ * renderer change.
  */
-export const WIDGET_FRAME_RENDERER_VERSION = 5;
+export const WIDGET_FRAME_RENDERER_VERSION = 6;
 /** Restricts cleanup to files owned by this feature. */
 export const WIDGET_FRAME_PREFIX = "featured-artefact-";
 

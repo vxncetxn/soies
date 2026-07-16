@@ -2,7 +2,7 @@
  * CreatePrintScreen — author a multi-artefact Print entry (up to 5).
  *
  * Every page uses the same canonical Print canvas as Home/frame/share. Type
- * delegates its fixed two-line caption policy to the shared native bounded-text
+ * delegates its fixed one-line caption policy to the shared native bounded-text
  * engine. Scribble keeps that canvas and coordinate space, while the shared
  * two-phase dismissal hook settles native responders before the Create overlay
  * unmounts.

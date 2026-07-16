@@ -3,8 +3,8 @@
  *
  * The module remains stored under `paper-text-input` for compatibility, but the
  * native engine is shared: Paper enables paragraph presets and physical-height
- * capacity; Print disables presets, supplies a fixed two-line caption cap, and
- * vertically centers its rendered block.
+ * capacity; Print disables presets, supplies a fixed one-line caption cap, and
+ * centers its rendered line on both axes.
  */
 import type { ColorValue, StyleProp, ViewStyle } from "react-native";
 
@@ -57,11 +57,13 @@ export type PaperTextInputViewProps = {
   canonicalHeight: number;
   /** Equal inset on all logical edges; scaled only for the displayed surface. */
   contentPadding: number;
-  /** Zero means physical bounds only; Print configures its fixed two-line cap. */
+  /** Zero means physical bounds only; Print configures its fixed one-line cap. */
   maximumVisibleLines: number;
   /** False makes Print Default-only and skips paragraph formatting preflight. */
   allowsParagraphPresets: boolean;
-  /** Moves short Print blocks within their caption box; Paper remains top-aligned. */
+  /** Paper follows its writing direction; Print centers its caption line. */
+  horizontalTextAlignment: "natural" | "center";
+  /** Moves Print's line within its caption box; Paper remains top-aligned. */
   centersTextVertically: boolean;
   /** Fixed authored-content foreground; independent of adaptive app chrome. */
   textColor: ColorValue;

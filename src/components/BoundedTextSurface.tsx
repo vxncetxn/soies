@@ -36,6 +36,9 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
     /** Supplies the shared pager responder seam when native TextKit is unavailable. */
     const inputRef = useRef<TextInput>(null);
     const scale = clampArtefactTextPresentationScale(presentationScale);
+    // React Native names UIKit's `natural` writing-direction behavior `auto`.
+    // Resolve the vocabulary once so editable and read-only fallbacks cannot drift.
+    const horizontalTextAlign = configuration.horizontalAlignment === "center" ? "center" : "auto";
 
     useImperativeHandle(ref, () => ({
       focus: () => inputRef.current?.focus(),
@@ -71,6 +74,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
               padding: configuration.contentPadding * scale,
               fontFamily: configuration.fontFamily,
               color: configuration.textColor,
+              textAlign: horizontalTextAlign,
               fontSize: configuration.presetMetrics.default.fontSize * scale,
               lineHeight: configuration.presetMetrics.default.lineHeight * scale,
             },
@@ -94,7 +98,11 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
           allowFontScaling={false}
           style={[
             styles.text,
-            { fontFamily: configuration.fontFamily, color: configuration.textColor },
+            {
+              fontFamily: configuration.fontFamily,
+              color: configuration.textColor,
+              textAlign: horizontalTextAlign,
+            },
           ]}
         >
           {paragraphs.map((paragraph, index) => {

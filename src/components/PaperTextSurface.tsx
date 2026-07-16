@@ -35,6 +35,7 @@ const PAPER_TEXT_CONFIGURATION = {
   contentPadding: PAPER_PADDING,
   maximumVisibleLines: 0,
   allowsParagraphPresets: true,
+  horizontalAlignment: "natural",
   verticalAlignment: "top",
   textColor: PAPER_TEXT_COLOR,
   placeholderTextColor: PAPER_PLACEHOLDER_COLOR,

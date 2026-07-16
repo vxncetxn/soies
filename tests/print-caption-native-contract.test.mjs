@@ -22,6 +22,18 @@ const printCaptionSource = readFileSync(
   new URL("../src/components/PrintCaptionSurface.tsx", import.meta.url),
   "utf8",
 );
+const paperTextSource = readFileSync(
+  new URL("../src/components/PaperTextSurface.tsx", import.meta.url),
+  "utf8",
+);
+const boundedIosSource = readFileSync(
+  new URL("../src/components/BoundedTextSurface.ios.tsx", import.meta.url),
+  "utf8",
+);
+const boundedFallbackSource = readFileSync(
+  new URL("../src/components/BoundedTextSurface.tsx", import.meta.url),
+  "utf8",
+);
 const nativeViewSource = readFileSync(
   new URL("../modules/paper-text-input/ios/PaperTextInputView.swift", import.meta.url),
   "utf8",
@@ -38,10 +50,22 @@ test("Print read and edit surfaces share the bounded native caption adapter", ()
   );
 });
 
-test("Print has one fixed two-line policy with no authoring experiment state", () => {
+test("Print has one fixed one-line policy with no authoring experiment state", () => {
   assert.match(printCaptionSource, /maximumVisibleLines:\s*PRINT_MAX_CAPTION_LINES/);
   assert.doesNotMatch(createPrintSource, /lineLimit|PrintCaptionLineToolbar/);
   assert.doesNotMatch(nativeViewSource, /trySetMaximumVisibleLines|onPaperLineLimitStateChange/);
+});
+
+test("Print center-aligns its caption without changing Paper's natural writing direction", () => {
+  assert.match(printCaptionSource, /horizontalAlignment:\s*"center"/);
+  assert.match(paperTextSource, /horizontalAlignment:\s*"natural"/);
+  assert.match(boundedIosSource, /horizontalTextAlignment=\{configuration\.horizontalAlignment\}/);
+  assert.match(nativeViewSource, /paragraph\.alignment = horizontalTextAlignment/);
+  assert.match(nativeViewSource, /placeholderLabel\.textAlignment = horizontalTextAlignment/);
+  assert.match(
+    boundedFallbackSource,
+    /configuration\.horizontalAlignment === "center" \? "center" : "auto"/,
+  );
 });
 
 test("Print vertically centers the live native text block without a rasterizing transform", () => {

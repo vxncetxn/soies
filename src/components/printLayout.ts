@@ -5,8 +5,8 @@
  * viewport. Home, Create, frames, widgets and Share scale this complete canvas;
  * caption width, font metrics and line capacity never derive from the viewing
  * device. The caption box spans the complete white region below the photo; the
- * native adapter independently caps text at two physical lines and centers the
- * actual one- or two-line block inside that region.
+ * native adapter independently caps text at one physical line and centers that
+ * line inside the complete remaining region.
  */
 import type { PaperParagraphPreset } from "../data/paperDocument";
 
@@ -18,7 +18,7 @@ import {
   ARTEFACT_TEXT_PLACEHOLDER_COLOR,
   type ArtefactTextMetrics,
 } from "./artefactTextStyle";
-import { PAPER_CANVAS_HEIGHT } from "./paperLayout";
+import { PAPER_CANVAS_HEIGHT, PAPER_PRESET_METRICS } from "./paperLayout";
 
 /** Portrait Print card width / height, retained from the established design. */
 export const PRINT_ASPECT_RATIO = 53 / 86;
@@ -42,10 +42,10 @@ export const PRINT_IMAGE_WIDTH = PRINT_CONTENT_WIDTH;
 /** Crop height follows the established source aspect rather than the device. */
 export const PRINT_IMAGE_HEIGHT = PRINT_IMAGE_WIDTH / PRINT_IMAGE_ASPECT_RATIO;
 
-/** Print has one fixed type size; all native preset slots receive these metrics. */
-export const PRINT_FONT_SIZE = 16;
-/** Explicit line boxes disable platform-dependent font-leading differences. */
-export const PRINT_LINE_HEIGHT = PRINT_FONT_SIZE * 1.4;
+/** Print follows Paper's Default optical scale instead of owning a parallel size token. */
+export const PRINT_FONT_SIZE = PAPER_PRESET_METRICS.default.fontSize;
+/** The shared Default line box prevents Print and Paper typography from drifting separately. */
+export const PRINT_LINE_HEIGHT = PAPER_PRESET_METRICS.default.lineHeight;
 /**
  * Print disables preset commands, but the shared native engine requires a
  * complete preset table. Equal values make every defensive lookup Default-only.
@@ -55,8 +55,8 @@ export const PRINT_TEXT_METRICS: Record<PaperParagraphPreset, ArtefactTextMetric
   large: { fontSize: PRINT_FONT_SIZE, lineHeight: PRINT_LINE_HEIGHT },
   "x-large": { fontSize: PRINT_FONT_SIZE, lineHeight: PRINT_LINE_HEIGHT },
 };
-/** Every Print surface accepts at most two physical lines. */
-export const PRINT_MAX_CAPTION_LINES = 2;
+/** Every Print surface accepts at most one physical caption line. */
+export const PRINT_MAX_CAPTION_LINES = 1;
 /** Caption uses the same left edge as the photo. */
 export const PRINT_CAPTION_X = PRINT_CONTENT_X;
 /**
@@ -66,7 +66,7 @@ export const PRINT_CAPTION_X = PRINT_CONTENT_X;
 export const PRINT_CAPTION_Y = PRINT_TOP_PADDING + PRINT_IMAGE_HEIGHT;
 /** Caption wraps against exactly the same width as the photo. */
 export const PRINT_CAPTION_WIDTH = PRINT_CONTENT_WIDTH;
-/** Complete remaining card height; native line count still enforces the two-line cap. */
+/** Complete remaining card height; native line count still enforces the one-line cap. */
 export const PRINT_CAPTION_HEIGHT = PRINT_CANVAS_HEIGHT - PRINT_CAPTION_Y;
 
 /** React Native alias shared with Paper's JavaScript fallback. */

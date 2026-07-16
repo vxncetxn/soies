@@ -3,7 +3,7 @@
  *
  * Paper supplies a styled multi-paragraph document and an unconstrained line
  * count inside its physical page. Print supplies Default-only text, a fixed
- * two-line cap, and centered vertical alignment. The native component,
+ * one-line cap, and centered horizontal/vertical alignment. The native component,
  * controlled-event ordering, responder commands, and capacity oracle remain
  * identical for both adapters.
  */
@@ -35,7 +35,9 @@ export type BoundedTextSurfaceConfiguration = {
   maximumVisibleLines: number;
   /** False keeps Print Default-only and skips paragraph-toolbar work. */
   allowsParagraphPresets: boolean;
-  /** Paper begins at its top inset; Print centers its one- or two-line block. */
+  /** Paper follows each paragraph's writing direction; Print centers its single line. */
+  horizontalAlignment: "natural" | "center";
+  /** Paper begins at its top inset; Print centers its single line. */
   verticalAlignment: "top" | "center";
   /** Fixed authored-content foreground independent of system appearance. */
   textColor: string;

@@ -51,7 +51,7 @@ private struct NativeTextDocument: Equatable {
  * Paper is the first adapter, but the engine accepts canonical geometry,
  * typography presets, presentation scale, and an optional visible-line limit.
  * Print captions reuse the same pre-paint acceptance path with one Default
- * preset, a fixed two-line limit, and vertical centering for shorter content.
+ * preset, a fixed one-line limit, and centering on both axes.
  *
  * There are intentionally two coordinate systems:
  *   1. Candidate documents are always laid out in the canonical artefact box.
@@ -107,10 +107,12 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   private var canonicalHeight: CGFloat = 438.43
   /** Sole logical inset; UITextView's implicit padding is disabled during init. */
   private var canonicalContentPadding: CGFloat = 24
-  /** Zero means physical height only; Print supplies its fixed two-line cap. */
+  /** Zero means physical height only; Print supplies its fixed one-line cap. */
   private var maximumVisibleLines = 0
   /** Print is Default-only; Paper enables selection-aware paragraph commands. */
   private var allowsParagraphPresets = true
+  /** Print centers each paragraph; Paper follows the paragraph's writing direction. */
+  private var horizontalTextAlignment = NSTextAlignment.natural
   /** Print centers its complete line block; Paper preserves its top text origin. */
   private var centersTextVertically = false
   /** Initial sRGB values prevent a wrong-color frame before Expo applies React props. */
@@ -154,12 +156,14 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     textView.textContainer.heightTracksTextView = true
     textView.layoutManager.usesFontLeading = false
     textView.adjustsFontForContentSizeCategory = false
+    textView.textAlignment = horizontalTextAlignment
     textView.accessibilityLabel = "Artefact text"
     addSubview(textView)
 
     // The placeholder is display-only and cannot steal the full-canvas input
     // target. It uses the exact Default line box at the presentation scale.
     placeholderLabel.numberOfLines = 0
+    placeholderLabel.textAlignment = horizontalTextAlignment
     placeholderLabel.isUserInteractionEnabled = false
     placeholderLabel.isAccessibilityElement = false
     addSubview(placeholderLabel)
@@ -174,7 +178,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
    * Print's offset is applied through native frame and text-container geometry,
    * never a transform. Increasing the frame by the same amount added to the top
    * inset preserves the canonical usable height, so visual centering cannot
-   * change wrap or two-line capacity. Paper's disabled flag resolves to zero and
+   * change wrap or one-line capacity. Paper's disabled flag resolves to zero and
    * retains its established top origin.
    */
   override func layoutSubviews() {
@@ -192,7 +196,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     let verticalOffset = verticalTextOffset()
     // Add the offset to both the top inset and the view's clipped bottom edge.
     // Their difference leaves TextKit's usable height unchanged, so centering
-    // cannot reduce two-line capacity. Native frame/inset geometry also avoids
+    // cannot reduce one-line capacity. Native frame/inset geometry also avoids
     // the transform rasterization that previously softened enlarged text.
     textView.frame = CGRect(
       x: bounds.minX,
@@ -325,7 +329,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
 
   /**
    * Apply the adapter's fixed line cap on UIKit's main thread.
-   * Zero leaves Paper governed by canonical height; Print supplies two.
+   * Zero leaves Paper governed by canonical height; Print supplies one.
    */
   func setMaximumVisibleLines(_ value: Int) {
     maximumVisibleLines = max(0, value)
@@ -339,6 +343,21 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   func setAllowsParagraphPresets(_ value: Bool) {
     allowsParagraphPresets = value
     reportSelectionState()
+  }
+
+  /**
+   * Apply the adapter's horizontal paragraph origin on UIKit's main thread.
+   *
+   * Both live and off-screen attributed strings read this value, so centering
+   * changes presentation without creating a second wrapping or capacity path.
+   * The UILabel property keeps Print's empty prompt on the same center axis as
+   * its caret and accepted caption.
+   */
+  func setHorizontalTextAlignment(_ value: String) {
+    horizontalTextAlignment = value == "center" ? .center : .natural
+    textView.textAlignment = horizontalTextAlignment
+    placeholderLabel.textAlignment = horizontalTextAlignment
+    applyPresentationConfiguration()
   }
 
   /**
@@ -560,6 +579,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     paragraph.paragraphSpacing = 0
     paragraph.paragraphSpacingBefore = 0
     paragraph.hyphenationFactor = 0
+    paragraph.alignment = horizontalTextAlignment
     let baselineOffset = max(0, (lineHeight - resolvedFont.lineHeight) / 2)
     return [
       .font: resolvedFont,
@@ -663,8 +683,8 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
    *
    * This is presentation-only and runs on UIKit's main thread during layout.
    * Canonical measurement remains top-origin, so centering cannot change wrap or
-   * acceptance. Two full lines consume the box and produce zero; one line uses
-   * half the unused height. Pixel alignment avoids softening the native baseline.
+   * acceptance. Print's sole line uses half the unused height. Pixel alignment
+   * avoids softening the native baseline.
    */
   private func verticalTextOffset() -> CGFloat {
     guard centersTextVertically else {
@@ -811,7 +831,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   /**
    * Canonical TextKit is the single capacity oracle for all devices and scales.
    * `extraLineFragmentUsedRect` reserves a physical blank line after a trailing
-   * newline. Print's configured two-line cap is checked after the same physical
+   * newline. Print's configured one-line cap is checked after the same physical
    * height measurement; Paper uses zero to rely on page height alone.
    */
   private func candidateFits(_ document: NativeTextDocument) -> Bool {

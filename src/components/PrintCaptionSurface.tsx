@@ -3,8 +3,8 @@
  *
  * Persistence remains the historical plain `text` string. At the shared native
  * boundary the adapter wraps it in a Default-only paragraph document, then
- * unwraps accepted events back to text. Its policy is now final: at most two
- * physical lines, with the actual one- or two-line block vertically centered.
+ * unwraps accepted events back to text. Its policy is one Default-sized physical
+ * line, centered horizontally and vertically in the caption region.
  * This keeps Print storage simple while reusing Paper's exact pre-paint edit,
  * paste, IME, placeholder and controlled acknowledgement machinery.
  */
@@ -57,6 +57,7 @@ const PRINT_CAPTION_CONFIGURATION = {
   contentPadding: 0,
   maximumVisibleLines: PRINT_MAX_CAPTION_LINES,
   allowsParagraphPresets: false,
+  horizontalAlignment: "center",
   verticalAlignment: "center",
   textColor: PRINT_TEXT_COLOR,
   placeholderTextColor: PRINT_PLACEHOLDER_COLOR,

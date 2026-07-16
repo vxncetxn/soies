@@ -61,6 +61,9 @@ public class PaperTextInputModule: Module {
       Prop("allowsParagraphPresets") { (view: PaperTextInputView, value: Bool) in
         view.setAllowsParagraphPresets(value)
       }
+      Prop("horizontalTextAlignment") { (view: PaperTextInputView, value: String) in
+        view.setHorizontalTextAlignment(value)
+      }
       Prop("centersTextVertically") { (view: PaperTextInputView, value: Bool) in
         view.setCentersTextVertically(value)
       }
