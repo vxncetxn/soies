@@ -35,6 +35,8 @@
       [
         "expo-widgets",
         {
+          "bundleIdentifier": "com.vance.soies.widgetextension",
+          "groupIdentifier": "group.com.vance.soies",
           "enableAndroid": false,
           "widgets": [
             {
@@ -98,7 +100,7 @@
     "name": "soies",
     "slug": "soies",
     "ios": {
-      "bundleIdentifier": "com.anonymous.soies",
+      "bundleIdentifier": "com.vance.soies",
       "deploymentTarget": "17.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -118,7 +120,7 @@
       }
     },
     "android": {
-      "package": "com.anonymous.soies",
+      "package": "com.vance.soies",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
