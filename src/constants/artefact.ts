@@ -1,6 +1,3 @@
-/** Print retains a defensive caption ceiling in addition to its two-line UI cap. */
-export const PRINT_TEXT_HARD_LIMIT = 500;
-
 /**
  * Max artefacts on one entry during create (and save guard). Not a DB constraint
  * — see ADR-0007.

@@ -1,11 +1,10 @@
 /**
  * TypeScript contract for the native bounded TextKit surface.
  *
- * The module remains stored under `paper-text-input` because Paper is its first
- * consumer, but the geometry and line-limit props are deliberately generic: a
- * future Print adapter can expose only Default and pass
- * `maximumVisibleLines=2` without rebuilding the synchronous native acceptance
- * path. Paper remains the only adapter in this change set.
+ * The module remains stored under `paper-text-input` for compatibility, but the
+ * native engine is shared: Paper enables paragraph presets and physical-height
+ * capacity; Print disables presets, supplies a fixed two-line caption cap, and
+ * vertically centers its rendered block.
  */
 import type { ColorValue, StyleProp, ViewStyle } from "react-native";
 
@@ -58,8 +57,12 @@ export type PaperTextInputViewProps = {
   canonicalHeight: number;
   /** Equal inset on all logical edges; scaled only for the displayed surface. */
   contentPadding: number;
-  /** Zero means physical bounds only; Print can later configure two lines. */
+  /** Zero means physical bounds only; Print configures its fixed two-line cap. */
   maximumVisibleLines: number;
+  /** False makes Print Default-only and skips paragraph formatting preflight. */
+  allowsParagraphPresets: boolean;
+  /** Moves short Print blocks within their caption box; Paper remains top-aligned. */
+  centersTextVertically: boolean;
   /** Fixed authored-content foreground; independent of adaptive app chrome. */
   textColor: ColorValue;
   /** Authoring prompt color, kept separate from durable content attributes. */

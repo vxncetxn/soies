@@ -15,10 +15,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { Dimensions, PixelRatio } from "react-native";
 
-/** Fraction of the polaroid card width occupied by the photo (`Print.tsx`). */
-const PRINT_IMAGE_WIDTH_FRACTION = 0.8679;
-/** `--aspect-print-image` (244/367) — height / width of the photo frame. */
-const PRINT_IMAGE_ASPECT = 367 / 244;
+import { PRINT_CONTENT_WIDTH_RATIO, PRINT_IMAGE_ASPECT_RATIO } from "../components/printLayout";
 
 export type PickPrintImageSource = "camera" | "library";
 
@@ -38,8 +35,8 @@ export function expandedPrintImagePixelSize(windowWidth?: number): {
 } {
   const widthPt = windowWidth ?? Dimensions.get("window").width;
   const expandedCardWidth = widthPt - 20;
-  const imageWidthPt = expandedCardWidth * PRINT_IMAGE_WIDTH_FRACTION;
-  const imageHeightPt = imageWidthPt * PRINT_IMAGE_ASPECT;
+  const imageWidthPt = expandedCardWidth * PRINT_CONTENT_WIDTH_RATIO;
+  const imageHeightPt = imageWidthPt / PRINT_IMAGE_ASPECT_RATIO;
   const ratio = PixelRatio.get();
   return {
     width: Math.max(1, Math.round(imageWidthPt * ratio)),

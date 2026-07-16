@@ -12,11 +12,12 @@
  * which keeps read glyphs sharp without reflow. Frames, widgets, and Share keep
  * the default scale of 1 and continue scaling/capturing the complete canvas.
  */
-import { createContext, type PropsWithChildren, useContext } from "react";
+import { type PropsWithChildren } from "react";
 import { StyleSheet, View } from "react-native";
 
 import type { PaperDocument } from "../data/paperDocument";
 
+import { useArtefactPresentationScale } from "./ArtefactPresentationScale";
 import InkOverlay from "./InkOverlay";
 import {
   PAPER_CANVAS_HEIGHT,
@@ -41,28 +42,9 @@ type PaperCanvasProps = PropsWithChildren<{
   presentationScale?: number;
 }>;
 
-/** Defaults capture/frame surfaces to the canonical one-point raster scale. */
-const PaperPresentationScaleContext = createContext(1);
-
-/**
- * Supply Home's final expanded raster scale without leaking it into document
- * layout. ArtefactWrapper owns this because it owns the collapsed↔expanded
- * transform; Paper only consumes the resulting proportional surface scale.
- */
-export function PaperPresentationScaleProvider({
-  presentationScale,
-  children,
-}: PropsWithChildren<{ presentationScale: number }>) {
-  return (
-    <PaperPresentationScaleContext value={clampPaperPresentationScale(presentationScale)}>
-      {children}
-    </PaperPresentationScaleContext>
-  );
-}
-
 /** Proportionally rasterized page chrome shared by output and authoring. */
 export function PaperCanvas({ children, presentationScale }: PaperCanvasProps) {
-  const inheritedScale = useContext(PaperPresentationScaleContext);
+  const inheritedScale = useArtefactPresentationScale();
   const scale = clampPaperPresentationScale(presentationScale ?? inheritedScale);
 
   return (
@@ -82,7 +64,7 @@ export function PaperCanvas({ children, presentationScale }: PaperCanvasProps) {
 }
 
 const Paper = ({ document, inkOverlayPath, onInkDisplay, onInkError }: PaperProps) => {
-  const presentationScale = useContext(PaperPresentationScaleContext);
+  const presentationScale = useArtefactPresentationScale();
 
   return (
     <PaperCanvas>

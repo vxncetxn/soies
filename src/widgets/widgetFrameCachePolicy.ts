@@ -6,10 +6,10 @@
  */
 /**
  * Bump whenever frame geometry or capture rendering changes incompatibly.
- * Revision 4 invalidates both the earlier canonical-Paper capture and the new
- * native TextKit typography, preventing stale React-Text PNGs in widget slots.
+ * Revision 5 invalidates captures created before Print adopted its canonical
+ * image/caption geometry and native bounded-text renderer.
  */
-export const WIDGET_FRAME_RENDERER_VERSION = 4;
+export const WIDGET_FRAME_RENDERER_VERSION = 5;
 /** Restricts cleanup to files owned by this feature. */
 export const WIDGET_FRAME_PREFIX = "featured-artefact-";
 

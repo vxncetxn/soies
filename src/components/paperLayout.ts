@@ -14,6 +14,17 @@
  * this canvas would make a saved page reflow differently on another device.
  */
 import type { PaperParagraphPreset } from "../data/paperDocument";
+import type { ArtefactTextMetrics } from "./artefactTextStyle";
+
+import {
+  ARTEFACT_TEXT_COLOR,
+  ARTEFACT_TEXT_FONT_FAMILY,
+  ARTEFACT_TEXT_MIN_PRESENTATION_SCALE,
+  ARTEFACT_TEXT_NATIVE_FONT_FAMILY,
+  ARTEFACT_TEXT_PLACEHOLDER,
+  ARTEFACT_TEXT_PLACEHOLDER_COLOR,
+  clampArtefactTextPresentationScale,
+} from "./artefactTextStyle";
 
 /** The viewport on which the original 40-point Paper gutters were designed. */
 export const PAPER_REFERENCE_VIEWPORT_WIDTH = 390;
@@ -26,19 +37,14 @@ export const PAPER_PADDING = 24;
 export const PAPER_TEXT_WIDTH = PAPER_CANVAS_WIDTH - PAPER_PADDING * 2;
 export const PAPER_TEXT_HEIGHT = PAPER_CANVAS_HEIGHT - PAPER_PADDING * 2;
 /** Prevent a zero-sized raster/font request while a responsive host is mounting. */
-export const PAPER_MIN_PRESENTATION_SCALE = 0.01;
+export const PAPER_MIN_PRESENTATION_SCALE = ARTEFACT_TEXT_MIN_PRESENTATION_SCALE;
 
 /** Expo/RN registration alias used only by JavaScript-rendered fallbacks. */
-export const PAPER_FONT_FAMILY = "ABCStefan-Simple-Trial";
+export const PAPER_FONT_FAMILY = ARTEFACT_TEXT_FONT_FAMILY;
 /** UIKit requires the font file's PostScript name, not Expo's registration alias. */
-export const PAPER_NATIVE_FONT_FAMILY = "ABCStefanUnlicensedTrial-Simple";
+export const PAPER_NATIVE_FONT_FAMILY = ARTEFACT_TEXT_NATIVE_FONT_FAMILY;
 
-export type PaperPresetMetrics = {
-  /** Font size in canonical Paper points, before presentation raster scaling. */
-  fontSize: number;
-  /** Fixed canonical line box; explicit values prevent platform font leading. */
-  lineHeight: number;
-};
+export type PaperPresetMetrics = ArtefactTextMetrics;
 
 /**
  * Paragraph-level typography tokens shared by native editing and final output.
@@ -55,9 +61,9 @@ export const PAPER_PRESET_METRICS: Record<PaperParagraphPreset, PaperPresetMetri
 export const PAPER_FONT_SIZE = PAPER_PRESET_METRICS.default.fontSize;
 export const PAPER_LINE_HEIGHT = PAPER_PRESET_METRICS.default.lineHeight;
 /** Exact sRGB equivalent of the theme's fixed Paper foreground token. */
-export const PAPER_TEXT_COLOR = "#0C0A09";
-export const PAPER_PLACEHOLDER_COLOR = "#79716B";
-export const PAPER_PLACEHOLDER = "TAP TO START TYPING";
+export const PAPER_TEXT_COLOR = ARTEFACT_TEXT_COLOR;
+export const PAPER_PLACEHOLDER_COLOR = ARTEFACT_TEXT_PLACEHOLDER_COLOR;
+export const PAPER_PLACEHOLDER = ARTEFACT_TEXT_PLACEHOLDER;
 
 /**
  * Convert a responsive display width into the sole transform Paper may use.
@@ -69,5 +75,5 @@ export function paperCanvasScaleForDisplayWidth(displayWidth: number): number {
 
 /** Clamp transient pre-layout values without changing any real device presentation scale. */
 export function clampPaperPresentationScale(scale: number): number {
-  return Math.max(PAPER_MIN_PRESENTATION_SCALE, scale);
+  return clampArtefactTextPresentationScale(scale);
 }

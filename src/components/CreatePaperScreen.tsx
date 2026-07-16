@@ -38,6 +38,7 @@ import { createPaperDocument } from "../data/paperDocument";
 import { savePaperEntry } from "../data/savePaperEntry";
 import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
 import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
+import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
 import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
@@ -108,12 +109,6 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
   const inkCanvasRefs = useRef<Record<string, ArtefactInkCanvasHandle | null>>({});
   /** Paper-only extension of the shared focus refs, used by the preset toolbar. */
   const paperInputRefs = useRef<(PaperTextSurfaceHandle | null)[]>([]);
-  /** Makes Cancel/save dismissal idempotent across rapid or stale callbacks. */
-  const closeRequestedRef = useRef(false);
-  /** Cancels the handoff frame if an ancestor removes this screen first. */
-  const closeFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  /** Locks authoring controls during the responder-to-overlay close handoff. */
-  const [closing, setClosing] = useState(false);
 
   const resetVerticalScroll = useCallback((index: number) => {
     scrollRefs.current[index]?.scrollTo({ y: 0, animated: false });
@@ -147,15 +142,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
     syncArtefactCount(artefacts.length);
   }, [artefacts.length, syncArtefactCount]);
 
-  useEffect(
-    () => () => {
-      if (closeFrameRef.current !== null) {
-        cancelAnimationFrame(closeFrameRef.current);
-        closeFrameRef.current = null;
-      }
-    },
-    [],
-  );
+  const { closing, handleClose } = useCreateScreenDismissal(onClose, prepareForDismiss);
 
   const {
     inkTool,
@@ -194,24 +181,6 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
       });
     });
   };
-
-  /**
-   * Resign native TextKit first, then begin the existing Create close spring.
-   * The frame boundary gives React/Fabric one stable committed tree before the
-   * root-owned screen's eventual unmount; the context still owns the visual animation.
-   */
-  const handleClose = useCallback(() => {
-    if (closeRequestedRef.current) {
-      return;
-    }
-    closeRequestedRef.current = true;
-    setClosing(true);
-    prepareForDismiss();
-    closeFrameRef.current = requestAnimationFrame(() => {
-      closeFrameRef.current = null;
-      onClose();
-    });
-  }, [onClose, prepareForDismiss]);
 
   const { saving, submit } = useCreateEntrySave({
     setSessionBusy: setCreateSessionBusy,

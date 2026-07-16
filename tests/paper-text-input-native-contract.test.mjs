@@ -37,7 +37,7 @@ test("focused Paper authoring reaches screen space through one identity scale", 
   );
 });
 
-test("expanded Home Paper reaches screen space through one device-sized identity scale", () => {
+test("expanded Home artefact text reaches screen space through one device-sized identity scale", () => {
   assert.doesNotMatch(
     artefactWrapperSource,
     /transform:\s*\[\s*\{\s*scale:\s*paperCollapsedScale\s*\}\s*\]/,
@@ -45,13 +45,30 @@ test("expanded Home Paper reaches screen space through one device-sized identity
   );
   assert.match(
     artefactWrapperSource,
-    /kind === "paper"[\s\S]*?interpolate\([\s\S]*?\[0, 1\][\s\S]*?\[paperCollapsedScale, 1\]/,
-    "Paper itself must animate from collapsed size to identity at the device's expanded size",
+    /interpolate\([\s\S]*?\[0, 1\][\s\S]*?\[collapsedPresentationScale, 1\]/,
+    "Paper and Print must animate from collapsed size to identity at the device's expanded size",
   );
   assert.match(
     artefactWrapperSource,
     /width:\s*EXPANDED_WIDTH/,
     "the backing surface must follow the actual device width, including large iPads",
+  );
+  assert.match(
+    artefactWrapperSource,
+    /ArtefactPresentationScaleProvider presentationScale=\{presentationScale\}/,
+    "both renderers must receive the same high-resolution presentation scale",
+  );
+});
+
+test("unknown future artefacts retain the legacy non-text presentation path", () => {
+  assert.match(
+    artefactWrapperSource,
+    /hasCanonicalTextPresentation = type === "paper" \|\| type === "print"/,
+  );
+  assert.match(
+    artefactWrapperSource,
+    /hasCanonicalTextPresentation \? \([\s\S]*?<ArtefactPresentationScaleProvider/,
+    "the sharp native-text backing must be opt-in for known authored-text types",
   );
 });
 
@@ -71,8 +88,8 @@ test("delegate-bypass repair preserves accepted text and never trusts length alo
   );
   assert.ok(didChange, "textViewDidChange implementation must remain discoverable");
   assert.match(didChange[0], /longestFittingReplacementPrefix/);
-  assert.match(didChange[0], /isLegacyRecoveryDeletion/);
-  assert.doesNotMatch(didChange[0], /candidateFits\(candidate\)\s*\|\|\s*isShrinking/);
+  assert.match(didChange[0], /if candidateFits\(candidate\)/);
+  assert.doesNotMatch(didChange[0], /isLegacyRecoveryDeletion|isPureDeletion|isShrinking/);
 });
 
 test("Paper placeholder is laid out at the canonical text origin, not centered in the page", () => {

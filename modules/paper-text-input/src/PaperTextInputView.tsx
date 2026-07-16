@@ -3,7 +3,7 @@
  *
  * `requireNativeView` installs Expo's generated props, direct events, and async
  * view functions. The explicit ref cast preserves those native commands for
- * `PaperTextSurface.ios` without exposing the untyped host component elsewhere.
+ * `BoundedTextSurface.ios` without exposing the untyped host component elsewhere.
  */
 import { requireNativeView } from "expo";
 import { forwardRef, type ComponentType, type RefAttributes } from "react";

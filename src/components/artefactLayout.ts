@@ -7,26 +7,36 @@
  *      height from 40-point screen gutters; Print reuses the height and derives
  *      its narrower width from the 53:86 card ratio.
  *   2. `getArtefactCanvasLayout` answers which coordinate system content is
- *      composed in. Paper always returns its fixed document canvas so text
- *      cannot reflow by device or output surface. Print retains the responsive
- *      canvas until its future bounded-caption migration.
+ *      composed in. Paper and Print now both return fixed reference canvases so
+ *      neither text region can reflow by device or output surface.
  *
  * Keeping both questions explicit prevents presentation sizing from leaking
- * into Paper typography, while preventing Print's fixed 32-point top padding,
- * 16-point image/caption gap, and 16-point type from being scaled from different
+ * into Paper typography, while preventing Print's fixed top padding,
+ * image/caption gap, and type from being scaled from different
  * base widths in Share versus Home.
  */
 
 import { PAPER_CANVAS_HEIGHT, PAPER_CANVAS_WIDTH } from "./paperLayout";
+import {
+  PRINT_ASPECT_RATIO,
+  PRINT_CANVAS_HEIGHT,
+  PRINT_CANVAS_WIDTH,
+  PRINT_FONT_FAMILY,
+  PRINT_FONT_SIZE,
+  PRINT_LINE_HEIGHT,
+  PRINT_MAX_CAPTION_LINES,
+} from "./printLayout";
+
+export {
+  PRINT_ASPECT_RATIO,
+  PRINT_FONT_FAMILY,
+  PRINT_FONT_SIZE,
+  PRINT_LINE_HEIGHT,
+  PRINT_MAX_CAPTION_LINES,
+};
 
 export const PAPER_ASPECT_RATIO = 210 / 297;
-export const PRINT_ASPECT_RATIO = 53 / 86;
 export const COLLAPSED_DECK_HORIZONTAL_GUTTER = 80;
-
-export const PRINT_FONT_FAMILY = "ABCStefan-Simple-Trial";
-export const PRINT_FONT_SIZE = 16;
-export const PRINT_LINE_HEIGHT = PRINT_FONT_SIZE * 1.4;
-export const PRINT_MAX_CAPTION_LINES = 2;
 
 export type KnownArtefactType = "paper" | "print";
 
@@ -48,11 +58,11 @@ export function getCollapsedArtefactLayout(
 
 /**
  * Logical renderer size before a presentation surface scales the artefact.
- * Paper ignores the live viewport so its text wraps identically everywhere;
- * Print retains its established viewport-derived canvas for now.
+ * Both known artefacts ignore the live viewport; presentation hosts scale the
+ * complete canvas instead of changing either authored text column.
  */
 export function getArtefactCanvasLayout(
-  windowWidth: number,
+  _windowWidth: number,
   type: KnownArtefactType,
 ): {
   width: number;
@@ -61,5 +71,5 @@ export function getArtefactCanvasLayout(
   if (type === "paper") {
     return { width: PAPER_CANVAS_WIDTH, height: PAPER_CANVAS_HEIGHT };
   }
-  return getCollapsedArtefactLayout(windowWidth, type);
+  return { width: PRINT_CANVAS_WIDTH, height: PRINT_CANVAS_HEIGHT };
 }

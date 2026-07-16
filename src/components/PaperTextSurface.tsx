@@ -1,117 +1,49 @@
 /**
- * PaperTextSurface fallback — proportional Paper rendering outside native iOS.
+ * PaperTextSurface — Paper configuration over the shared bounded-text engine.
  *
- * iPhone/iPad production resolves `PaperTextSurface.ios.tsx`, where attributed
- * TextKit enforces physical capacity and paragraph presets. This fallback keeps
- * read output visually representative and provides a plain Default-size editor
- * for web/Android development; it deliberately does not claim native pre-paint
- * enforcement or selection-aware paragraph formatting.
+ * Paper keeps its atomic paragraph document and formatting events, but delegates
+ * native rendering, editing, capacity, IME handling, placeholder behavior and
+ * presentation scaling to `BoundedTextSurface`, which Print captions also use.
  */
-import { forwardRef, useImperativeHandle, useRef } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { forwardRef } from "react";
 
 import type { PaperTextSurfaceHandle, PaperTextSurfaceProps } from "./PaperTextSurface.types";
 
-import { parsePaperDocument } from "../data/paperDocument";
+import BoundedTextSurface from "./BoundedTextSurface";
 import {
+  PAPER_CANVAS_HEIGHT,
+  PAPER_CANVAS_WIDTH,
   PAPER_FONT_FAMILY,
+  PAPER_NATIVE_FONT_FAMILY,
   PAPER_PADDING,
   PAPER_PLACEHOLDER_COLOR,
   PAPER_PRESET_METRICS,
   PAPER_TEXT_COLOR,
-  clampPaperPresentationScale,
 } from "./paperLayout";
 
+/**
+ * Immutable Paper policy passed to every shared surface. Module ownership keeps
+ * geometry and typography stable while individual instances supply documents,
+ * editability and presentation scale.
+ */
+const PAPER_TEXT_CONFIGURATION = {
+  fontFamily: PAPER_FONT_FAMILY,
+  nativeFontFamily: PAPER_NATIVE_FONT_FAMILY,
+  presetMetrics: PAPER_PRESET_METRICS,
+  canonicalWidth: PAPER_CANVAS_WIDTH,
+  canonicalHeight: PAPER_CANVAS_HEIGHT,
+  contentPadding: PAPER_PADDING,
+  maximumVisibleLines: 0,
+  allowsParagraphPresets: true,
+  verticalAlignment: "top",
+  textColor: PAPER_TEXT_COLOR,
+  placeholderTextColor: PAPER_PLACEHOLDER_COLOR,
+} as const;
+
 const PaperTextSurface = forwardRef<PaperTextSurfaceHandle, PaperTextSurfaceProps>(
-  function PaperTextSurface(
-    {
-      document,
-      onChangeDocument,
-      onFocus,
-      onBlur,
-      editable = false,
-      presentationScale = 1,
-      placeholder = "",
-    },
-    ref,
-  ) {
-    /** Supplies the shared pager focus seam when the platform uses React Native TextInput. */
-    const inputRef = useRef<TextInput>(null);
-    const scale = clampPaperPresentationScale(presentationScale);
-
-    useImperativeHandle(ref, () => ({
-      focus: () => inputRef.current?.focus(),
-      blur: () => inputRef.current?.blur(),
-      setParagraphPreset: () => Promise.resolve(),
-    }));
-
-    if (editable) {
-      return (
-        <TextInput
-          ref={inputRef}
-          value={document.text}
-          onChangeText={(text) =>
-            onChangeDocument?.(
-              parsePaperDocument({ text, paragraphPresets: document.paragraphPresets }),
-            )
-          }
-          onFocus={onFocus}
-          onBlur={onBlur}
-          editable
-          multiline
-          scrollEnabled={false}
-          allowFontScaling={false}
-          placeholder={placeholder}
-          placeholderTextColor={PAPER_PLACEHOLDER_COLOR}
-          textAlignVertical="top"
-          style={[
-            StyleSheet.absoluteFill,
-            styles.text,
-            {
-              padding: PAPER_PADDING * scale,
-              fontSize: PAPER_PRESET_METRICS.default.fontSize * scale,
-              lineHeight: PAPER_PRESET_METRICS.default.lineHeight * scale,
-            },
-          ]}
-        />
-      );
-    }
-
-    const paragraphs = document.text.split("\n");
-    return (
-      <View style={[StyleSheet.absoluteFill, { padding: PAPER_PADDING * scale }]}>
-        <Text allowFontScaling={false} style={styles.text}>
-          {paragraphs.map((paragraph, index) => {
-            const metrics = PAPER_PRESET_METRICS[document.paragraphPresets[index] ?? "default"];
-            return (
-              <Text
-                key={index}
-                style={{
-                  fontSize: metrics.fontSize * scale,
-                  lineHeight: metrics.lineHeight * scale,
-                }}
-              >
-                {paragraph}
-                {index < paragraphs.length - 1 ? "\n" : ""}
-              </Text>
-            );
-          })}
-        </Text>
-      </View>
-    );
+  function PaperTextSurface(props, ref) {
+    return <BoundedTextSurface ref={ref} {...props} configuration={PAPER_TEXT_CONFIGURATION} />;
   },
 );
-
-const styles = StyleSheet.create({
-  // Geometry is supplied at the call site because it scales with the physical
-  // raster surface; these properties remain invariant authored typography.
-  text: {
-    margin: 0,
-    padding: 0,
-    fontFamily: PAPER_FONT_FAMILY,
-    color: PAPER_TEXT_COLOR,
-    includeFontPadding: false,
-  },
-});
 
 export default PaperTextSurface;

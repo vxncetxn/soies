@@ -19,11 +19,6 @@ private struct InferredTextEdit {
   var document: NativeTextDocument
   var replacedRange: NSRange
   var replacement: String
-
-  /** True only when the new value can be produced by removing one contiguous UTF-16 range. */
-  var isPureDeletion: Bool {
-    replacedRange.length > 0 && replacement.isEmpty
-  }
 }
 
 /** Native mirror of the versioned top-level Paper data payload. */
@@ -55,8 +50,8 @@ private struct NativeTextDocument: Equatable {
  *
  * Paper is the first adapter, but the engine accepts canonical geometry,
  * typography presets, presentation scale, and an optional visible-line limit.
- * A future Print caption can therefore reuse the same pre-paint acceptance path
- * with one Default preset and a two-line limit.
+ * Print captions reuse the same pre-paint acceptance path with one Default
+ * preset, a fixed two-line limit, and vertical centering for shorter content.
  *
  * There are intentionally two coordinate systems:
  *   1. Candidate documents are always laid out in the canonical artefact box.
@@ -112,8 +107,12 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   private var canonicalHeight: CGFloat = 438.43
   /** Sole logical inset; UITextView's implicit padding is disabled during init. */
   private var canonicalContentPadding: CGFloat = 24
-  /** Zero means physical height only; a future Print adapter supplies two. */
+  /** Zero means physical height only; Print supplies its fixed two-line cap. */
   private var maximumVisibleLines = 0
+  /** Print is Default-only; Paper enables selection-aware paragraph commands. */
+  private var allowsParagraphPresets = true
+  /** Print centers its complete line block; Paper preserves its top text origin. */
+  private var centersTextVertically = false
   /** Initial sRGB values prevent a wrong-color frame before Expo applies React props. */
   private var textColor = UIColor(red: 12 / 255, green: 10 / 255, blue: 9 / 255, alpha: 1)
   private var placeholderColor = UIColor(
@@ -169,26 +168,60 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     updatePlaceholderVisibility()
   }
 
+  /**
+   * Lay out the renderer and prompt on UIKit's main thread.
+   *
+   * Print's offset is applied through native frame and text-container geometry,
+   * never a transform. Increasing the frame by the same amount added to the top
+   * inset preserves the canonical usable height, so visual centering cannot
+   * change wrap or two-line capacity. Paper's disabled flag resolves to zero and
+   * retains its established top origin.
+   */
   override func layoutSubviews() {
     super.layoutSubviews()
+    // Reset to the canonical display box before measuring; this prevents the
+    // previous one-line offset from feeding back into the next layout pass.
     textView.frame = bounds
     let padding = canonicalContentPadding * presentationScale
+    textView.textContainerInset = UIEdgeInsets(
+      top: padding,
+      left: padding,
+      bottom: padding,
+      right: padding
+    )
+    let verticalOffset = verticalTextOffset()
+    // Add the offset to both the top inset and the view's clipped bottom edge.
+    // Their difference leaves TextKit's usable height unchanged, so centering
+    // cannot reduce two-line capacity. Native frame/inset geometry also avoids
+    // the transform rasterization that previously softened enlarged text.
+    textView.frame = CGRect(
+      x: bounds.minX,
+      y: bounds.minY,
+      width: bounds.width,
+      height: bounds.height + verticalOffset
+    )
+    textView.textContainerInset = UIEdgeInsets(
+      top: padding + verticalOffset,
+      left: padding,
+      bottom: padding,
+      right: padding
+    )
     let placeholderBounds = bounds.insetBy(dx: padding, dy: padding)
-    // UILabel vertically centers text inside a tall frame. Give it only its
-    // measured line-box height so the first baseline begins at Paper's canonical
-    // top-left text origin, matching the live TextKit view beneath it.
+    // Restrict UILabel to one measured line box so its implicit vertical
+    // alignment cannot diverge from Paper's top origin or Print's explicit
+    // empty-caret offset.
     let placeholderSize = placeholderLabel.sizeThatFits(
       CGSize(width: placeholderBounds.width, height: .greatestFiniteMagnitude)
     )
     placeholderLabel.frame = CGRect(
       x: placeholderBounds.minX,
-      y: placeholderBounds.minY,
+      y: placeholderBounds.minY + verticalOffset,
       width: placeholderBounds.width,
       height: min(placeholderBounds.height, ceil(placeholderSize.height))
     )
   }
 
-  /** Apply one atomic React-controlled text + paragraph-style payload. */
+  /** Apply one atomic React-controlled payload on UIKit's main thread. */
   func setDocumentJson(_ documentJson: String) {
     guard let incoming = decodeDocument(documentJson) else {
       return
@@ -290,9 +323,34 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     applyPresentationConfiguration()
   }
 
+  /**
+   * Apply the adapter's fixed line cap on UIKit's main thread.
+   * Zero leaves Paper governed by canonical height; Print supplies two.
+   */
   func setMaximumVisibleLines(_ value: Int) {
     maximumVisibleLines = max(0, value)
     reportSelectionState()
+  }
+
+  /**
+   * Enable selection-aware formatting on UIKit's main thread for Paper only.
+   * Print returns early from toolbar reporting because its typography is fixed.
+   */
+  func setAllowsParagraphPresets(_ value: Bool) {
+    allowsParagraphPresets = value
+    reportSelectionState()
+  }
+
+  /**
+   * Select top or centered display geometry on UIKit's main thread.
+   *
+   * The adapter prop never changes TextKit's canonical measurement box. A
+   * layout invalidation is sufficient because the next pass derives the frame
+   * offset from the already accepted live document.
+   */
+  func setCentersTextVertically(_ value: Bool) {
+    centersTextVertically = value
+    setNeedsLayout()
   }
 
   func setTextColor(_ color: UIColor) {
@@ -322,7 +380,11 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
    * proves the larger candidate would exceed the artefact's physical capacity.
    */
   func setParagraphPreset(_ rawPreset: String) -> Bool {
-    guard textView.isEditable, let preset = ParagraphPreset(rawValue: rawPreset) else {
+    guard
+      textView.isEditable,
+      allowsParagraphPresets,
+      let preset = ParagraphPreset(rawValue: rawPreset)
+    else {
       return false
     }
     let current = currentDocument()
@@ -371,13 +433,6 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
       pendingEditDocument = candidate
       return true
     }
-    guard !replacement.isEmpty else {
-      // Deletion is allowed so legacy over-capacity content can be reduced back
-      // into the canonical box; `textViewDidChange` accepts shrinking edits.
-      pendingEditDocument = candidate
-      return true
-    }
-
     let fitting = longestFittingReplacementPrefix(
       of: replacement,
       replacing: range,
@@ -404,6 +459,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
    */
   func textViewDidChange(_ textView: UITextView) {
     updatePlaceholderVisibility()
+    setNeedsLayout()
     guard !applyingProgrammaticDocument else {
       return
     }
@@ -422,14 +478,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     }
     pendingEditDocument = nil
 
-    let fits = candidateFits(candidate)
-    // Old builds could persist an already-overflowing page. Permit a pure
-    // deletion to move that legacy value toward validity, but never treat an
-    // arbitrary shorter replacement (for example newline-heavy dictation) as
-    // safe merely because its UTF-16 length decreased.
-    let isLegacyRecoveryDeletion =
-      !fits && inferredEdit.isPureDeletion && !candidateFits(lastAcceptedDocument)
-    if fits || isLegacyRecoveryDeletion {
+    if candidateFits(candidate) {
       paragraphPresets = candidate.paragraphPresets
       normalizeDisplayedAttributes(for: candidate)
       lastAcceptedDocument = candidate
@@ -588,6 +637,47 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   }
 
   /**
+   * Measure the live TextKit line block on UIKit's main thread.
+   *
+   * `usedRect` describes visible glyph lines while `extraLineFragmentUsedRect`
+   * represents the physical empty line after a trailing newline. Empty content
+   * still reserves one Default line so the caret and placeholder share the same
+   * centered origin before the first keystroke.
+   */
+  private func displayedTextBlockHeight() -> CGFloat {
+    guard !(textView.text ?? "").isEmpty else {
+      let metrics = presetMetrics[.defaultPreset]!
+      return metrics.lineHeight * presentationScale
+    }
+    let layoutManager = textView.layoutManager
+    let container = textView.textContainer
+    layoutManager.ensureLayout(for: container)
+    return max(
+      layoutManager.usedRect(for: container).maxY,
+      layoutManager.extraLineFragmentUsedRect.maxY
+    )
+  }
+
+  /**
+   * Return a screen-pixel-aligned display offset for Print's complete text block.
+   *
+   * This is presentation-only and runs on UIKit's main thread during layout.
+   * Canonical measurement remains top-origin, so centering cannot change wrap or
+   * acceptance. Two full lines consume the box and produce zero; one line uses
+   * half the unused height. Pixel alignment avoids softening the native baseline.
+   */
+  private func verticalTextOffset() -> CGFloat {
+    guard centersTextVertically else {
+      return 0
+    }
+    let padding = canonicalContentPadding * presentationScale
+    let availableHeight = max(0, bounds.height - padding * 2)
+    let rawOffset = max(0, (availableHeight - displayedTextBlockHeight()) / 2)
+    let pixelScale = max(1, traitCollection.displayScale)
+    return (rawOffset * pixelScale).rounded() / pixelScale
+  }
+
+  /**
    * Install one complete document atomically on the main thread.
    *
    * Programmatic replacement is guarded so delegate callbacks cannot re-emit a
@@ -613,6 +703,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     updateTypingAttributes()
     applyingProgrammaticDocument = false
     updatePlaceholderVisibility()
+    setNeedsLayout()
     reportSelectionState()
   }
 
@@ -645,6 +736,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     updateTypingAttributes()
     applyingProgrammaticDocument = false
     updatePlaceholderVisibility()
+    setNeedsLayout()
   }
 
   private func updateTypingAttributes() {
@@ -719,8 +811,8 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   /**
    * Canonical TextKit is the single capacity oracle for all devices and scales.
    * `extraLineFragmentUsedRect` reserves a physical blank line after a trailing
-   * newline. The optional explicit line count is unused by Paper but allows the
-   * future Print caption adapter to enforce exactly two visible lines.
+   * newline. Print's configured two-line cap is checked after the same physical
+   * height measurement; Paper uses zero to rely on page height alone.
    */
   private func candidateFits(_ document: NativeTextDocument) -> Bool {
     let availableWidth = canonicalWidth - canonicalContentPadding * 2
@@ -909,9 +1001,12 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     return NativeTextDocument(text: document.text, paragraphPresets: presets)
   }
 
-  /** Publish current/mixed selection plus capacity-aware toolbar availability. */
+  /** Publish only the adapter-specific toolbar state after any accepted/configuration change. */
   private func reportSelectionState() {
     let document = currentDocument()
+    guard allowsParagraphPresets else {
+      return
+    }
     let range = selectedParagraphRange(in: document.text)
     let selected = Set(range.map { document.paragraphPresets[$0] })
     let selectedPreset = selected.count == 1 ? selected.first!.rawValue : "mixed"

@@ -9,7 +9,7 @@
  *      inverse parent/child transforms: although their product is 1, Core
  *      Animation rasterizes the intermediate layers and softens glyphs/caret.
  *
- * On iOS, `PaperTextSurface.ios` delegates each proposed edit to TextKit before
+ * On iOS, `BoundedTextSurface.ios` delegates each proposed edit to TextKit before
  * paint. Only fitting documents reach `onChangeDocument`; this removes the old hidden
  * mirror → React truncation → dynamic maxLength loop that flashed overflow and
  * sometimes deleted an already-valid suffix. Final display uses the same

@@ -73,7 +73,6 @@ export type Tag = {
 export { getEntriesByDate, getEntryDates, getAllEntriesByDate } from "../db/repositories/entries";
 export { searchEntries } from "../db/repositories/search";
 export { listTags } from "../db/repositories/tags";
-export { PRINT_TEXT_HARD_LIMIT } from "../constants/artefact";
 
 export function isUnknownArtefact(artefact: Artefact): artefact is UnknownArtefact {
   return "rawData" in artefact;

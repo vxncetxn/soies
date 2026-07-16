@@ -4,13 +4,14 @@
  * Translation and bloom scale deliberately live on separate ancestors. The
  * position frame moves each page through the Stack without scaling it; the
  * presentation frame owns the sole collapsed↔expanded scale and its shadow.
- * For Paper, that presentation frame is allocated at the current device's final
- * expanded size, centered over the collapsed slot, and scales from the collapsed
- * ratio to literal identity. This matters because reciprocal scales on nested
- * views can make Core Animation rasterize the TextKit layer while it is small and
- * enlarge those pixels later, leaving expanded glyphs blurry even though the
- * combined transform is mathematically 1. Print keeps its established responsive
- * base canvas and bloom behavior.
+ * For both known text artefacts, that presentation frame is allocated at the
+ * current device's final expanded size, centered over the collapsed slot, and
+ * scales from the collapsed ratio to literal identity. This matters because
+ * reciprocal scales on nested views can make Core Animation rasterize a native
+ * text layer while it is small and enlarge those pixels later, leaving expanded
+ * glyphs blurry even though the combined transform is mathematically 1. Unknown
+ * future types retain the legacy Print-shaped fallback instead of inheriting a
+ * text-specific rendering contract they do not declare.
  */
 import { ReactNode } from "react";
 import { StyleSheet, useWindowDimensions } from "react-native";
@@ -18,12 +19,11 @@ import Animated, { interpolate, SharedValue, useAnimatedStyle } from "react-nati
 
 import { SHADOW_SM, SHADOW_XL } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
-import { getCollapsedArtefactLayout } from "./artefactLayout";
-import { PaperPresentationScaleProvider } from "./Paper";
-import { PAPER_CANVAS_HEIGHT, paperCanvasScaleForDisplayWidth } from "./paperLayout";
+import { getArtefactCanvasLayout, getCollapsedArtefactLayout } from "./artefactLayout";
+import { ArtefactPresentationScaleProvider } from "./ArtefactPresentationScale";
 
 type ArtefactWrapperProps = {
-  /** Persisted artefact discriminator; unknown values retain Print's legacy sizing. */
+  /** Persisted discriminator; unknown values use Print's established card shape. */
   type: string;
   /** Stable position in the owning Stack, used for collapsed offsets and page translation. */
   index: number;
@@ -33,7 +33,7 @@ type ArtefactWrapperProps = {
   currentPage: SharedValue<number>;
   /** UI-thread collapsed front-card index that owns shadow/z-order priority. */
   activeIndex: SharedValue<number>;
-  /** Canonical Paper or responsive Print renderer supplied by Stack. */
+  /** Canonical Paper or Print renderer supplied by Stack. */
   children: ReactNode;
 };
 
@@ -47,11 +47,13 @@ const ArtefactWrapper = ({
 }: ArtefactWrapperProps) => {
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const kind = type === "paper" ? "paper" : "print";
+  const hasCanonicalTextPresentation = type === "paper" || type === "print";
   const { width: BASE_WIDTH, height: BASE_HEIGHT } = getCollapsedArtefactLayout(SCREEN_WIDTH, kind);
   const EXPANDED_WIDTH = SCREEN_WIDTH - 20;
-  const paperPresentationScale = paperCanvasScaleForDisplayWidth(EXPANDED_WIDTH);
-  const paperCollapsedScale = BASE_WIDTH / EXPANDED_WIDTH;
-  const paperExpandedHeight = PAPER_CANVAS_HEIGHT * paperPresentationScale;
+  const natural = getArtefactCanvasLayout(SCREEN_WIDTH, kind);
+  const presentationScale = EXPANDED_WIDTH / natural.width;
+  const collapsedPresentationScale = BASE_WIDTH / EXPANDED_WIDTH;
+  const expandedHeight = natural.height * presentationScale;
 
   // Translation is isolated from bloom scale so stacked-card offsets remain
   // screen-space distances rather than being scaled with Paper's large backing
@@ -78,16 +80,14 @@ const ArtefactWrapper = ({
     };
   });
 
-  // Paper begins as a device-sized native surface viewed through a downscale;
-  // expanded rest is identity on every device, including large iPads. Print's
-  // legacy base-sized canvas still blooms upward because it has no TextKit
-  // resolution contract yet.
+  // Known text artefacts begin as device-sized native surfaces viewed through a
+  // downscale; expanded rest is identity on every device, including large iPads.
+  // Unknown future types keep the established base-canvas enlargement path.
   const presentationStyle = useAnimatedStyle(() => {
     const p = progress.get();
-    const scale =
-      kind === "paper"
-        ? interpolate(p, [0, 1], [paperCollapsedScale, 1])
-        : interpolate(p, [0, 1], [1, EXPANDED_WIDTH / BASE_WIDTH]);
+    const scale = hasCanonicalTextPresentation
+      ? interpolate(p, [0, 1], [collapsedPresentationScale, 1])
+      : interpolate(p, [0, 1], [1, EXPANDED_WIDTH / BASE_WIDTH]);
 
     return {
       transform: [{ scale }],
@@ -102,32 +102,31 @@ const ArtefactWrapper = ({
     };
   });
 
-  const presentationFrame =
-    kind === "paper"
-      ? {
-          // The large frame is centered over the responsive collapsed slot.
-          // Scaling around React Native's default center therefore lands on the
-          // exact collapsed bounds at 0 and the screen-gutter bounds at 1.
-          left: (BASE_WIDTH - EXPANDED_WIDTH) / 2,
-          top: (BASE_HEIGHT - paperExpandedHeight) / 2,
-          width: EXPANDED_WIDTH,
-          height: paperExpandedHeight,
-        }
-      : { left: 0, top: 0, width: BASE_WIDTH, height: BASE_HEIGHT };
+  const presentationFrame = hasCanonicalTextPresentation
+    ? {
+        // The large frame is centered over the responsive collapsed slot.
+        // Scaling around React Native's default center lands on the exact
+        // collapsed bounds at 0 and the screen-gutter bounds at 1.
+        left: (BASE_WIDTH - EXPANDED_WIDTH) / 2,
+        top: (BASE_HEIGHT - expandedHeight) / 2,
+        width: EXPANDED_WIDTH,
+        height: expandedHeight,
+      }
+    : { left: 0, top: 0, width: BASE_WIDTH, height: BASE_HEIGHT };
 
   return (
     <Animated.View
       style={[styles.positionFrame, { width: BASE_WIDTH, height: BASE_HEIGHT }, positionStyle]}
       pointerEvents="none"
     >
-      {/* This is Paper's only scale-bearing ancestor. At expanded rest its
-          transform is identity, so TextKit's device-sized layer reaches the
+      {/* This is known authored text's only scale-bearing ancestor. At expanded
+          rest it is identity, so the device-sized native layer reaches the
           screen without an intermediate resampling pass. */}
       <Animated.View style={[styles.presentationFrame, presentationFrame, presentationStyle]}>
-        {kind === "paper" ? (
-          <PaperPresentationScaleProvider presentationScale={paperPresentationScale}>
+        {hasCanonicalTextPresentation ? (
+          <ArtefactPresentationScaleProvider presentationScale={presentationScale}>
             {children}
-          </PaperPresentationScaleProvider>
+          </ArtefactPresentationScaleProvider>
         ) : (
           children
         )}
@@ -138,7 +137,7 @@ const ArtefactWrapper = ({
 
 const styles = StyleSheet.create({
   // Stack positions every artefact from the collapsed slot's origin. Visible
-  // overflow lets the centered device-sized Paper extend to expanded gutters.
+  // overflow lets the centered device-sized artefact extend to expanded gutters.
   positionFrame: {
     position: "absolute",
     overflow: "visible",

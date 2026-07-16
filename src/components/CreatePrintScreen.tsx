@@ -1,12 +1,13 @@
-import { randomUUID } from "expo-crypto";
 /**
  * CreatePrintScreen — author a multi-artefact Print entry (up to 5).
  *
- * Starts with the image from Create Entry. document-plus blooms the shared
- * Print media panel; on successful pick, appends with entrance animation.
- * Type: scroll locked; Prev/Next jumps + focuses caption.
- * Scribble: scroll locked; draw Ink on the current page; Save commits, Back discards session.
+ * Every page uses the same canonical Print canvas as Home/frame/share. Type
+ * delegates its fixed two-line caption policy to the shared native bounded-text
+ * engine. Scribble keeps that canvas and coordinate space, while the shared
+ * two-phase dismissal hook settles native responders before the Create overlay
+ * unmounts.
  */
+import { randomUUID } from "expo-crypto";
 import { Image } from "expo-image";
 import { useEffect, useRef, useState } from "react";
 import { View, useWindowDimensions } from "react-native";
@@ -19,6 +20,7 @@ import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { savePrintEntry } from "../data/savePrintEntry";
 import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
 import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
+import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
 import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
@@ -26,16 +28,30 @@ import CreateArtefactPager from "./CreateArtefactPager";
 import { useCreateContext, useEntriesVersion } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePrint from "./EditablePrint";
+import { PRINT_CANVAS_HEIGHT, printCanvasScaleForDisplayWidth } from "./printLayout";
 import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
 
 const StyledImage = withUniwind(Image);
 
-type DraftPrint = { id: string; text: string; imageUri: string; ink: DraftInk | null };
+type DraftPrint = {
+  /** Stable page identity for pager refs and Ink ownership. */
+  id: string;
+  /** Plain caption text; only mutations accepted by the native surface reach this draft. */
+  text: string;
+  /** Local image URI selected before or during this Create session. */
+  imageUri: string;
+  /** Unsaved Ink payload owned by the per-page Scribble session. */
+  ink: DraftInk | null;
+};
 
 type CreatePrintScreenProps = {
+  /** Root Create overlay progress supplied by the entry flow. */
   progress: SharedValue<number>;
+  /** Entry date persisted unchanged with the completed draft. */
   date: string;
+  /** Initial image selected before the Print authoring screen opens. */
   imageUri: string;
+  /** Begins root overlay dismissal after native responders settle. */
   onClose: () => void;
 };
 
@@ -43,12 +59,11 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
   const { bumpEntriesVersion } = useEntriesVersion();
   const { setCreateSessionBusy } = useCreateContext();
   const { width: windowWidth } = useWindowDimensions();
-  // Match EditablePrint / Paper: Scribble needs a top-aligned EXPANDED slot so the
-  // scaled polaroid isn't vertically centered in the flex-1 pager page.
-  const paperHeight = ((windowWidth - 80) / 210) * 297;
-  const printBaseWidth = (53 / 86) * paperHeight;
+  // Create allocates the final device-sized canonical Print from mount. Default
+  // only downscales it, so caption/caret and Ink settle at identity in Type.
   const printExpandedWidth = windowWidth - 20;
-  const printExpandedHeight = paperHeight * (printExpandedWidth / printBaseWidth);
+  const printPresentationScale = printCanvasScaleForDisplayWidth(printExpandedWidth);
+  const printExpandedHeight = PRINT_CANVAS_HEIGHT * printPresentationScale;
   const [title, setTitle] = useState("");
   const [artefacts, setArtefacts] = useState<DraftPrint[]>(() => [
     { id: randomUUID(), text: "", imageUri, ink: null },
@@ -71,11 +86,14 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
     handlePrev,
     handleNext,
     handleBack,
+    prepareForDismiss,
     enterScribble,
     exitScribble,
     tryAppend,
     syncArtefactCount,
   } = useCreateArtefactAuthoring();
+
+  const { closing, handleClose } = useCreateScreenDismissal(onClose, prepareForDismiss);
 
   useEffect(() => {
     syncArtefactCount(artefacts.length);
@@ -100,7 +118,12 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
   });
 
   const appendPrint = (uri: string) => {
-    const item: DraftPrint = { id: randomUUID(), text: "", imageUri: uri, ink: null };
+    const item: DraftPrint = {
+      id: randomUUID(),
+      text: "",
+      imageUri: uri,
+      ink: null,
+    };
     tryAppend(() => {
       setArtefacts((prev) => {
         if (prev.length >= MAX_ARTEFACTS_PER_ENTRY) {
@@ -145,7 +168,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
     },
     onSuccess: () => {
       bumpEntriesVersion();
-      onClose();
+      handleClose();
     },
   });
 
@@ -179,7 +202,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
       typeLabel="PRINT"
       title={title}
       onChangeTitle={setTitle}
-      onClose={onClose}
+      onClose={handleClose}
       onSubmit={submit}
       saving={saving || scribbleSaving}
       onBack={scribbleActive ? handleScribbleBack : handleBack}
@@ -207,7 +230,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
         ref={pagerRef}
         count={artefacts.length}
         pageKeys={artefacts.map((a) => a.id)}
-        scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving}
+        scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving && !closing}
         showScrollIndicator={!typeState && !scribbleActive}
         onActiveIndexChange={handleActiveIndexChange}
         enteringIndex={enteringIndex}
@@ -233,8 +256,8 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
             return null;
           }
           const isActiveScribble = scribbleActive && index === activeIndex;
-          // Same top-aligned EXPANDED slot as CreatePaperScreen — Print's flex-1
-          // centering + Type pin left a large gap under the Scribble header.
+          // Match CreatePaperScreen's top-aligned expanded slot so flex
+          // centering and the Type pin cannot open a gap below Scribble chrome.
           return (
             <Animated.ScrollView
               style={{ flex: 1, width: printExpandedWidth }}
@@ -257,7 +280,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
                   expandProgress={expandProgress}
                   keepExpandedOnBlurRef={keepExpandedOnBlurRef}
                   suppressArtefactFocusRef={suppressArtefactFocusRef}
-                  editable={!saving && !scribbleSaving}
+                  editable={!saving && !scribbleSaving && !closing}
                   inkOverlayUri={draft.ink?.overlayUri}
                   scribbleActive={scribbleActive}
                   textInputRef={(node) => {
@@ -271,8 +294,9 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
                       }}
                       tool={inkTool}
                       penColor={inkColor}
-                      penMinWidth={size.min}
-                      penMaxWidth={size.max}
+                      penMinWidth={size.min * printPresentationScale}
+                      penMaxWidth={size.max * printPresentationScale}
+                      interactionScale={printPresentationScale}
                       initialDocument={draft.ink?.document ?? null}
                       enabled={isActiveScribble}
                       locked={scribbleSaving}

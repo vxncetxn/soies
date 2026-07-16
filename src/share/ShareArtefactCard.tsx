@@ -4,9 +4,9 @@
  * this component; we never invent a placeholder that could be shared.
  *
  * Layout starts from each artefact's logical renderer canvas, then uniformly
- * scales the complete canvas to the requested width. Paper always supplies its
- * fixed 310-point canvas so Share cannot reflow saved paragraphs. Print is
- * narrower and retains its Home-derived base size; treating both as
+ * scales the complete canvas to the requested width. Paper and Print both
+ * supply fixed canonical canvases so Share cannot reflow saved text. Print is
+ * narrower; treating both as
  * `screenWidth - 80` would scale Print's fixed top padding, image gap, and
  * caption from the wrong geometry.
  *

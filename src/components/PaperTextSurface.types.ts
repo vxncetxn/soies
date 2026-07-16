@@ -6,20 +6,15 @@
  * stale paragraph presets. The imperative handle extends the create pager's
  * minimal responder seam only where Paper's keyboard toolbar needs it.
  */
-import type { PaperDocument, PaperParagraphPreset } from "../data/paperDocument";
-import type { ArtefactTextInputHandle } from "./ArtefactTextInput";
+import type { PaperDocument } from "../data/paperDocument";
+import type {
+  BoundedTextSelectionState,
+  BoundedTextSurfaceHandle,
+} from "./BoundedTextSurface.types";
 
-export type PaperSelectionState = {
-  /** Null means a selection spans more than one paragraph preset. */
-  selectedPreset: PaperParagraphPreset | null;
-  /** A false value means TextKit proved that preset would overflow the Paper. */
-  canApply: Record<PaperParagraphPreset, boolean>;
-};
+export type PaperSelectionState = BoundedTextSelectionState;
 
-export type PaperTextSurfaceHandle = ArtefactTextInputHandle & {
-  /** Ask native TextKit to style the caret/selection; capacity events report rejection. */
-  setParagraphPreset: (preset: PaperParagraphPreset) => Promise<void>;
-};
+export type PaperTextSurfaceHandle = BoundedTextSurfaceHandle;
 
 export type PaperTextSurfaceProps = {
   /** Parent-owned durable document mirrored atomically into the native view. */

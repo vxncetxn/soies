@@ -58,6 +58,12 @@ public class PaperTextInputModule: Module {
       Prop("maximumVisibleLines") { (view: PaperTextInputView, value: Int) in
         view.setMaximumVisibleLines(value)
       }
+      Prop("allowsParagraphPresets") { (view: PaperTextInputView, value: Bool) in
+        view.setAllowsParagraphPresets(value)
+      }
+      Prop("centersTextVertically") { (view: PaperTextInputView, value: Bool) in
+        view.setCentersTextVertically(value)
+      }
       Prop("textColor") { (view: PaperTextInputView, color: UIColor) in
         view.setTextColor(color)
       }
