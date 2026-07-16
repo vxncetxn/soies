@@ -18,6 +18,10 @@ const editablePaperSource = readFileSync(
   new URL("../src/components/EditablePaper.tsx", import.meta.url),
   "utf8",
 );
+const artefactWrapperSource = readFileSync(
+  new URL("../src/components/ArtefactWrapper.tsx", import.meta.url),
+  "utf8",
+);
 
 test("focused Paper authoring reaches screen space through one identity scale", () => {
   const scaleTransforms = editablePaperSource.match(/transform:\s*\[\s*\{\s*scale:/g) ?? [];
@@ -30,6 +34,24 @@ test("focused Paper authoring reaches screen space through one identity scale", 
   assert.match(
     editablePaperSource,
     /interpolate\([\s\S]*?expandProgress\.get\(\)[\s\S]*?\[0, 1\][\s\S]*?\[collapsedPresentationScale, 1\]/,
+  );
+});
+
+test("expanded Home Paper reaches screen space through one device-sized identity scale", () => {
+  assert.doesNotMatch(
+    artefactWrapperSource,
+    /transform:\s*\[\s*\{\s*scale:\s*paperCollapsedScale\s*\}\s*\]/,
+    "an inverse child scale can rasterize Paper before the parent enlarges it",
+  );
+  assert.match(
+    artefactWrapperSource,
+    /kind === "paper"[\s\S]*?interpolate\([\s\S]*?\[0, 1\][\s\S]*?\[paperCollapsedScale, 1\]/,
+    "Paper itself must animate from collapsed size to identity at the device's expanded size",
+  );
+  assert.match(
+    artefactWrapperSource,
+    /width:\s*EXPANDED_WIDTH/,
+    "the backing surface must follow the actual device width, including large iPads",
   );
 });
 
