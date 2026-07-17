@@ -50,6 +50,8 @@ type FocusOverlayProps = {
   /** Frozen clone rendered at the measured trigger frame. */
   subject: ReactNode;
   menuItems: FocusMenuItem[];
+  /** Starts presentation only after the portaled blur has a native layout. */
+  onNativeReady: () => void;
   onRequestClose: () => void;
   /** Fires on JS only after the close spring has fully settled at zero. */
   onCloseComplete?: () => void;
@@ -153,6 +155,7 @@ const FocusOverlay = ({
   open,
   subject,
   menuItems,
+  onNativeReady,
   onRequestClose,
   onCloseComplete,
   accessibilityDismissLabel = "Dismiss options",
@@ -164,6 +167,7 @@ const FocusOverlay = ({
   // Start from closed even when a transient owner mounts for an already-open
   // target; treating the first `open` as a transition preserves the morph.
   const previousOpenRef = useRef(false);
+  const nativeReadySignalledRef = useRef(false);
   const onCloseCompleteRef = useRef(onCloseComplete);
   const closeSequenceSV = useSharedValue(0);
   const [closeSequence, setCloseSequence] = useState(0);
@@ -215,11 +219,7 @@ const FocusOverlay = ({
 
   const cloneStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.get(), [CLONE_BLOOM_START, CLONE_BLOOM_START + 0.15], [0, 1]),
-    transform: [
-      { translateX: origin.get().x },
-      { translateY: origin.get().y },
-      { scale: interpolate(progress.get(), [CLONE_BLOOM_START, 1], [1, 1.02]) },
-    ],
+    transform: [{ translateX: origin.get().x }, { translateY: origin.get().y }],
     width: origin.get().width,
     height: origin.get().height,
   }));
@@ -231,10 +231,20 @@ const FocusOverlay = ({
     width: origin.get().width,
   }));
 
+  const signalNativeReady = () => {
+    if (nativeReadySignalledRef.current) {
+      return;
+    }
+
+    nativeReadySignalledRef.current = true;
+    onNativeReady();
+  };
+
   return (
     <Portal hostName="morph">
       <View
         style={styles.root}
+        onLayout={signalNativeReady}
         pointerEvents={open ? "auto" : "none"}
         accessibilityElementsHidden={!open}
         importantForAccessibility={open ? "yes" : "no-hide-descendants"}

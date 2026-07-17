@@ -258,6 +258,12 @@ const Stack = ({
   // Long-press opens the focus/actions overlay (separate from expand/collapse).
   const openFocus = () => {
     setFocusMounted(true);
+  };
+
+  // Wait for the portaled BlurView's first native layout before starting its
+  // opacity animation. Mounting and opening in one commit can leave iOS with
+  // no rendered background to sample, producing a flat dim layer instead.
+  const openMountedFocus = () => {
     setFocusOpen(true);
   };
 
@@ -414,6 +420,7 @@ const Stack = ({
             />
           }
           menuItems={focusMenuItems}
+          onNativeReady={openMountedFocus}
           onRequestClose={closeFocus}
           onCloseComplete={finishFocusClose}
           accessibilityDismissLabel="Dismiss entry options"

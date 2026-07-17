@@ -15,6 +15,7 @@ const homeRouteUrl = new URL("../src/app/index.tsx", import.meta.url);
 const legacyTabsLayoutUrl = new URL("../src/app/(tabs)/_layout.tsx", import.meta.url);
 const legacyTabsHomeUrl = new URL("../src/app/(tabs)/index.tsx", import.meta.url);
 const stackUrl = new URL("../src/components/Stack.tsx", import.meta.url);
+const focusOverlayUrl = new URL("../src/components/FocusOverlay.tsx", import.meta.url);
 const createOverlayUrl = new URL("../src/components/CreateOverlay.tsx", import.meta.url);
 const createPaperUrl = new URL("../src/components/CreatePaperScreen.tsx", import.meta.url);
 const createPrintUrl = new URL("../src/components/CreatePrintScreen.tsx", import.meta.url);
@@ -69,10 +70,23 @@ test("Create, Share, and widget surfaces isolate render failures inside their st
   assert.match(featureBoundary, /onRetry/);
 });
 
-test("Focus native overlay exists only for an active open or closing session", () => {
+test("Focus stages blur at native foreground scale and releases it after closing", () => {
   const stack = readFileSync(stackUrl, "utf8");
+  const focusOverlay = readFileSync(focusOverlayUrl, "utf8");
+  const openFocus = stack.match(/const openFocus = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
+  const cloneStyle =
+    focusOverlay.match(
+      /const cloneStyle = useAnimatedStyle\(\(\) => \(\{[\s\S]*?\n  \}\)\);/,
+    )?.[0] ?? "";
+
   assert.match(stack, /const \[focusMounted, setFocusMounted\] = useState\(false\)/);
-  assert.match(stack, /setFocusMounted\(true\)[\s\S]*?setFocusOpen\(true\)/);
+  assert.match(openFocus, /setFocusMounted\(true\)/);
+  assert.doesNotMatch(openFocus, /setFocusOpen\(true\)/);
+  assert.match(stack, /onNativeReady=\{openMountedFocus\}/);
+  assert.match(focusOverlay, /onLayout=\{signalNativeReady\}/);
+  assert.match(focusOverlay, /nativeReadySignalledRef\.current/);
+  assert.notEqual(cloneStyle, "");
+  assert.doesNotMatch(cloneStyle, /\bscale:/);
   assert.match(stack, /const finishFocusClose = \(\) => \{[\s\S]*?setFocusMounted\(false\)/);
   assert.match(stack, /\{focusMounted \? \([\s\S]*?<FocusOverlay/);
 });
