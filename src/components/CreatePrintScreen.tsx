@@ -28,6 +28,7 @@ import CreateArtefactPager from "./CreateArtefactPager";
 import { useCreateContext, useEntriesVersion } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePrint from "./EditablePrint";
+import FeatureErrorBoundary from "./feature-error-boundary";
 import { PRINT_CANVAS_HEIGHT, printCanvasScaleForDisplayWidth } from "./printLayout";
 import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
 
@@ -143,6 +144,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
     handlePick,
     resetToMedia,
   } = usePrintImagePickFlow({
+    recoverPending: true,
     onBeforePick: () => setBarOpen(false),
     onNeedsAttention: () => setBarOpen(true),
     onSuccess: (uri) => {
@@ -196,119 +198,125 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
   const scribbleTools = renderScribbleTools(scribbleActive);
 
   return (
-    <CreateScreenChrome
-      progress={progress}
-      expandProgress={expandProgress}
-      typeLabel="PRINT"
-      title={title}
-      onChangeTitle={setTitle}
-      onClose={handleClose}
-      onSubmit={submit}
-      saving={saving || scribbleSaving}
-      onBack={scribbleActive ? handleScribbleBack : handleBack}
-      activeArtefactIndex={activeIndex}
-      artefactCount={artefacts.length}
-      onPrevArtefact={handlePrev}
-      onNextArtefact={() => handleNext(artefacts.length)}
-      addConfig={{
-        kind: "bloom",
-        panel: addBloomPanel,
-        contentKey: mediaScreen,
-        forceAddPanel: mediaScreen === "permission" || mediaScreen === "error",
-        onOpen: () => setMediaScreen("media"),
-        barOpen,
-        onBarOpenChange: setBarOpen,
-      }}
-      onEnterScribble={enterScribble}
-      scribbleActive={scribbleActive}
-      onScribbleSave={() => {
-        void handleScribbleSave();
-      }}
-      scribbleTools={scribbleTools}
+    <FeatureErrorBoundary
+      featureName="Create Print"
+      onDismiss={saving || scribbleSaving ? undefined : handleClose}
+      title="Couldn’t continue editing this Print draft."
     >
-      <CreateArtefactPager
-        ref={pagerRef}
-        count={artefacts.length}
-        pageKeys={artefacts.map((a) => a.id)}
-        scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving && !closing}
-        showScrollIndicator={!typeState && !scribbleActive}
-        onActiveIndexChange={handleActiveIndexChange}
-        enteringIndex={enteringIndex}
-        onEnteringComplete={() => setEnteringIndex(null)}
-        suppressArtefactFocusRef={suppressArtefactFocusRef}
-        renderPreview={(index) => {
-          const draft = artefacts[index];
-          return (
-            <View className="h-14 w-10 overflow-hidden rounded-sm bg-paper">
-              {draft ? (
-                <StyledImage
-                  source={draft.imageUri}
-                  style={{ width: "100%", height: "100%" }}
-                  contentFit="cover"
-                />
-              ) : null}
-            </View>
-          );
+      <CreateScreenChrome
+        progress={progress}
+        expandProgress={expandProgress}
+        typeLabel="PRINT"
+        title={title}
+        onChangeTitle={setTitle}
+        onClose={handleClose}
+        onSubmit={submit}
+        saving={saving || scribbleSaving}
+        onBack={scribbleActive ? handleScribbleBack : handleBack}
+        activeArtefactIndex={activeIndex}
+        artefactCount={artefacts.length}
+        onPrevArtefact={handlePrev}
+        onNextArtefact={() => handleNext(artefacts.length)}
+        addConfig={{
+          kind: "bloom",
+          panel: addBloomPanel,
+          contentKey: mediaScreen,
+          forceAddPanel: mediaScreen === "permission" || mediaScreen === "error",
+          onOpen: () => setMediaScreen("media"),
+          barOpen,
+          onBarOpenChange: setBarOpen,
         }}
-        renderPage={(index) => {
-          const draft = artefacts[index];
-          if (!draft) {
-            return null;
-          }
-          const isActiveScribble = scribbleActive && index === activeIndex;
-          // Match CreatePaperScreen's top-aligned expanded slot so flex
-          // centering and the Type pin cannot open a gap below Scribble chrome.
-          return (
-            <Animated.ScrollView
-              style={{ flex: 1, width: printExpandedWidth }}
-              contentContainerStyle={{ alignItems: "center" }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              scrollEnabled={false}
-            >
-              <View
-                style={{
-                  width: printExpandedWidth,
-                  height: printExpandedHeight,
-                }}
-                className="items-center justify-start"
-              >
-                <EditablePrint
-                  imageUri={draft.imageUri}
-                  value={draft.text}
-                  onChangeText={(text) => updateText(index, text)}
-                  expandProgress={expandProgress}
-                  keepExpandedOnBlurRef={keepExpandedOnBlurRef}
-                  suppressArtefactFocusRef={suppressArtefactFocusRef}
-                  editable={!saving && !scribbleSaving && !closing}
-                  inkOverlayUri={draft.ink?.overlayUri}
-                  scribbleActive={scribbleActive}
-                  textInputRef={(node) => {
-                    inputRefs.current[index] = node;
-                  }}
-                  scribbleCanvas={
-                    <ArtefactInkCanvas
-                      key={draft.id}
-                      ref={(node) => {
-                        inkCanvasRefs.current[draft.id] = node;
-                      }}
-                      tool={inkTool}
-                      penColor={inkColor}
-                      penMinWidth={size.min * printPresentationScale}
-                      penMaxWidth={size.max * printPresentationScale}
-                      interactionScale={printPresentationScale}
-                      initialDocument={draft.ink?.document ?? null}
-                      enabled={isActiveScribble}
-                      locked={scribbleSaving}
-                    />
-                  }
-                />
+        onEnterScribble={enterScribble}
+        scribbleActive={scribbleActive}
+        onScribbleSave={() => {
+          void handleScribbleSave();
+        }}
+        scribbleTools={scribbleTools}
+      >
+        <CreateArtefactPager
+          ref={pagerRef}
+          count={artefacts.length}
+          pageKeys={artefacts.map((a) => a.id)}
+          scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving && !closing}
+          showScrollIndicator={!typeState && !scribbleActive}
+          onActiveIndexChange={handleActiveIndexChange}
+          enteringIndex={enteringIndex}
+          onEnteringComplete={() => setEnteringIndex(null)}
+          suppressArtefactFocusRef={suppressArtefactFocusRef}
+          renderPreview={(index) => {
+            const draft = artefacts[index];
+            return (
+              <View className="h-14 w-10 overflow-hidden rounded-sm bg-paper">
+                {draft ? (
+                  <StyledImage
+                    source={draft.imageUri}
+                    style={{ width: "100%", height: "100%" }}
+                    contentFit="cover"
+                  />
+                ) : null}
               </View>
-            </Animated.ScrollView>
-          );
-        }}
-      />
-    </CreateScreenChrome>
+            );
+          }}
+          renderPage={(index) => {
+            const draft = artefacts[index];
+            if (!draft) {
+              return null;
+            }
+            const isActiveScribble = scribbleActive && index === activeIndex;
+            // Match CreatePaperScreen's top-aligned expanded slot so flex
+            // centering and the Type pin cannot open a gap below Scribble chrome.
+            return (
+              <Animated.ScrollView
+                style={{ flex: 1, width: printExpandedWidth }}
+                contentContainerStyle={{ alignItems: "center" }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                scrollEnabled={false}
+              >
+                <View
+                  style={{
+                    width: printExpandedWidth,
+                    height: printExpandedHeight,
+                  }}
+                  className="items-center justify-start"
+                >
+                  <EditablePrint
+                    imageUri={draft.imageUri}
+                    value={draft.text}
+                    onChangeText={(text) => updateText(index, text)}
+                    expandProgress={expandProgress}
+                    keepExpandedOnBlurRef={keepExpandedOnBlurRef}
+                    suppressArtefactFocusRef={suppressArtefactFocusRef}
+                    editable={!saving && !scribbleSaving && !closing}
+                    inkOverlayUri={draft.ink?.overlayUri}
+                    scribbleActive={scribbleActive}
+                    textInputRef={(node) => {
+                      inputRefs.current[index] = node;
+                    }}
+                    scribbleCanvas={
+                      <ArtefactInkCanvas
+                        key={draft.id}
+                        ref={(node) => {
+                          inkCanvasRefs.current[draft.id] = node;
+                        }}
+                        tool={inkTool}
+                        penColor={inkColor}
+                        penMinWidth={size.min * printPresentationScale}
+                        penMaxWidth={size.max * printPresentationScale}
+                        interactionScale={printPresentationScale}
+                        initialDocument={draft.ink?.document ?? null}
+                        enabled={isActiveScribble}
+                        locked={scribbleSaving}
+                      />
+                    }
+                  />
+                </View>
+              </Animated.ScrollView>
+            );
+          }}
+        />
+      </CreateScreenChrome>
+    </FeatureErrorBoundary>
   );
 };
 

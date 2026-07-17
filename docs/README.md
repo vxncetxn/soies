@@ -76,9 +76,11 @@ scheduleOnRN(setCloseSequence, next);
 ```
 
 `BloomPanel` invokes an external `onClose` only after the primitive completion
-sequence reaches an RN effect. `FocusOverlay` needs no completion callback.
-`ScrollIndicator` uses raw RN View responders, so scrub jumps call the host
-callback directly without crossing a Worklets boundary.
+sequence reaches an RN effect. `FocusOverlay` uses the same sequence to invoke
+`onCloseComplete`, allowing `Stack` to release its native overlay tree only
+after the spring settles. `ScrollIndicator` uses raw RN View responders, so
+scrub jumps call the host callback directly without crossing a Worklets
+boundary.
 
 `MorphOverlay.tsx` is a dormant legacy component with no callsite. Its
 function-valued close bridge is unsafe; harden it using the `BloomPanel`

@@ -1,9 +1,9 @@
 /**
  * FeaturedArtefactsButton — bottom-left launcher for the five widget slots.
  *
- * Its 40-point round surface mirrors CreateEntryButton across the centred Home
- * tab. It shares Home's chrome fade, so expanding an entry or opening Create
- * removes all three bottom controls from the interaction layer together.
+ * Its 40-point round surface mirrors CreateEntryButton across Home. It shares
+ * Home's chrome fade, so expanding an entry or opening Create removes both
+ * launchers from the interaction layer together.
  */
 import { Pressable, View } from "react-native";
 import Animated from "react-native-reanimated";

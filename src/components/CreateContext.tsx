@@ -47,7 +47,7 @@ type CreateState = {
  * Provides the create *reload signal* on its own context so only the screens
  * that actually re-fetch on save subscribe to it. The animation/mode/date
  * values live in `CreateContext` above; if `entriesVersion` stayed there, every
- * `useCreateContext` consumer (header, tab bar, create button, pager) would
+ * `useCreateContext` consumer (header, launchers, pager) would
  * re-render on every save even though none of them read the version. Splitting
  * the providers (and giving this one its own component) means a bump re-renders
  * only `useEntriesVersion` subscribers — Home (to reload) and the create screen

@@ -2,8 +2,8 @@
  * FocusOverlay — long-press / ellipsis actions overlay (measure-and-morph).
  *
  * A measured trigger, blurred backdrop, frozen subject clone, and staggered
- * menu share one progress clock. Home's Stack preloads this overlay so opening
- * never allocates the clone tree on the interaction frame.
+ * menu share one progress clock. A Stack mounts this tree when Focus opens,
+ * retains it through the closing spring, then releases its native views.
  */
 import { BlurView } from "expo-blur";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";

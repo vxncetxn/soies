@@ -56,11 +56,26 @@
                       "title": "Featured Artefact",
                       "type": "enum",
                       "values": [
-                        { "name": "Featured Artefact 1", "value": "slot1" },
-                        { "name": "Featured Artefact 2", "value": "slot2" },
-                        { "name": "Featured Artefact 3", "value": "slot3" },
-                        { "name": "Featured Artefact 4", "value": "slot4" },
-                        { "name": "Featured Artefact 5", "value": "slot5" }
+                        {
+                          "name": "Featured Artefact 1",
+                          "value": "slot1"
+                        },
+                        {
+                          "name": "Featured Artefact 2",
+                          "value": "slot2"
+                        },
+                        {
+                          "name": "Featured Artefact 3",
+                          "value": "slot3"
+                        },
+                        {
+                          "name": "Featured Artefact 4",
+                          "value": "slot4"
+                        },
+                        {
+                          "name": "Featured Artefact 5",
+                          "value": "slot5"
+                        }
                       ],
                       "default": "slot1"
                     }
@@ -76,7 +91,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow soies to access your photos to create Print entries.",
+          "photosPermission": false,
           "cameraPermission": "Allow soies to use the camera to create Print entries.",
           "microphonePermission": false
         }
@@ -84,9 +99,10 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow soies to save shared artefacts to your photo library.",
+          "photosPermission": false,
           "savePhotosPermission": "Allow soies to save shared artefacts to your photo library.",
-          "isAccessMediaLocationEnabled": false
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": []
         }
       ],
       [
@@ -95,7 +111,8 @@
           "ios": ["fb", "facebook-stories", "instagram", "instagram-stories"],
           "android": ["com.facebook.katana", "com.instagram.android"]
         }
-      ]
+      ],
+      "expo-build-properties"
     ],
     "name": "soies",
     "slug": "soies",
@@ -105,7 +122,6 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow soies to use the camera to create Print entries.",
-        "NSPhotoLibraryUsageDescription": "Allow soies to access your photos to create Print entries.",
         "NSPhotoLibraryAddUsageDescription": "Allow soies to save shared artefacts to your photo library.",
         "LSApplicationQueriesSchemes": ["fb", "facebook-stories", "instagram", "instagram-stories"],
         "NSAppTransportSecurity": {
@@ -121,9 +137,12 @@
     },
     "android": {
       "package": "com.vance.soies",
-      "permissions": [
-        "android.permission.CAMERA",
+      "permissions": ["android.permission.CAMERA"],
+      "blockedPermissions": [
         "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         "android.permission.READ_EXTERNAL_STORAGE"
       ]
     },

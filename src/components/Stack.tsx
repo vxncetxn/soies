@@ -84,6 +84,10 @@ const Stack = ({
 
   // React state (each toggle triggers a re-render that swaps the branches).
   const [isExpanded, setIsExpanded] = useState(false);
+  // Focus owns native blur/morph views, so keep it mounted only while opening,
+  // open, or closing. `focusOpen` drives the animation; `focusMounted` retains
+  // the tree until FocusOverlay reports that its closing spring has settled.
+  const [focusMounted, setFocusMounted] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   // Which artefact page is currently active. Persisted across expand/collapse
   // cycles so re-expanding lands you on the same page you left on.
@@ -253,6 +257,7 @@ const Stack = ({
 
   // Long-press opens the focus/actions overlay (separate from expand/collapse).
   const openFocus = () => {
+    setFocusMounted(true);
     setFocusOpen(true);
   };
 
@@ -275,6 +280,7 @@ const Stack = ({
   };
 
   const finishFocusClose = () => {
+    setFocusMounted(false);
     const action = pendingFocusActionRef.current;
     pendingFocusActionRef.current = null;
 
@@ -393,25 +399,26 @@ const Stack = ({
         </View>
       )}
 
-      {/* The focus/actions overlay. Always mounted so it can preload; it
-          animates based on `open`. It measures `triggerRef` (the collapsed
-          deck) when opening. */}
-      <FocusOverlay
-        triggerRef={triggerRef}
-        open={focusOpen}
-        subject={
-          <CollapsedDeck
-            entry={entry}
-            progress={cloneProgress}
-            currentPage={cloneCurrentPage}
-            activeIndex={cloneActiveIndex}
-          />
-        }
-        menuItems={focusMenuItems}
-        onRequestClose={closeFocus}
-        onCloseComplete={finishFocusClose}
-        accessibilityDismissLabel="Dismiss entry options"
-      />
+      {/* Native blur/morph views exist only for an active Focus session. Keep
+          them mounted through the close spring, then release the native tree. */}
+      {focusMounted ? (
+        <FocusOverlay
+          triggerRef={triggerRef}
+          open={focusOpen}
+          subject={
+            <CollapsedDeck
+              entry={entry}
+              progress={cloneProgress}
+              currentPage={cloneCurrentPage}
+              activeIndex={cloneActiveIndex}
+            />
+          }
+          menuItems={focusMenuItems}
+          onRequestClose={closeFocus}
+          onCloseComplete={finishFocusClose}
+          accessibilityDismissLabel="Dismiss entry options"
+        />
+      ) : null}
 
       {/* ---- Expanded branch ---- */}
       {isExpanded && (

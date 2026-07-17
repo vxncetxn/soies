@@ -13,7 +13,7 @@
  */
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { Dimensions, PixelRatio } from "react-native";
+import { Dimensions, PixelRatio, Platform } from "react-native";
 
 import { PRINT_CONTENT_WIDTH_RATIO, PRINT_IMAGE_ASPECT_RATIO } from "../components/printLayout";
 
@@ -86,15 +86,72 @@ async function resizeAndCropToCoverExpandedFrame(
   return result.uri;
 }
 
+async function resolvePickerResult(
+  picked: ImagePicker.ImagePickerResult,
+): Promise<PickPrintImageResult> {
+  if (picked.canceled || !picked.assets[0]?.uri) {
+    return { status: "cancelled" };
+  }
+
+  const asset = picked.assets[0];
+  const uri = await resizeAndCropToCoverExpandedFrame(
+    asset.uri,
+    asset.width || expandedPrintImagePixelSize().width,
+    asset.height || expandedPrintImagePixelSize().height,
+  );
+
+  return { status: "success", uri };
+}
+
+let pendingRecoveryPromise: Promise<PickPrintImageResult | null> | null = null;
+
+/**
+ * Recover a result after Android destroys the picker Activity under memory
+ * pressure. The module-level single flight prevents multiple mounted consumers
+ * from racing to consume the same native pending result during app resume.
+ */
+export function recoverPendingPrintImage(): Promise<PickPrintImageResult | null> {
+  if (Platform.OS !== "android") {
+    return Promise.resolve(null);
+  }
+  if (pendingRecoveryPromise) {
+    return pendingRecoveryPromise;
+  }
+
+  const recovery = (async (): Promise<PickPrintImageResult | null> => {
+    try {
+      const pending = await ImagePicker.getPendingResultAsync();
+      if (!pending) {
+        return null;
+      }
+      if ("code" in pending) {
+        return {
+          status: "error",
+          message: pending.message || "Couldn’t restore the selected image.",
+        };
+      }
+      return await resolvePickerResult(pending);
+    } catch (error) {
+      return {
+        status: "error",
+        message: error instanceof Error ? error.message : "Couldn’t restore the selected image.",
+      };
+    }
+  })();
+
+  pendingRecoveryPromise = recovery;
+  void recovery.then(() => {
+    if (pendingRecoveryPromise === recovery) {
+      pendingRecoveryPromise = null;
+    }
+  });
+  return recovery;
+}
+
 export async function pickPrintImage(source: PickPrintImageSource): Promise<PickPrintImageResult> {
   try {
     if (source === "camera") {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        return { status: "permission_denied", source };
-      }
-    } else {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
         return { status: "permission_denied", source };
       }
@@ -112,18 +169,7 @@ export async function pickPrintImage(source: PickPrintImageSource): Promise<Pick
         ? await ImagePicker.launchCameraAsync(options)
         : await ImagePicker.launchImageLibraryAsync(options);
 
-    if (picked.canceled || !picked.assets[0]?.uri) {
-      return { status: "cancelled" };
-    }
-
-    const asset = picked.assets[0];
-    const uri = await resizeAndCropToCoverExpandedFrame(
-      asset.uri,
-      asset.width || expandedPrintImagePixelSize().width,
-      asset.height || expandedPrintImagePixelSize().height,
-    );
-
-    return { status: "success", uri };
+    return await resolvePickerResult(picked);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Couldn’t get that image.";
     return { status: "error", message };

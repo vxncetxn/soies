@@ -39,6 +39,7 @@ import type {
   FeaturedWidgetsProviderProps,
 } from "./FeaturedWidgetsContext.types";
 
+import FeatureErrorBoundary from "../components/feature-error-boundary";
 import {
   assignFeaturedWidgetSlot,
   getFeaturedWidgetCaptureSource,
@@ -326,17 +327,26 @@ function FeaturedWidgetsController({ children }: FeaturedWidgetsProviderProps) {
     <FeaturedWidgetsContext.Provider value={value}>
       {children}
       {session ? (
-        <FeaturedWidgetsSheet
+        <FeatureErrorBoundary
+          featureName="Featured Widgets"
           key={session.id}
-          session={session}
-          slots={slots}
-          publicationWarning={publicationWarning}
-          onFeatureArtefact={featureArtefact}
-          onRefreshSlots={refreshSlots}
-          onClosed={() => {
+          onDismiss={() => {
             setSession((current) => (current?.id === session.id ? null : current));
           }}
-        />
+          title="Couldn’t continue managing featured artefacts."
+        >
+          <FeaturedWidgetsSheet
+            key={session.id}
+            session={session}
+            slots={slots}
+            publicationWarning={publicationWarning}
+            onFeatureArtefact={featureArtefact}
+            onRefreshSlots={refreshSlots}
+            onClosed={() => {
+              setSession((current) => (current?.id === session.id ? null : current));
+            }}
+          />
+        </FeatureErrorBoundary>
       ) : null}
     </FeaturedWidgetsContext.Provider>
   );

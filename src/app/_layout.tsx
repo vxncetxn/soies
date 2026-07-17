@@ -2,7 +2,7 @@ import "../global.css";
 import { BottomSheetProvider } from "@swmansion/react-native-bottom-sheet";
 import { BlurTargetView } from "expo-blur";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { type ErrorBoundaryProps, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { StrictMode, useRef } from "react";
 import { View } from "react-native";
@@ -12,6 +12,7 @@ import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { PortalHost, PortalProvider } from "react-native-teleport";
 import { withUniwind } from "uniwind";
 
+import AppErrorFallback from "../components/app-error-fallback";
 import { BlurTargetViewProvider } from "../components/BlurTargetViewContext";
 import { CreateProvider } from "../components/CreateContext";
 import CreateOverlay from "../components/CreateOverlay";
@@ -54,7 +55,7 @@ export default function Layout() {
                           <FeaturedWidgetsProvider>
                             <StyledSafeAreaView className="flex-1 bg-background">
                               <Stack screenOptions={{ headerShown: false }}>
-                                <Stack.Screen name="(tabs)" />
+                                <Stack.Screen name="index" />
                               </Stack>
                               <StyledPortalHost name="overlay" className="absolute inset-0" />
                             </StyledSafeAreaView>
@@ -78,4 +79,8 @@ export default function Layout() {
       </StrictMode>
     </GestureHandlerRootView>
   );
+}
+
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return <AppErrorFallback error={error} onRetry={retry} title="Couldn’t start Soies." />;
 }

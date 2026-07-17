@@ -4,7 +4,7 @@ import { useCreateContext } from "../components/CreateContext";
 import { useExpandContext } from "../components/ExpandContext";
 import { CHROME_FADE_END, CREATE_HOME_EXIT_END } from "../constants/animation";
 
-/** Combined chrome + create fade for Home header, tab bar, and create button. */
+/** Combined chrome + create fade for Home's header and floating launchers. */
 export function useHomeChromeFade() {
   const { chromeProgress } = useExpandContext();
   const { createProgress } = useCreateContext();

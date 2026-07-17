@@ -2,9 +2,8 @@
  * CreateEntryButton — the floating "+" control that blooms into a create menu.
  *
  * It's a thin wrapper around `BloomButton` (variant="menu"): a round plus
- * trigger that stays inline (floating at the bottom-right of the screen,
- * levelled with the tab bar) and, on tap, a separate frosted panel blooms
- * upward into a create menu.
+ * trigger that stays inline at the bottom-right of Home and, on tap, a
+ * separate frosted panel blooms upward into a create menu.
  *
  * Flow:
  *   Paper → close bloom → openCreate("paper")
@@ -18,21 +17,16 @@
  *
  * Positioning:
  *   The trigger is absolutely positioned `bottom-5 right-5` (20px from the
- *   bottom and right safe-area edges). The tab bar sits at `bottom-4` and is
- *   ~48px tall (py-3 + 24px icon); this trigger is ~40px tall (p-2 + 24px
- *   icon), so `bottom-5` (20px) puts its vertical centre at 40px from the
- *   bottom — the same as the tab bar's centre (16 + 24). The two controls read
- *   as sitting on the same horizontal line, with the create button flushed to
- *   the right edge. This component is rendered inside `<Tabs>` (a relative
- *   container) in `(tabs)/_layout`, so its absolute coords share the tab bar's
- *   coordinate space.
+ *   bottom and right safe-area edges). Home's root view is the relative
+ *   positioning container, and the Featured launcher mirrors this control at
+ *   bottom-left.
  *
  * Chrome fade:
  *   The trigger fades out with `chromeProgress` (entry expand) and
  *   `createProgress` (create overlay open) — combined via `useHomeChromeFade`,
- *   the same signal that hides the tab bar (`StyledTabList`) and the header
- *   (`HomeHeader`). Its bloomed panel lives in the root `bloom` portal (outside
- *   this fade wrapper), so an open menu stays visible regardless of the fade.
+ *   the same signal that hides the Featured launcher and `HomeHeader`. Its
+ *   bloomed panel lives in the root `bloom` portal (outside this fade wrapper),
+ *   so an open menu stays visible regardless of the fade.
  *
  * State:
  *   `BloomButton` is controlled, so this component owns the `open` state and
@@ -62,7 +56,7 @@ const TRIGGER_ICON_COLOR = "#79716B";
 const CreateEntryButton = () => {
   const { date } = useLocalSearchParams<{ date?: string }>();
   const effectiveDate = date ?? todayISO();
-  const { openCreate } = useCreateContext();
+  const { createMode, openCreate } = useCreateContext();
   const [open, setOpen] = useState(false);
   /** `main` = Paper/Print chooser; otherwise mirrors pick-flow media screen. */
   const [onMainMenu, setOnMainMenu] = useState(true);
@@ -77,6 +71,7 @@ const CreateEntryButton = () => {
     handlePick,
     resetToMedia,
   } = usePrintImagePickFlow({
+    recoverPending: createMode === null,
     onBeforePick: () => setOpen(false),
     onNeedsAttention: () => {
       setOnMainMenu(false);

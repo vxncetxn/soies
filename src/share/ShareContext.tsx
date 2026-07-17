@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 import type { Entry } from "../data/entries";
 
+import FeatureErrorBoundary from "../components/feature-error-boundary";
 import { ShareCaptureHost } from "./ShareCaptureHost";
 import { ShareSheet } from "./ShareSheet";
 
@@ -44,15 +45,24 @@ export function ShareProvider({ children }: { children: ReactNode }) {
 
   return (
     <ShareContext.Provider value={value}>
-      <ShareCaptureHost cacheScope={session?.entry ?? null}>
-        {children}
-        <ShareSheet
-          entry={session?.entry ?? null}
-          initialPage={session?.initialPage ?? 0}
-          open={session !== null}
-          onClose={closeShare}
-        />
-      </ShareCaptureHost>
+      {children}
+      {session ? (
+        <FeatureErrorBoundary
+          featureName="Share"
+          key={`${session.entry.id}:${session.initialPage}`}
+          onDismiss={closeShare}
+          title="Couldn’t continue sharing this entry."
+        >
+          <ShareCaptureHost cacheScope={session.entry}>
+            <ShareSheet
+              entry={session.entry}
+              initialPage={session.initialPage}
+              open
+              onClose={closeShare}
+            />
+          </ShareCaptureHost>
+        </FeatureErrorBoundary>
+      ) : null}
     </ShareContext.Provider>
   );
 }

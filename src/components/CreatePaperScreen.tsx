@@ -45,6 +45,7 @@ import CreateArtefactPager from "./CreateArtefactPager";
 import { useCreateContext, useEntriesVersion } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePaper from "./EditablePaper";
+import FeatureErrorBoundary from "./feature-error-boundary";
 import { PAPER_CANVAS_WIDTH } from "./paperLayout";
 import PaperTextPresetToolbar from "./PaperTextPresetToolbar";
 
@@ -231,112 +232,118 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
     (activeArtefactId ? selectionStates[activeArtefactId] : undefined) ?? DEFAULT_SELECTION_STATE;
 
   return (
-    <CreateScreenChrome
-      progress={progress}
-      expandProgress={expandProgress}
-      typeLabel="PAPER"
-      title={title}
-      onChangeTitle={setTitle}
-      onClose={handleClose}
-      onSubmit={submit}
-      saving={saving || scribbleSaving}
-      onBack={scribbleActive ? handleScribbleBack : handleBack}
-      activeArtefactIndex={activeIndex}
-      artefactCount={artefacts.length}
-      onPrevArtefact={handlePrev}
-      onNextArtefact={() => handleNext(artefacts.length)}
-      addConfig={{ kind: "immediate", onAdd: handleAddArtefact }}
-      onEnterScribble={enterScribble}
-      scribbleActive={scribbleActive}
-      onScribbleSave={() => {
-        void handleScribbleSave();
-      }}
-      scribbleTools={scribbleTools}
-      floatingAccessory={
-        typeState && !closing ? (
-          <PaperTextPresetToolbar
-            selectionState={activeSelectionState}
-            onSelectPreset={handleSelectPreset}
-          />
-        ) : null
-      }
+    <FeatureErrorBoundary
+      featureName="Create Paper"
+      onDismiss={saving || scribbleSaving ? undefined : handleClose}
+      title="Couldn’t continue editing this Paper draft."
     >
-      <CreateArtefactPager
-        ref={pagerRef}
-        count={artefacts.length}
-        pageKeys={artefacts.map((a) => a.id)}
-        scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving && !closing}
-        showScrollIndicator={!typeState && !scribbleActive}
-        onActiveIndexChange={handleActiveIndexChange}
-        enteringIndex={enteringIndex}
-        onEnteringComplete={() => setEnteringIndex(null)}
-        suppressArtefactFocusRef={suppressArtefactFocusRef}
-        renderPreview={(index) => (
-          <View className="h-14 w-10 items-center justify-center overflow-hidden rounded-sm bg-paper">
-            <Text numberOfLines={3} className="px-0.5 font-mono text-[6px] text-primary">
-              {artefacts[index]?.document.text || " "}
-            </Text>
-          </View>
-        )}
-        renderPage={(index) => {
-          const draft = artefacts[index];
-          if (!draft) {
-            return null;
-          }
-          const isActiveScribble = scribbleActive && index === activeIndex;
-          return (
-            <Animated.ScrollView
-              ref={(node: ScrollView | null) => {
-                scrollRefs.current[index] = node;
-              }}
-              style={{ flex: 1, width: EXPANDED_WIDTH }}
-              contentContainerStyle={{ alignItems: "center" }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              scrollEnabled={!scribbleActive}
-              animatedProps={scrollAnimatedProps}
-            >
-              <View
-                style={{ width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }}
-                className="items-center justify-start"
-              >
-                <EditablePaper
-                  document={draft.document}
-                  onChangeDocument={(document) => updateDocument(index, document)}
-                  onSelectionStateChange={(state) => updateSelectionState(draft.id, state)}
-                  expandProgress={expandProgress}
-                  keepExpandedOnBlurRef={keepExpandedOnBlurRef}
-                  suppressArtefactFocusRef={suppressArtefactFocusRef}
-                  editable={!saving && !scribbleSaving && !closing}
-                  inkOverlayUri={draft.ink?.overlayUri}
-                  scribbleActive={scribbleActive}
-                  textInputRef={(node) => {
-                    inputRefs.current[index] = node;
-                    paperInputRefs.current[index] = node;
-                  }}
-                  scribbleCanvas={
-                    <ArtefactInkCanvas
-                      key={draft.id}
-                      ref={(node) => {
-                        inkCanvasRefs.current[draft.id] = node;
-                      }}
-                      tool={inkTool}
-                      penColor={inkColor}
-                      penMinWidth={size.min * PAPER_PRESENTATION_SCALE}
-                      penMaxWidth={size.max * PAPER_PRESENTATION_SCALE}
-                      interactionScale={PAPER_PRESENTATION_SCALE}
-                      initialDocument={draft.ink?.document ?? null}
-                      enabled={isActiveScribble}
-                      locked={scribbleSaving}
-                    />
-                  }
-                />
-              </View>
-            </Animated.ScrollView>
-          );
+      <CreateScreenChrome
+        progress={progress}
+        expandProgress={expandProgress}
+        typeLabel="PAPER"
+        title={title}
+        onChangeTitle={setTitle}
+        onClose={handleClose}
+        onSubmit={submit}
+        saving={saving || scribbleSaving}
+        onBack={scribbleActive ? handleScribbleBack : handleBack}
+        activeArtefactIndex={activeIndex}
+        artefactCount={artefacts.length}
+        onPrevArtefact={handlePrev}
+        onNextArtefact={() => handleNext(artefacts.length)}
+        addConfig={{ kind: "immediate", onAdd: handleAddArtefact }}
+        onEnterScribble={enterScribble}
+        scribbleActive={scribbleActive}
+        onScribbleSave={() => {
+          void handleScribbleSave();
         }}
-      />
-    </CreateScreenChrome>
+        scribbleTools={scribbleTools}
+        floatingAccessory={
+          typeState && !closing ? (
+            <PaperTextPresetToolbar
+              selectionState={activeSelectionState}
+              onSelectPreset={handleSelectPreset}
+            />
+          ) : null
+        }
+      >
+        <CreateArtefactPager
+          ref={pagerRef}
+          count={artefacts.length}
+          pageKeys={artefacts.map((a) => a.id)}
+          scrollEnabled={!typeState && !scribbleActive && !saving && !scribbleSaving && !closing}
+          showScrollIndicator={!typeState && !scribbleActive}
+          onActiveIndexChange={handleActiveIndexChange}
+          enteringIndex={enteringIndex}
+          onEnteringComplete={() => setEnteringIndex(null)}
+          suppressArtefactFocusRef={suppressArtefactFocusRef}
+          renderPreview={(index) => (
+            <View className="h-14 w-10 items-center justify-center overflow-hidden rounded-sm bg-paper">
+              <Text numberOfLines={3} className="px-0.5 font-mono text-[6px] text-primary">
+                {artefacts[index]?.document.text || " "}
+              </Text>
+            </View>
+          )}
+          renderPage={(index) => {
+            const draft = artefacts[index];
+            if (!draft) {
+              return null;
+            }
+            const isActiveScribble = scribbleActive && index === activeIndex;
+            return (
+              <Animated.ScrollView
+                ref={(node: ScrollView | null) => {
+                  scrollRefs.current[index] = node;
+                }}
+                style={{ flex: 1, width: EXPANDED_WIDTH }}
+                contentContainerStyle={{ alignItems: "center" }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                scrollEnabled={!scribbleActive}
+                animatedProps={scrollAnimatedProps}
+              >
+                <View
+                  style={{ width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }}
+                  className="items-center justify-start"
+                >
+                  <EditablePaper
+                    document={draft.document}
+                    onChangeDocument={(document) => updateDocument(index, document)}
+                    onSelectionStateChange={(state) => updateSelectionState(draft.id, state)}
+                    expandProgress={expandProgress}
+                    keepExpandedOnBlurRef={keepExpandedOnBlurRef}
+                    suppressArtefactFocusRef={suppressArtefactFocusRef}
+                    editable={!saving && !scribbleSaving && !closing}
+                    inkOverlayUri={draft.ink?.overlayUri}
+                    scribbleActive={scribbleActive}
+                    textInputRef={(node) => {
+                      inputRefs.current[index] = node;
+                      paperInputRefs.current[index] = node;
+                    }}
+                    scribbleCanvas={
+                      <ArtefactInkCanvas
+                        key={draft.id}
+                        ref={(node) => {
+                          inkCanvasRefs.current[draft.id] = node;
+                        }}
+                        tool={inkTool}
+                        penColor={inkColor}
+                        penMinWidth={size.min * PAPER_PRESENTATION_SCALE}
+                        penMaxWidth={size.max * PAPER_PRESENTATION_SCALE}
+                        interactionScale={PAPER_PRESENTATION_SCALE}
+                        initialDocument={draft.ink?.document ?? null}
+                        enabled={isActiveScribble}
+                        locked={scribbleSaving}
+                      />
+                    }
+                  />
+                </View>
+              </Animated.ScrollView>
+            );
+          }}
+        />
+      </CreateScreenChrome>
+    </FeatureErrorBoundary>
   );
 };
 

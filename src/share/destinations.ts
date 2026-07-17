@@ -62,7 +62,7 @@ function ensureFileUri(uri: string): string {
  * not make the user wait for an export that will be immediately discarded.
  */
 export async function requestPhotoLibraryWritePermission(): Promise<void> {
-  const permission = await requestPermissionsAsync(true);
+  const permission = await requestPermissionsAsync(true, []);
   if (!permission.granted) {
     throw new ShareDestinationError("PHOTO_PERMISSION_DENIED");
   }

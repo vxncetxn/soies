@@ -57,6 +57,10 @@ import {
 import { ShareActionToast } from "./ShareActionToast";
 import { useShareCapture } from "./ShareCaptureHost";
 import { ShareComposition } from "./ShareComposition";
+import {
+  initialShareSheetPosition,
+  shareSheetPositionAfterOpenChange,
+} from "./shareSheetLifecycle";
 
 type ShareSheetProps = {
   entry: Entry | null;
@@ -152,8 +156,12 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
   const sidePad = (screenWidth - pageWidth) / 2;
   const snapOffsets = useMemo(() => artefacts.map((_, index) => index * snap), [artefacts, snap]);
 
-  const [sheetIndex, setSheetIndex] = useState(0);
-  const [page, setPage] = useState(0);
+  const [sheetIndex, setSheetIndex] = useState<number>(
+    () => initialShareSheetPosition(open, requestedSharePage, artefacts.length).sheetIndex,
+  );
+  const [page, setPage] = useState(
+    () => initialShareSheetPosition(open, requestedSharePage, artefacts.length).page,
+  );
   const [background, setBackground] = useState<ShareBackgroundId>("light");
   const [busy, setBusy] = useState<BusyAction>(null);
   const [toast, setToast] = useState<{ anchor: ToastAnchor; message: string } | null>(null);
@@ -169,16 +177,20 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
   const scrollRef = useRef<ScrollView>(null);
 
   // Sync open → sheet index / picker state during render (no effect cascade).
-  if (open !== prevOpen) {
+  const positionChange = shareSheetPositionAfterOpenChange(
+    prevOpen,
+    open,
+    requestedSharePage,
+    artefacts.length,
+  );
+  if (positionChange) {
     setPrevOpen(open);
-    if (open && artefacts.length > 0) {
-      setPage(requestedSharePage);
+    if (positionChange.page !== undefined) {
+      setPage(positionChange.page);
       setBackground("light");
       setToast(null);
-      setSheetIndex(1);
-    } else if (!open) {
-      setSheetIndex(0);
     }
+    setSheetIndex(positionChange.sheetIndex);
   }
 
   // Cached sheet content may not emit another onLayout when reopened. Position

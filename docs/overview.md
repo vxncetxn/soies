@@ -10,7 +10,7 @@
 |-------|--------|
 | Framework | Expo 57, React Native 0.86, React 19 |
 | Compiler | [React Compiler](https://docs.expo.dev/guides/react-compiler) (`experiments.reactCompiler` in `app.json`; `babel.config.js` with `panicThreshold: 'all_errors'` — diagnostics are **hard build failures**). Validation: `pnpm lint` (Oxlint including native `react/react-compiler`), `pnpm lint:rc`, `pnpm healthcheck:rc`, `pnpm check`. Do not reintroduce manual `useMemo` / `useCallback` / `memo` as a render optimization without a measured re-render problem (`memo(CalendarMonthWithDots)` is the intentional exception for uncompiled flash-calendar). `useCallback` is also permitted when stable identity is an explicit correctness contract with native or third-party APIs; document that contract at the call site. |
-| Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based, native tabs) |
+| Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based root Stack) |
 | Styling | [Uniwind](https://docs.uniwind.dev/) + Tailwind CSS v4 (`className` on native views) |
 | Animation | Reanimated 4 + Worklets (UI-thread springs, scroll handlers, morphs). Shared values use `.get()` / `.set()` for React Compiler compatibility. |
 | Overlays | `react-native-teleport` (portal hosts at the root) |
@@ -39,12 +39,10 @@ Known-good pattern: `scheduleOnRN(setCreate, null)` / `scheduleOnRN(setOutgoing,
 flowchart TD
   Root["src/app/_layout.tsx<br/>providers, portals, StrictMode"]
   Widgets["FeaturedWidgetsProvider<br/>sheet, capture, publication"]
-  Tabs["src/app/(tabs)/_layout.tsx<br/>Featured launcher + Home + Create"]
-  Home["src/app/(tabs)/index.tsx<br/>day pager home"]
+  Home["src/app/index.tsx<br/>day pager + floating launchers"]
   Extension["FeaturedArtefactWidget<br/>one Large configurable iOS widget"]
-  Root --> Tabs
+  Root --> Home
   Root --> Widgets
-  Tabs --> Home
   Widgets --> Extension
   Home --> Header["HomeHeader"]
   Home --> Pager["DayPager → Stack"]
@@ -59,7 +57,7 @@ flowchart TD
 | File | Role |
 |------|------|
 | [`package.json`](../package.json) | Dependencies, scripts (`start`, `ios`, `android`, `lint`, `lint:rc`, `healthcheck:rc`, `check`, `typecheck`, `fmt`). Entry point: **`expo-router/entry`** (canonical; custom `index.js` and `.pnpm` `watchFolders` were removed after the Metro matrix proved them unnecessary). `expo.autolinking.ios.buildFromSource` forces Reanimated + Worklets to compile from source on iOS. |
-| [`app.json`](../app.json) | Expo app config: `soies` URL scheme, iOS 17 deployment target, one five-choice `systemLarge` widget, bundle IDs, plugins, EAS project ID, and **`experiments.reactCompiler`**. Android widget generation is explicitly disabled. |
+| [`app.json`](../app.json) | Expo app config: `soies` URL scheme, iOS 17 deployment target, one five-choice `systemLarge` widget, bundle IDs, plugins, EAS project ID, and **`experiments.reactCompiler`**. Android widget generation is explicitly disabled. Image selection uses the system picker without photo-library read permission; camera and save-only Photos access are configured separately. |
 | [`babel.config.js`](../babel.config.js) | `babel-preset-expo` + React Compiler options (`panicThreshold: "all_errors"` → hard build failures). |
 | [`eas.json`](../eas.json) | EAS Build profiles: `development`, `preview`, `production`, `ios-simulator`, `development-simulator`. |
 | [`metro.config.js`](../metro.config.js) | Metro + Uniwind (`cssEntryFile`, `dtsFile`) only. No `unstable_enableSymlinks` (Metro 0.84 always-on; Expo Doctor rejects the override). No extra `watchFolders`. |
@@ -76,9 +74,15 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (BloomPanel calendar/menus). Create is a root-owned absolute sibling so its own Bloom menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. |
-| [`src/app/(tabs)/_layout.tsx`](../src/app/(tabs)/_layout.tsx) | **Tab layout.** Keeps Home centered, with the iOS-only Featured Artefacts launcher at bottom-left and Create at bottom-right. Wraps the route in `ExpandProvider`; Android/web resolve the Featured launcher to `null`. |
-| [`src/app/(tabs)/index.tsx`](../src/app/(tabs)/index.tsx) | **Home screen.** Reads date and one-shot widget commands from the URL, loads entries for that day, and renders `HomeHeader` + vertical `DayPager`. An occupied widget command targets an exact entry/artefact; an empty or unavailable command opens Featured Artefacts at its slot. |
+| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider, and one headerless Stack route. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (BloomPanel calendar/menus). Create is a root-owned absolute sibling so its own Bloom menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. Exports a retryable route error boundary. |
+| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, reads date and one-shot widget commands from the URL, loads entries for that day, and renders `HomeHeader` + vertical `DayPager`. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route; there is no tab navigator or tab bar. An occupied widget command targets an exact entry/artefact; an empty or unavailable command opens Featured Artefacts at its slot. Exports a Home-specific retry boundary. |
+
+Create, Share, and the iOS Featured Widgets sheet each have a retry/dismiss
+feature boundary inside the provider that owns their session. Create keeps its
+draft hooks and in-flight work above that boundary; Share and Widgets retain
+their provider-owned session. A render failure therefore replaces only the
+fallible transient subtree while preserving recoverable state. Boundary
+diagnostics contain structural component context, never journal content.
 
 ---
 
@@ -90,7 +94,7 @@ flowchart TD
 |------|------|
 | [`HomeHeader.tsx`](../src/components/HomeHeader.tsx) | Top bar: formatted date button (opens calendar bloom), animated entry titles as you scroll days, action buttons. Composes `BloomButton` / `BloomPanel`, `CalendarOverlay`, and create entry. |
 | [`DayPager.tsx`](../src/components/DayPager.tsx) | Vertical pager of **entries** for one day. One full-screen page per entry (`Stack`). It can jump to a stable entry ID from a widget command without changing Home's index-keyed reuse lifecycle. |
-| [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — collapsed deck vs expanded horizontal artefact pager. Tap to expand; long-press or ellipsis opens Focus. A widget target immediately expands at the matching artefact ID. |
+| [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — collapsed deck vs expanded horizontal artefact pager. Tap to expand; long-press or ellipsis opens Focus. Focus's portal, blur, and subject clone mount only for an active open/close session. A widget target immediately expands at the matching artefact ID. |
 | [`CollapsedDeck.tsx`](../src/components/CollapsedDeck.tsx) | Renders the stacked-card collapsed view; `useWrappedArtefacts` builds wrapped `Paper` / `Print` children. |
 | [`ArtefactWrapper.tsx`](../src/components/ArtefactWrapper.tsx) | Animated wrapper per artefact: interpolates position/size/shadow between collapsed stack layout and expanded pager layout. |
 | [`Paper.tsx`](../src/components/Paper.tsx) | Text-only artefact renderer (A4 aspect, paper background). |
@@ -132,15 +136,6 @@ flowchart TD
 | [`widgetDeepLink.ts`](../src/widgets/widgetDeepLink.ts) | Parses and de-duplicates cold/warm slot commands before Home consumes and clears their URL parameters. |
 
 Selection captures first, commits the lowest genuinely empty slot in one database transaction, then publishes one snapshot containing all five positions. Duplicate artefacts are rejected and active unavailable bindings remain capacity reservations. Publication failure never rolls back user intent: the sheet shows the assigned slot, surfaces a non-blocking warning, and reconciliation retries later. Empty/unavailable states publish before any potentially slow recapture.
-
-### Tabs
-
-| File | Role |
-|------|------|
-| [`tabs/StyledTabList.tsx`](../src/components/tabs/StyledTabList.tsx) | Bottom tab bar container styling. |
-| [`tabs/StyledTabTrigger.tsx`](../src/components/tabs/StyledTabTrigger.tsx) | Individual tab trigger styling. |
-
----
 
 ## `src/data/` — data layer
 

@@ -28,10 +28,7 @@ const createChromeSource = readFileSync(
   "utf8",
 );
 const rootLayoutSource = readFileSync(new URL("../src/app/_layout.tsx", import.meta.url), "utf8");
-const tabsLayoutSource = readFileSync(
-  new URL("../src/app/(tabs)/_layout.tsx", import.meta.url),
-  "utf8",
-);
+const homeRouteSource = readFileSync(new URL("../src/app/index.tsx", import.meta.url), "utf8");
 const toolbarSource = readFileSync(
   new URL("../src/components/PaperTextPresetToolbar.tsx", import.meta.url),
   "utf8",
@@ -73,7 +70,7 @@ test("Create owns one Fabric hierarchy instead of natively teleporting the compl
   assert.match(rootLayoutSource, /<CreateProvider>/);
   assert.match(rootLayoutSource, /<CreateOverlay \/>/);
   assert.doesNotMatch(rootLayoutSource, /PortalHost name="create"/);
-  assert.doesNotMatch(tabsLayoutSource, /CreateProvider|CreateOverlay/);
+  assert.doesNotMatch(homeRouteSource, /CreateProvider|CreateOverlay/);
   assert.doesNotMatch(createChromeSource, /portalHostName="create"/);
 });
 
