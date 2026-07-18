@@ -4,6 +4,10 @@ A personal journaling app for dated **entries** made of **artefacts** (papers an
 
 ## Language
 
+**User**:
+The owner of a Soies journal.
+_Avoid_: Account
+
 **Entry**:
 A dated unit of content, either a paper stack or a print stack.
 _Avoid_: Post, note, card
@@ -23,6 +27,22 @@ _Avoid_: Photo entry, image post
 **Day**:
 A calendar date (`YYYY-MM-DD`) that groups zero or more entries.
 _Avoid_: Page, session
+
+**User Creation Day**:
+The immutable local Day on which a User's Soies journal begins.
+_Avoid_: Account-created date, creation timestamp
+
+**Selected Day**:
+The Day whose Entries are currently displayed on Home.
+_Avoid_: Effective date, route date, active date
+
+**Focused Day**:
+The Day currently emphasized while browsing dated Entries.
+_Avoid_: Current date, currently-scrolled date, active date
+
+**Focused Month**:
+The calendar month currently emphasized while browsing Days by month.
+_Avoid_: Current month, currently-scrolled month, active month
 
 **Featured Artefact**:
 An Artefact assigned to a Widget Slot for framed presentation in the app and its configured Widget.

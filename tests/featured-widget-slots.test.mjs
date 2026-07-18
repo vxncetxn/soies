@@ -100,13 +100,54 @@ test("migration creates only the current application schema and starts with five
       .all(),
     [],
   );
-  assert.equal(fixture.database.prepare("PRAGMA user_version").get().user_version, 3);
+  assert.equal(fixture.database.prepare("PRAGMA user_version").get().user_version, 4);
+  const creationDayColumn = fixture.database
+    .prepare("PRAGMA table_info(users)")
+    .all()
+    .find(({ name }) => name === "creation_day");
+  assert.deepEqual(
+    { type: creationDayColumn?.type, notnull: creationDayColumn?.notnull },
+    { type: "TEXT", notnull: 1 },
+  );
 
   const slots = await readFeaturedWidgetSlots(fixture);
   assert.equal(slots.length, FEATURED_WIDGET_SLOT_COUNT);
   assert.deepEqual(
     slots.map(({ slotIndex, state }) => ({ slotIndex, state })),
     [1, 2, 3, 4, 5].map((slotIndex) => ({ slotIndex, state: "empty" })),
+  );
+});
+
+test("User Creation Day is backfilled once from a version-three timestamp", async () => {
+  const fixture = createExecutor();
+  fixture.database.exec(`
+    CREATE TABLE users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT,
+      avatar_path TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
+    );
+    CREATE TABLE entries (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      deleted_at INTEGER
+    );
+    PRAGMA user_version = 3;
+  `);
+  const createdAt = new Date(2026, 0, 1, 12).getTime();
+  fixture.database
+    .prepare("INSERT INTO users (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)")
+    .run("user", "User", createdAt, createdAt);
+
+  await runMigrations(fixture);
+
+  assert.equal(
+    fixture.database.prepare("SELECT creation_day FROM users WHERE id = 'user'").get().creation_day,
+    "2026-01-01",
   );
 });
 

@@ -62,6 +62,8 @@ const SEED_DATA: SeedDay[] = [
 ];
 
 const SAMPLE_TAG_NAME = "Japan 2026";
+const SEED_USER_CREATION_DAY = "2026-01-01";
+const SEED_USER_CREATED_AT = Date.UTC(2026, 0, 1, 12);
 
 // A fully-prepared artefact: every id/timestamp/data field is resolved (image
 // file already copied) so the DB write phase is pure SQL with no awaits on file
@@ -162,7 +164,10 @@ export async function seed(): Promise<void> {
 
   // ---- Phase 2: commit (single transaction, no file I/O) ----
   await withTransaction(undefined, async (tx) => {
-    await getOrCreateUser(tx);
+    await getOrCreateUser(tx, {
+      creationDay: SEED_USER_CREATION_DAY,
+      createdAt: SEED_USER_CREATED_AT,
+    });
 
     for (const entry of preparedEntries) {
       await insertEntry(

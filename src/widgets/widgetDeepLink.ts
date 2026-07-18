@@ -14,6 +14,8 @@
 import type { Entry } from "../data/entries";
 import type { FeaturedWidgetSlotIndex } from "../db/repositories/featuredWidgetSlots";
 
+import { isValidISODate } from "../utils/date";
+
 type SearchValue = string | string[] | undefined;
 
 export type WidgetSearchParams = {
@@ -49,7 +51,7 @@ export function parseWidgetDeepLink(params: WidgetSearchParams): WidgetDeepLinkT
   const date = first(params.date);
   const entryId = first(params.widgetEntryId);
   const artefactId = first(params.widgetArtefactId);
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && entryId && artefactId) {
+  if (date && isValidISODate(date) && entryId && artefactId) {
     return { kind: "artefact", slotIndex, date, entryId, artefactId };
   }
   return { kind: "slot", slotIndex };

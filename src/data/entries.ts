@@ -70,7 +70,7 @@ export type Tag = {
   updatedAt: number;
 };
 
-export { getEntriesByDate, getEntryDates, getAllEntriesByDate } from "../db/repositories/entries";
+export { getEntriesByDate, getEntryDates } from "../db/repositories/entries";
 export { searchEntries } from "../db/repositories/search";
 export { listTags } from "../db/repositories/tags";
 

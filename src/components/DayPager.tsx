@@ -58,6 +58,10 @@ type DayPagerProps = {
   widgetTarget: Extract<WidgetDeepLinkTarget, { kind: "artefact" }> | null;
   // Stack calls this only after it has selected and expanded the exact child.
   onWidgetTargetConsumed: () => void;
+  // Exact entry selected from the Recent tab. Unlike a widget target this
+  // selects only the vertical entry page; it does not expand an artefact.
+  entryTargetId: string | null;
+  onEntryTargetConsumed: () => void;
 };
 
 const DayPager = ({
@@ -70,6 +74,8 @@ const DayPager = ({
   onPagerHeightChange,
   widgetTarget,
   onWidgetTargetConsumed,
+  entryTargetId,
+  onEntryTargetConsumed,
 }: DayPagerProps) => {
   // Animated ref to the ScrollView so we can imperatively `scrollTo` when the
   // user jumps to an entry via the side indicator.
@@ -121,6 +127,21 @@ const DayPager = ({
     scrollRef.current?.scrollTo({ x: 0, y: entryIndex * pagerHeight, animated: false });
     scrollOffset.set(entryIndex * pagerHeight);
   }, [entries, pagerHeight, scrollOffset, scrollRef, widgetTarget]);
+
+  useLayoutEffect(() => {
+    if (!entryTargetId || pagerHeight === 0) {
+      return;
+    }
+    const entryIndex = entries.findIndex((entry) => entry.id === entryTargetId);
+    if (entryIndex >= 0) {
+      const targetOffset = entryIndex * pagerHeight;
+      scrollRef.current?.scrollTo({ x: 0, y: targetOffset, animated: false });
+      scrollOffset.set(targetOffset);
+    }
+    // Consume even if the entry disappeared between preview query and complete
+    // Day query; the screen then remains safely on its first available entry.
+    onEntryTargetConsumed();
+  }, [entries, entryTargetId, onEntryTargetConsumed, pagerHeight, scrollOffset, scrollRef]);
 
   /**
    * Jump directly to a given entry index (called by the ScrollIndicator when

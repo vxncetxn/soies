@@ -100,11 +100,46 @@ const MIGRATION_V3: Migration = {
 };
 
 /**
+ * Persist the User's immutable local creation Day separately from its UTC
+ * timestamp. Rebuilding the unreferenced users table gives the field a real
+ * NOT NULL invariant; existing rows receive a one-time local-date backfill.
+ * The partial Recent index keeps keyset reads bounded even after tombstones
+ * accumulate and covers the stable Entry-ID ordering term.
+ */
+const MIGRATION_V4: Migration = {
+  version: 4,
+  statements: [
+    `CREATE TABLE users_v4 (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL,
+      email        TEXT,
+      avatar_path  TEXT,
+      creation_day TEXT NOT NULL,
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL,
+      deleted_at   INTEGER
+    )`,
+    `INSERT INTO users_v4 (
+       id, name, email, avatar_path, creation_day, created_at, updated_at, deleted_at
+     )
+     SELECT id, name, email, avatar_path,
+            strftime('%Y-%m-%d', created_at / 1000.0, 'unixepoch', 'localtime'),
+            created_at, updated_at, deleted_at
+     FROM users`,
+    "DROP TABLE users",
+    "ALTER TABLE users_v4 RENAME TO users",
+    `CREATE INDEX idx_entries_recent_active
+     ON entries(date DESC, sort_order DESC, id DESC)
+     WHERE deleted_at IS NULL`,
+  ],
+};
+
+/**
  * Current clean-install baseline. Earlier development databases are discarded
  * before this sequence runs, so its contiguous versions contain only schema a
  * newly installed app needs rather than compatibility steps for old builds.
  */
-const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3];
+const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4];
 
 export async function runMigrations(db: DB): Promise<void> {
   const versionResult = await db.execute("PRAGMA user_version");

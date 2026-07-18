@@ -1,6 +1,6 @@
 # soies — Project overview
 
-**soies** is a personal journaling app built with Expo SDK 57 and React Native. Users browse dated **entries** (stacks of **artefacts**) day by day, expand stacks to read individual papers or prints, and navigate dates via a blooming calendar panel. Domain terminology lives in [`CONTEXT.md`](../CONTEXT.md).
+**soies** is a personal journaling app built with Expo SDK 57 and React Native. Users browse dated **entries** (stacks of **artefacts**) day by day, expand stacks to read individual papers or prints, and navigate through Recent entries or Monthly grids in a native calendar sheet. Domain terminology lives in [`CONTEXT.md`](../CONTEXT.md).
 
 ---
 
@@ -13,9 +13,9 @@
 | Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based root Stack) |
 | Styling | [Uniwind](https://docs.uniwind.dev/) + Tailwind CSS v4 (`className` on native views) |
 | Animation | Reanimated 4 + Worklets (UI-thread springs, scroll handlers, morphs). Shared values use `.get()` / `.set()` for React Compiler compatibility. |
-| Overlays | `react-native-teleport` (portal hosts at the root) |
-| Lists / paging | `ScrollView` + Reanimated (day pager, expanded artefact pager) |
-| Calendar UI | `@marceloterreiro/flash-calendar` |
+| Overlays | `react-native-teleport` (portal hosts at the root) + `@swmansion/react-native-bottom-sheet` |
+| Lists / paging | `ScrollView` + Reanimated (day/artefact pagers); FlashList 2 (calendar browse lists) |
+| Calendar UI | `@marceloterreiro/flash-calendar` + `react-native-edge-fade` |
 | Icons | `react-native-nano-icons` (SVGs in `assets/icons/`) |
 | Images | `expo-image` |
 | Haptics | `react-native-pulsar` |
@@ -46,7 +46,7 @@ flowchart TD
   Widgets --> Extension
   Home --> Header["HomeHeader"]
   Home --> Pager["DayPager → Stack"]
-  Header --> Calendar["BloomButton + BloomPanel + CalendarOverlay"]
+  Home --> Calendar["CalendarSheet → Recent / Monthly"]
   Pager --> Stack["Stack expand/collapse"]
 ```
 
@@ -74,8 +74,8 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, portal provider, and one headerless Stack route. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (BloomPanel calendar/menus). Create is a root-owned absolute sibling so its own Bloom menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. Exports a retryable route error boundary. |
-| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, reads date and one-shot widget commands from the URL, loads entries for that day, and renders `HomeHeader` + vertical `DayPager`. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route; there is no tab navigator or tab bar. An occupied widget command targets an exact entry/artefact; an empty or unavailable command opens Featured Artefacts at its slot. Exports a Home-specific retry boundary. |
+| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, bottom-sheet and portal providers, and one headerless Stack route. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (Create's Bloom menu). Create is a root-owned absolute sibling so its own menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. Exports a retryable route error boundary. |
+| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, strictly resolves the date and one-shot widget commands from the URL, loads one complete Day through the bounded cache, and renders `HomeHeader`, vertical `DayPager`, and the persistent lightweight `CalendarSheet` shell. It owns calendar selection and exact Recent-entry positioning. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route. Exports a Home-specific retry boundary. |
 
 Create, Share, and the iOS Featured Widgets sheet each have a retry/dismiss
 feature boundary inside the provider that owns their session. Create keeps its
@@ -92,8 +92,8 @@ diagnostics contain structural component context, never journal content.
 
 | File | Role |
 |------|------|
-| [`HomeHeader.tsx`](../src/components/HomeHeader.tsx) | Top bar: formatted date button (opens calendar bloom), animated entry titles as you scroll days, action buttons. Composes `BloomButton` / `BloomPanel`, `CalendarOverlay`, and create entry. |
-| [`DayPager.tsx`](../src/components/DayPager.tsx) | Vertical pager of **entries** for one day. One full-screen page per entry (`Stack`). It can jump to a stable entry ID from a widget command without changing Home's index-keyed reuse lifecycle. |
+| [`HomeHeader.tsx`](../src/components/HomeHeader.tsx) | Top bar: plain formatted-date trigger for the native calendar sheet plus animated Entry titles as the Day pager moves. |
+| [`DayPager.tsx`](../src/components/DayPager.tsx) | Vertical pager of **entries** for one day. One full-screen page per entry (`Stack`). It can consume a collapsed Entry target from Recent or an exact expanded Artefact target from a Widget command without changing Home's index-keyed reuse lifecycle. |
 | [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — collapsed deck vs expanded horizontal artefact pager. Tap to expand; long-press or ellipsis opens Focus. Focus's portal, blur, and subject clone mount only for an active open/close session. A widget target immediately expands at the matching artefact ID. |
 | [`CollapsedDeck.tsx`](../src/components/CollapsedDeck.tsx) | Renders the stacked-card collapsed view; `useWrappedArtefacts` builds wrapped `Paper` / `Print` children. |
 | [`ArtefactWrapper.tsx`](../src/components/ArtefactWrapper.tsx) | Animated wrapper per artefact: interpolates position/size/shadow between collapsed stack layout and expanded pager layout. |
@@ -104,8 +104,11 @@ diagnostics contain structural component context, never journal content.
 
 | File | Role |
 |------|------|
-| [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** used by the calendar (fullscreen) and create menus. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
-| [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Month calendar (`flash-calendar`) with dots on days that have entries. Selecting a date navigates home with `?date=`. |
+| [`CalendarSheet.tsx`](../src/components/CalendarSheet.tsx) | Persistent zero-detent native shell. Lazily mounts the remembered active tab after opening begins, owns fixed header/fades/dismissal/crossfade, and releases tab trees after close settles. |
+| [`CalendarRecentTab.tsx`](../src/components/CalendarRecentTab.tsx) / [`CalendarEntryPreview.tsx`](../src/components/CalendarEntryPreview.tsx) | Keyset-paged FlashList rows, Focused Day behavior, visible canonical first-Artefact previews, count silhouettes, and exact Entry selection. |
+| [`CalendarMonthlyTab.tsx`](../src/components/CalendarMonthlyTab.tsx) | Chronological virtualized month grids from User Creation Day through today, Focused Month background, Selected Day underline, disabled bounds, and type-presence markers. |
+| [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** still used by Create's compact menu. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
+| [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Dormant former fullscreen calendar with no callsite. Deletion is deferred with the broader legacy overlay cleanup. |
 | [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: blurred backdrop, measured subject clone, and menu. On iOS, **Feature in Widget** appears immediately before Share and opens the picker for that Entry. |
 | [`ArtefactFrame.tsx`](../src/components/ArtefactFrame.tsx) / [`artefactFrameGeometry.ts`](../src/components/artefactFrameGeometry.ts) | Shared portrait frame renderer plus pure board/shadow invariants for live capture, cached Featured Artefact previews, and branded empty/unavailable prompts. |
 | [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) | **Unused** legacy morph overlay (no callsite). Kept for reference; unsafe Worklets `onClose` bridge — do not reintroduce without hardening. |
@@ -142,6 +145,8 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 | File | Role |
 |------|------|
 | [`entries.ts`](../src/data/entries.ts) | **Domain types** (`PaperArtefact`, `PrintArtefact`, `Entry`, `DayEntries`) and helpers. Entry view models expose stable `id` and `date` for widget targeting. Persistence is in `src/db/`. |
+| [`calendarBrowse.ts`](../src/data/calendarBrowse.ts) / [`calendarBrowseCache.ts`](../src/data/calendarBrowseCache.ts) | Pure calendar grouping/focus/range helpers plus bounded first-page/month-marker summary caches. |
+| [`entriesCache.ts`](../src/data/entriesCache.ts) | Eight-Day complete-entry LRU with in-flight load de-duplication and invalidation. |
 | [`mock-image.png`](../src/data/mock-image.png) | Sample image for print entries in seed/dev data. |
 
 ### Widget persistence
@@ -154,7 +159,7 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 
 | File | Role |
 |------|------|
-| [`date.ts`](../src/utils/date.ts) | ISO date helpers (`YYYY-MM-DD`): `todayISO`, `toISODate`, `parseISO`, `addDaysISO`, `formatDisplayDate`. No time component — avoids timezone drift. |
+| [`date.ts`](../src/utils/date.ts) | ISO Day helpers (`YYYY-MM-DD`), including strict semantic validation for untrusted routes/deep links. No time component — avoids timezone drift. |
 | [`haptics.ts`](../src/utils/haptics.ts) | Worklet-safe long-press haptic via Pulsar. |
 
 ---
@@ -194,7 +199,7 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 |------|------|
 | [`docs/README.md`](./README.md) | Index of the four main UI features and how they connect. Start here for deep dives. |
 | [`docs/01-stack-expand-collapse.md`](./01-stack-expand-collapse.md) | Stack expand/collapse, horizontal paging, portal overlay. |
-| [`docs/02-calendar-morph-overlay.md`](./02-calendar-morph-overlay.md) | Calendar + bloom/morph overlay technique. |
+| [`docs/02-calendar-morph-overlay.md`](./02-calendar-morph-overlay.md) | Active native Calendar sheet lifecycle, tabs, bounded data, and selection behavior. |
 | [`docs/03-scroll-indicator.md`](./03-scroll-indicator.md) | Scroll indicator (vertical day rail + horizontal artefact rail). |
 | [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md) | Physical-device stress matrix for RC / Worklets closure. |
 | [`docs/adr/`](./adr/) | Architecture decision records: persistence, portal overlays, media/share seams, and stable raster-backed Widget Slots. |

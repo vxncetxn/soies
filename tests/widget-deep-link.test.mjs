@@ -38,6 +38,17 @@ test("empty, incomplete, and unavailable-style links fall back to their slot", (
   assert.equal(parseWidgetDeepLink({ widgetSlot: "8" }), null);
 });
 
+test("occupied links with impossible Days fall back to their slot", () => {
+  assert.deepEqual(parseWidgetDeepLink({ ...occupied, date: "2026-99-01" }), {
+    kind: "slot",
+    slotIndex: 3,
+  });
+  assert.deepEqual(parseWidgetDeepLink({ ...occupied, date: "2026-02-29" }), {
+    kind: "slot",
+    slotIndex: 3,
+  });
+});
+
 test("warm consumption is one-shot and clearing params permits the same tap again", () => {
   const first = nextWidgetDeepLinkConsumption(null, occupied);
   assert.equal(first.target?.kind, "artefact");

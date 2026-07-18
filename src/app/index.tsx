@@ -3,9 +3,11 @@
  *
  * This is the main screen of the app. It reads the optional `?date=` query
  * parameter from the URL, loads the entries for that day, and renders:
- *   - a `HomeHeader` (date button + animated entry titles), and
+ *   - a `HomeHeader` (calendar button + animated entry titles),
  *   - a `DayPager` (a vertical, paging ScrollView that shows one entry-stack
- *     per "page").
+ *     per "page"), and
+ *   - a persistently mounted `CalendarSheet` whose expensive content is
+ *     created only after the native sheet has begun opening.
  *
  * Most of the interesting work here is setting up the **shared animation
  * values** that the header and the pager read from. These values live above
@@ -16,16 +18,11 @@
  * (not React state) so scrolling never triggers React re-renders — the UI
  * thread reads the values directly inside `useAnimatedStyle`/`useDerivedValue`.
  *
- * Entry loading uses a module-level cache plus "adjust state during render": on
- * a route date change, cached entries are adopted synchronously (before commit)
- * so the DayPager updates in place with the correct entries — it is NOT keyed by
- * date, so a date change re-renders rather than remounts, avoiding the native
- * mount work that contended with the calendar's close spring. The cache is
- * warmed on mount by a single `getAllEntriesByDate` query (every date at once),
- * so any date picked from the calendar — including a first-ever visit — is a
- * cache hit, and the revalidation fetch is skipped on hits to avoid a second
- * native commit during the close. DayPager resets its scroll to the top on
- * entries change, and Stack resets its persisted artefact page on entry change.
+ * Entry loading uses a small, bounded day cache. A route date change adopts a
+ * cached day synchronously; a miss shows the loading state while one deduped
+ * query runs. Calendar selections prefetch the selected day before changing
+ * the route, preserving the old calendar's instant hand-off without retaining
+ * the user's entire journal in memory.
  */
 import { type ErrorBoundaryProps, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -34,21 +31,22 @@ import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppErrorFallback from "../components/app-error-fallback";
+import CalendarSheet from "../components/CalendarSheet";
 import { useEntriesVersion } from "../components/CreateContext";
 import CreateEntryButton from "../components/CreateEntryButton";
 import DayPager from "../components/DayPager";
 import { ExpandProvider } from "../components/ExpandContext";
 import FeaturedArtefactsButton from "../components/FeaturedArtefactsButton";
 import HomeHeader from "../components/HomeHeader";
-import { getAllEntriesByDate, getEntriesByDate, type Entry } from "../data/entries";
+import { getEntriesByDate, type Entry } from "../data/entries";
 import {
   getCachedEntries,
   hasCachedEntries,
-  seedEntriesCache,
-  setCachedEntries,
+  invalidateEntriesCache,
+  loadEntriesCached,
 } from "../data/entriesCache";
 import { isFeaturedWidgetSourceAvailable } from "../db/repositories/featuredWidgetSlots";
-import { todayISO } from "../utils/date";
+import { todayISO, validISODateOr } from "../utils/date";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import {
   hasExactWidgetSource,
@@ -65,22 +63,7 @@ import {
 // avoiding a visible "pop" where it mounts at 0 and then resizes.
 let cachedPagerHeight = 0;
 
-// Module-level cache of entries by date. Warmed on mount by the preload effect
-// (one `getAllEntriesByDate` query that loads every date's entries at once), and
-// kept fresh by the load effect's revalidation on cache misses. When you pick a
-// date from the calendar, the component reads this cache synchronously during
-// render (see "adjust state during render" below) so the DayPager updates in
-// place with the correct entries on the very first commit — instead of showing
-// the stale previous date's entries and re-rendering when the async fetch
-// resolves. That stale-then-update flow (and the full DayPager remount an
-// earlier `key={effectiveDate}` caused) ran native mount/update work on the UI
-// thread and contended with the calendar's close spring, dropping the de-bloom's
-// first frames. The load effect skips revalidation on cache hits (no second
-// commit during the close); cache misses still fetch (stale-while-revalidate).
 const EMPTY_ENTRIES: Entry[] = [];
-// True once the background preload of all entry dates has been kicked off.
-// Module-level so it survives remounts (the cache does too).
-let entriesPreloaded = false;
 
 function HomeScreen() {
   const searchParams = useLocalSearchParams<WidgetSearchParams>();
@@ -91,19 +74,14 @@ function HomeScreen() {
   const window = useWindowDimensions();
 
   const routeDate = Array.isArray(searchParams.date) ? searchParams.date[0] : searchParams.date;
-  const effectiveDate = routeDate ?? todayISO();
+  const effectiveDate = validISODateOr(routeDate, todayISO());
   const [entries, setEntries] = useState<Entry[]>(
     () => getCachedEntries(effectiveDate) ?? EMPTY_ENTRIES,
   );
   // Tracks the date the `entries` state currently reflects, so we can detect
   // route date changes during render (see the adjust-state block below).
   const [prevDate, setPrevDate] = useState(effectiveDate);
-  // `loading` is only true until the *first* successful load. After that we
-  // keep the previous entries visible while the next date's entries load
-  // (stale-while-revalidate), which avoids a full-screen spinner flash on every
-  // date tap. The local query resolves in a few milliseconds, so the stale
-  // content is imperceptible and is swapped in when the fetch resolves.
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !hasCachedEntries(effectiveDate));
   const [error, setError] = useState<Error | null>(null);
   // Bumped by `retry` to retrigger the load effect after an error.
   const [attempt, setAttempt] = useState(0);
@@ -111,8 +89,20 @@ function HomeScreen() {
     WidgetDeepLinkTarget,
     { kind: "artefact" }
   > | null>(null);
+  const [pendingCalendarEntryId, setPendingCalendarEntryId] = useState<string | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarOpenRequestedAt, setCalendarOpenRequestedAt] = useState<number | null>(null);
   const consumedWidgetSignatureRef = useRef<string | null>(null);
   const widgetValidationRequestRef = useRef(0);
+
+  // Never let an impossible external route value reach repository queries.
+  // Canonicalising the URL also keeps subsequent navigation and widget actions
+  // anchored to the same valid Day the screen is displaying.
+  useEffect(() => {
+    if (routeDate !== undefined && routeDate !== effectiveDate) {
+      router.setParams({ date: effectiveDate });
+    }
+  }, [effectiveDate, routeDate, router]);
 
   /**
    * Consume widget-only query parameters once, then clear them while retaining
@@ -156,7 +146,14 @@ function HomeScreen() {
           const cached = getCachedEntries(target.date);
           const cachedHasTarget = cached ? hasExactWidgetSource(cached, target) : false;
           if (!cachedHasTarget) {
-            const freshEntries = await getEntriesByDate(target.date);
+            // A present-but-missing target is a stale cache entry. Drop only
+            // that Day; a normal in-flight load is otherwise shared here.
+            if (cached) {
+              invalidateEntriesCache(target.date);
+            }
+            const freshEntries = await loadEntriesCached(target.date, () =>
+              getEntriesByDate(target.date),
+            );
             if (widgetValidationRequestRef.current !== request) {
               return;
             }
@@ -166,7 +163,6 @@ function HomeScreen() {
               openFeatured(target.slotIndex);
               return;
             }
-            setCachedEntries(target.date, freshEntries);
             if (target.date === effectiveDate) {
               setEntries(freshEntries);
             }
@@ -187,22 +183,15 @@ function HomeScreen() {
 
   // "Adjust state during render" (see
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
-  // When the route date changes, synchronously adopt the cached entries (if any)
-  // BEFORE the first commit, so the DayPager updates in place with the correct
-  // entries instead of showing the stale previous date's entries and re-rendering
-  // again when the async fetch resolves. That stale-then-update flow ran native
-  // update work on the UI thread and contended with the close spring, dropping
-  // the de-bloom's first frames. Calling setState during render is safe here:
-  // React re-renders immediately, before committing, so no painted frame shows
-  // stale entries. For cache misses (first visit to a date, or preload not yet
-  // done) there's no cached value, so `entries` stays stale and the load effect
-  // below swaps in the fresh entries (stale-while-revalidate).
+  // When the route date changes, synchronously adopt that Day's cached entries
+  // before commit. A miss clears the old Day immediately so it can never be
+  // mistaken for the newly selected one while the local query resolves.
   if (prevDate !== effectiveDate) {
     setPrevDate(effectiveDate);
     const cached = getCachedEntries(effectiveDate);
-    if (cached && cached !== entries) {
-      setEntries(cached);
-    }
+    setEntries(cached ?? EMPTY_ENTRIES);
+    setLoading(!cached);
+    setError(null);
   }
 
   // Cache hit: finish the first-load spinner during render (not in an effect) so
@@ -219,23 +208,17 @@ function HomeScreen() {
   useEffect(() => {
     let cancelled = false;
 
-    // Cache hit: skip the revalidation fetch entirely — calling setEntries with
-    // a fresh array reference here would trigger a second native commit during
-    // the close morph and contend with the spring. The cache is warmed by the
-    // preload effect and revalidated on cache misses, so it stays fresh for
-    // navigation. Loading/error for cache hits are settled during render above.
+    // Cache hit: skip revalidation. Cache misses share an in-flight request,
+    // including the selected-Day prefetch started by the calendar sheet.
     if (hasCachedEntries(effectiveDate)) {
       return () => {
         cancelled = true;
       };
     }
 
-    getEntriesByDate(effectiveDate)
+    loadEntriesCached(effectiveDate, () => getEntriesByDate(effectiveDate))
       .then((nextEntries) => {
         if (!cancelled) {
-          // Cache the resolved entries so the next navigation to this date can
-          // adopt them synchronously during render (see the adjust-state block).
-          setCachedEntries(effectiveDate, nextEntries);
           setEntries(nextEntries);
           setLoading(false);
           setError(null);
@@ -253,28 +236,23 @@ function HomeScreen() {
     };
   }, [effectiveDate, attempt, entriesVersion]);
 
-  // Background-preload every date's entries into the module-level cache on mount.
-  // One `getAllEntriesByDate` query (entries + artefacts, grouped by date) warms
-  // the cache for every date at once, so ANY date picked from the calendar is a
-  // cache hit: the DayPager updates in place with the correct entries during the
-  // close (no flash of the stale previous date — even on the first ever visit to
-  // a date) and the close spring isn't contended by a stale-then-update flow or a
-  // remount. Module-level `entriesPreloaded` guards against re-running on remount
-  // (the cache survives remounts too). No cleanup: this is a global one-shot
-  // background task, intentionally not tied to this component's lifetime.
-  useEffect(() => {
-    if (entriesPreloaded) {
-      return;
-    }
-    entriesPreloaded = true;
-    getAllEntriesByDate()
-      .then((byDate) => {
-        seedEntriesCache(byDate);
-      })
-      .catch(() => {});
-  }, []);
-
   const retry = () => setAttempt((previous) => previous + 1);
+
+  const navigateFromCalendar = (day: string, entryId: string | null) => {
+    setPendingWidgetTarget(null);
+    // Monthly always targets the first Entry. A route update to the Day that
+    // Home already shows is otherwise a no-op, so give DayPager an explicit
+    // first-Entry target for that same-Day case. Recent supplies its exact ID.
+    setPendingCalendarEntryId(entryId ?? (day === effectiveDate ? (entries[0]?.id ?? null) : null));
+
+    // Begin the complete-Day query while the native sheet is closing. The
+    // home load effect joins this promise, so an uncached Day performs one
+    // query and usually resolves before the sheet has settled off-screen.
+    if (!hasCachedEntries(day)) {
+      void loadEntriesCached(day, () => getEntriesByDate(day)).catch(() => {});
+    }
+    router.setParams({ date: day });
+  };
 
   const widgetTargetForPager = widgetTargetForEntries(pendingWidgetTarget, effectiveDate, entries);
 
@@ -324,6 +302,10 @@ function HomeScreen() {
         date={effectiveDate}
         titles={entries.map((entry) => entry.title)}
         currentPage={currentPage}
+        onCalendarPress={() => {
+          setCalendarOpenRequestedAt(performance.now());
+          setCalendarOpen(true);
+        }}
       />
 
       {error ? (
@@ -357,8 +339,19 @@ function HomeScreen() {
           onPagerHeightChange={handlePagerHeightChange}
           widgetTarget={widgetTargetForPager}
           onWidgetTargetConsumed={() => setPendingWidgetTarget(null)}
+          entryTargetId={pendingCalendarEntryId}
+          onEntryTargetConsumed={() => setPendingCalendarEntryId(null)}
         />
       )}
+      <CalendarSheet
+        dataVersion={entriesVersion}
+        open={calendarOpen}
+        openRequestedAt={calendarOpenRequestedAt}
+        selectedDay={effectiveDate}
+        onOpenChange={setCalendarOpen}
+        onSelectDay={(day) => navigateFromCalendar(day, null)}
+        onSelectEntry={navigateFromCalendar}
+      />
       <FeaturedArtefactsButton />
       <CreateEntryButton />
     </View>

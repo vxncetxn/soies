@@ -1,46 +1,21 @@
 /**
  * HomeHeader — the floating date/calendar control at the top of the home screen.
  *
- * It renders the date pill that, when tapped, blooms into a fullscreen calendar
- * (via `BloomButton`). The pill also carries an animated title carousel that
- * tracks vertical day paging, and the whole header fades out when an entry
- * expands to fullscreen.
- *
- * Calendar navigation pattern ("navigate behind close" + entry cache):
- *   When you pick a day in the calendar, we navigate immediately
- *   (`router.setParams`) so the new day's entries render behind the closing
- *   overlay and are visible as it de-blooms. To keep the de-bloom smooth, the
- *   entries must be available synchronously when the route changes — otherwise
- *   the DayPager re-renders with the stale previous date's entries and re-renders
- *   again when the async fetch resolves, doubling the UI-thread update work and
- *   dropping the spring's first frames. index.tsx reads a module-level entry
- *   cache during render (see "adjust state during render" there) so the pager
- *   updates in place, with the correct entries, on the very first commit. The
- *   calendar's highlight is decoupled from the route: it follows `highlightDate`,
- *   not the `date` route param, and is synced to the picked date in
- *   `handleClosed` — *after* the close morph finishes — so the calendar never
- *   re-renders mid-animation (which would pop the active-day pill while the
- *   panel shrank). `pickedDateRef` stashes the picked date between the pick and
- *   the post-close sync.
+ * It renders the date pill that opens Home's calendar bottom sheet. The pill
+ * also carries an animated title carousel that tracks vertical day paging,
+ * and the whole header fades out when an entry expands to fullscreen.
  *
  * Relationship to other components:
- *   - `BloomButton` (variant="fullscreen") owns the measure-and-morph from the
- *     pill to a fullscreen panel and renders `CalendarOverlay` inside it.
- *   - `CalendarOverlay` is the calendar content; this file drives its
- *     `effectiveDate` (route param) and `highlightDate` (decoupled).
+ *   - Home owns `CalendarSheet` and passes `onCalendarPress` to this trigger.
  *   - `ExpandContext`'s `chromeProgress` fades the whole header out when an
  *     entry expands (the header would overlap the fullscreen expanded view).
  */
-import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, { SharedValue, useAnimatedStyle } from "react-native-reanimated";
 
 import { TITLE_TRAVEL } from "../constants/animation";
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { formatDisplayDate } from "../utils/date";
-import BloomButton from "./BloomButton";
-import CalendarOverlay from "./CalendarOverlay";
 import { Icon } from "./Icon";
 
 type AnimatedTitleProps = {
@@ -122,87 +97,28 @@ type HomeHeaderProps = {
   // Fractional current page from DayPager, shared so the title carousel can
   // react to scrolling without re-rendering this component.
   currentPage: SharedValue<number>;
+  /** Opens the persistent calendar sheet owned by Home. */
+  onCalendarPress: () => void;
 };
 
-const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
-  const router = useRouter();
-  // Controlled open state for the calendar BloomButton. Tapping the pill opens
-  // it; picking a day or hardware-back closes it.
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  // Drives the calendar's active-date highlight, decoupled from the route param
-  // `date` so navigation no longer re-renders the calendar. Synced to the picked
-  // date in `handleClosed` after the close morph finishes.
-  const [highlightDate, setHighlightDate] = useState(date);
-  // Stash the picked date so the highlight can be synced after the close morph,
-  // when the calendar is hidden and no animation is running. Using a ref (not
-  // state) avoids a re-render that would jolt the calendar mid-close.
-  const pickedDateRef = useRef<string | null>(null);
-
-  /**
-   * Day pick handler. Navigate immediately so the new day's entries render
-   * *behind* the closing overlay and are visible as it de-blooms. The entries
-   * are served synchronously from the entry cache in index.tsx so the DayPager
-   * remounts once with the correct entries (no stale-then-update double mount,
-   * which is what contended with the close spring on the UI thread). The
-   * calendar is decoupled (its `activeDateRanges` follows `highlightDate`, not
-   * the route), so this navigation does NOT re-render the calendar. We stash
-   * the picked date for `handleClosed` to sync the highlight post-close, then
-   * request close — BloomButton animates the morph and calls `onClose` when done.
-   */
-  const handleDayPress = (dateId: string) => {
-    router.setParams({ date: dateId });
-    pickedDateRef.current = dateId;
-    setCalendarOpen(false);
-  };
-
-  /**
-   * Post-close callback (BloomButton calls this after the close spring
-   * finishes). Now that the calendar is hidden and no animation is running, it's
-   * safe to sync the highlight to the picked date without jilting the morph.
-   * Clears the stash so a subsequent open starts from the synced highlight.
-   */
-  const handleClosed = () => {
-    if (pickedDateRef.current) {
-      setHighlightDate(pickedDateRef.current);
-      pickedDateRef.current = null;
-    }
-  };
-
+const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderProps) => {
   // Header chrome fade: fades the whole header out as an entry expands
   // (`chromeProgress` 0 → 1 over the first `CHROME_FADE_END` slice) or when
-  // the create overlay opens (`createProgress` 0 → 0.5). The calendar-open
-  // trigger fade is handled inside BloomButton (its `triggerStyle` cross-fades
-  // the trigger as the panel blooms), so here we only handle chrome hide.
+  // the create overlay opens (`createProgress` 0 → 0.5). Calendar presentation
+  // is handled by the native sheet, so this trigger needs no extra morph state.
   const chromeFadeStyle = useHomeChromeFade();
 
   return (
     // Floating header pinned to the top. `z-50` keeps it above the pager; the
-    // calendar panel itself lives in the root `bloom` portal (a sibling above
-    // this whole subtree), so it correctly covers the header when open.
+    // modal sheet itself lives in the bottom-sheet provider above this subtree.
     <View className="absolute z-50 w-full px-5 py-2">
-      {/* Chrome-fade wrapper: fades the header out during entry expand. The
-          BloomButton's portaled panel is outside this wrapper, so the calendar
-          stays visible regardless of the chrome fade. */}
+      {/* Chrome-fade wrapper: fades the header out during entry expand. */}
       <Animated.View style={chromeFadeStyle}>
-        {/* The date pill + fullscreen calendar. `open` is controlled here;
-            BloomButton measures this trigger on open and morphs a separate
-            panel to fullscreen. `onClose` is our post-morph hook for syncing
-            the calendar highlight. `w-full` makes the trigger pill span the
-            header so it measures as a full-width origin. */}
-        <BloomButton
-          variant="fullscreen"
-          open={calendarOpen}
-          onOpenChange={setCalendarOpen}
-          onClose={handleClosed}
-          className="w-full"
+        <Pressable
+          onPress={onCalendarPress}
           accessibilityRole="button"
-          panelNode={
-            <CalendarOverlay
-              effectiveDate={date}
-              highlightDate={highlightDate}
-              onPick={handleDayPress}
-            />
-          }
+          accessibilityLabel="Open calendar"
+          className="w-full rounded-4xl border border-controls-border bg-controls-background"
         >
           {/* Trigger content: the animated title carousel above the formatted
               date + chevron. `w-full` makes this fill the pill (left-aligned
@@ -214,7 +130,7 @@ const HomeHeader = ({ date, titles, currentPage }: HomeHeaderProps) => {
               <Icon name="chevron-down" size={20} color="#79716B" />
             </View>
           </View>
-        </BloomButton>
+        </Pressable>
       </Animated.View>
     </View>
   );

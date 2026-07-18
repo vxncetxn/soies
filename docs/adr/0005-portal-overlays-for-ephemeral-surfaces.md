@@ -4,6 +4,10 @@ status: accepted
 
 # Portal overlays for ephemeral in-place surfaces
 
+> The calendar-specific part of this decision is superseded by
+> [ADR-0013](./0013-native-calendar-sheet-with-lazy-content.md). This ADR remains
+> active for entry expand/collapse, Focus, and Create.
+
 Ephemeral, in-place, animation-heavy UI (calendar morph, entry expand/collapse, long-press entry focus) uses **Portal overlays** rendered into root-level hosts (`morph`, `overlay`), not Expo Router Stack routes. Stack routes are reserved for true destinations. Calendar date picking and entry focus are transient peek surfaces — not routable, not back-stack-worthy — and need measure-and-morph animations and navigate-behind-closing-overlay behaviour that Stack modal presentation cannot provide without reimplementing the same Portal machinery inside a transparent route.
 
 Focus content is mounted on demand when a long press begins, retained through

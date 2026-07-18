@@ -1,171 +1,146 @@
-# Calendar bloom
+# Calendar bottom sheet
 
-> The filename is retained for existing links. The active calendar no longer
-> uses `MorphOverlay`; it uses the reusable `BloomButton` / `BloomPanel`
-> measure-and-morph system.
+> The filename remains stable for existing links. The active calendar is a
+> native bottom sheet; the former fullscreen bloom files remain dormant until a
+> separate cleanup.
 
 ## Active files
 
 | File | Responsibility |
-|------|----------------|
-| `src/components/HomeHeader.tsx` | Owns calendar open state, route navigation, and the deferred highlight sync |
-| `src/components/BloomButton.tsx` | Keeps the trigger inline, measures it, and delegates the panel |
-| `src/components/BloomPanel.tsx` | Portals, measures, animates, blurs, handles back, and reports close completion |
-| `src/components/CalendarOverlay.tsx` | Renders calendar content and reports a picked ISO date |
-| `src/components/BlurTargetViewContext.tsx` | Supplies the Android blur target ref |
-| `src/app/_layout.tsx` | Mounts the root `bloom` portal host and blur target |
+| --- | --- |
+| `src/app/index.tsx` | Owns sheet presentation, Selected Day, complete-Day loading, and the pending exact-Entry target |
+| `src/components/HomeHeader.tsx` | Plain accessible date trigger |
+| `src/components/CalendarSheet.tsx` | Persistent zero-detent shell, header, fades, tab lifecycle, dismissal, and containment |
+| `src/components/CalendarRecentTab.tsx` | Virtualized, keyset-paged Recent rows and Focused Day tracking |
+| `src/components/CalendarMonthlyTab.tsx` | Virtualized chronological month grids, range bounds, markers, and Focused Month tracking |
+| `src/components/CalendarEntryPreview.tsx` | Visible first-Artefact renderer and static count silhouettes |
+| `src/data/calendarBrowse.ts` | Pure grouping, heading, month-range, and focal-line helpers |
+| `src/data/calendarBrowseCache.ts` | First Recent page and four-month lightweight marker cache |
+| `src/data/entriesCache.ts` | Eight-Day complete-entry LRU with in-flight de-duplication |
 
-`src/components/MorphOverlay.tsx` is an unreferenced legacy implementation. It
-is not part of the runtime calendar path.
+The architecture decision and full interaction contract live in
+[ADR-0013](./adr/0013-native-calendar-sheet-with-lazy-content.md) and the
+[approved implementation plan](./calendar-bottom-sheet-implementation-plan.md).
 
-## Ownership and contract
+## Presentation lifecycle
 
-`HomeHeader` controls the interaction:
-
-```text
-calendarOpen
-  false → date pill is interactive, panel is closed
-  true  → panel is open, date pill ignores pointer events
-```
-
-`BloomButton` receives:
-
-- `open` and `onOpenChange` for controlled visibility;
-- the inline date-pill children;
-- `panelNode={<CalendarOverlay ... />}`;
-- `variant="fullscreen"`;
-- `onClose`, which fires on RN/JS only after the close spring finishes.
-
-The trigger never moves into the portal. This is an important coordinate-space
-invariant: a node transformed in the root portal must not be reparented into
-the header's flex layout, or the old transform can produce a visible jump at
-the end of close. `BloomPanel` renders a separate absolute panel that starts
-at the trigger's measured window frame.
-
-## Open sequence
+`CalendarSheet` stays mounted with native detents `[0, openHeight]`, but its
+Recent/Monthly tree does not. This separates instant native motion from the
+cost of constructing lists and Artefact previews.
 
 ```mermaid
 sequenceDiagram
   participant User
-  participant Header as HomeHeader
-  participant Button as BloomButton
-  participant Panel as BloomPanel
-  participant UI as Reanimated UI runtime
+  participant Home
+  participant Sheet
+  participant Native
+  participant Tab
 
-  User->>Button: tap date pill
-  Button->>Header: onOpenChange(true)
-  Header->>Panel: open=true
-  Panel->>UI: measure originRef
-  Panel->>UI: reset visual shared values
-  Panel->>UI: spring progress 0 → 1
-  Note over Button,Panel: inline trigger fades while the separate panel blooms
+  User->>Home: press date control
+  Home->>Sheet: open=true + tap timestamp
+  Sheet->>Native: move from detent 0 immediately
+  Native-->>Sheet: first nonzero position
+  Sheet->>Tab: mount remembered active tab
+  Note over Sheet,Tab: warm summaries render immediately; cold data uses a stable placeholder
+  User->>Sheet: X, drag, scrim, Back, Entry, or Day
+  Sheet->>Native: move to detent 0
+  Native-->>Sheet: settle(0)
+  Sheet->>Tab: release active and outgoing trees
 ```
 
-On the first closed render, `previousOpenRef` records the state without
-starting a close animation. This transition guard is required under
-`StrictMode`, where mount effects are replayed in development.
+After Home's first frame, idle work warms only the first Recent summary page
+and current/previous month marker summaries. The shell records a development
+tap-to-first-position measurement. Physical release builds must validate the
+ADR's 50 ms p95 opening contract; cold data is allowed to show a placeholder,
+but must never delay native movement.
 
-Fullscreen layout is measured from the window and safe-area insets. The panel
-animates:
+The last selected tab survives dismissal. Each new presentation resets Recent
+to the newest Entry and Monthly to the current month. Within one presentation,
+switching tabs snapshots the outgoing native scroll offset and restores it on
+return. A short opacity crossfade temporarily retains both keyed tab trees;
+only the active tree remains after completion.
 
-- position from the trigger's window coordinates to the fullscreen inset;
-- size from the trigger frame to the fullscreen panel frame;
-- border radius and backdrop/blur from the compact control to the calendar;
-- content opacity/scale after the panel has visibly taken over.
+## Fixed header and fades
 
-Animations and measurements remain on the UI thread. Shared values use
-`.get()` / `.set()` for React Compiler compatibility.
+The tabs, Focused Day/Month heading, close control, and Monthly weekday row are
+fixed above the lists. `AnimatedEdgeFadeView` uses a white overlay fade at the
+top, allowing content to pass underneath while keeping the header readable.
+Its bottom fade animates in only while real list content remains below; trailing
+layout padding is excluded from that decision.
 
-## Picking a date and closing
+Headings deliberately match the English mockups for this release:
 
-Calendar selection deliberately separates three moments:
+- Recent: `30 september 2026`
+- Monthly: `september 2026`
+- weekdays: `M T W T F S S`
 
-1. `HomeHeader.handleDayPress` updates the route immediately.
-2. It stores the picked date in a ref and sets `calendarOpen` to `false`.
-3. After the close spring, `handleClosed` copies the ref into
-   `highlightDate`.
+## Recent
 
-The route changes first so the destination day is visible behind the shrinking
-panel. The calendar highlight is deferred because changing it during the close
-would re-render the calendar content and make the active-day pill pop while
-the panel is moving.
+The repository keyset-pages lightweight previews in
+`(date, sort_order, id) DESC` order. Each preview contains Entry identity,
+Artefact count, and only its first non-deleted Artefact. A partial active-entry
+index covers that ordering, and page lookahead prevents an odd boundary from
+later reshaping a one-card row into a pair.
 
-```mermaid
-sequenceDiagram
-  participant Calendar
-  participant Header as HomeHeader
-  participant Router
-  participant Panel as BloomPanel
+Rows contain at most two Entries and never mix Days. All rows belonging to the
+Day crossing the 40%-viewport reading line use the darker background; a small
+hysteresis band prevents boundary flicker. Only viewable cards mount the
+canonical Paper/Print/Ink renderer. Up to four offset white silhouettes sit
+behind it to communicate the complete one-to-five Artefact count without
+hydrating hidden Artefacts.
 
-  Calendar->>Header: onPick(dateId)
-  Header->>Router: setParams({ date: dateId })
-  Header->>Header: pickedDateRef = dateId
-  Header->>Panel: open=false
-  Panel->>Panel: spring progress 1 → 0
-  Panel-->>Header: onClose after spring completion
-  Header->>Header: sync highlightDate and clear ref
-```
+Selecting a card begins the complete-Day query while the native sheet closes,
+updates the Home route, and asks `DayPager` to position the exact Entry without
+expanding it.
 
-## Safe UI→RN completion
+## Monthly
 
-Reanimated spring callbacks run on the UI runtime. They must not receive a
-render-local callback as a serialized `scheduleOnRN` argument. `BloomPanel`
-instead increments a primitive completion sequence on the UI thread:
+Month IDs are chronological from the persisted User Creation Month through the
+current month. The current month is positioned under the fixed header on first
+visit; scrolling upward reveals the past. The complete first month is visible,
+but Days before the exact User Creation Day are disabled, as are future Days.
 
-```ts
-const next = closeSequence.get() + 1;
-closeSequence.set(next);
-scheduleOnRN(setCloseSequence, next);
-```
+Visible months and a one-month buffer request only distinct Entry-type presence.
+Each Day renders at most one yellow Paper marker, one magenta Print marker, and
+one neutral marker for future unsupported types. Marker failure leaves the
+calendar selectable and exposes a local Retry control.
 
-An RN effect observes the sequence and invokes the latest `onClose` from a ref.
-This keeps the external callback out of Worklets serialization while retaining
-the post-animation timing contract.
+The month crossing the shared focal line receives the darker background. The
+underline follows Home's Selected Day, not the current Day. Selecting any
+enabled Day starts its complete-Day query during dismissal and lands Home on
+the first Entry or the existing empty-Day state.
 
-The same rule applies to menu content cross-fades. The outgoing React node is
-cleared by passing a stable dispatcher and serializable value:
+## Data and failure boundaries
 
-```ts
-scheduleOnRN(setOutgoing, null);
-```
+Home no longer preloads the journal. Complete Days live in an eight-item LRU;
+concurrent readers share one Promise, and rejected or invalidated loads cannot
+populate the cache. Recent's resolved first page and at most four month marker
+Promises are the only process-level calendar summaries.
 
-Do not introduce patterns such as
-`scheduleOnRN(finishClose, onClose)` or
-`scheduleOnRN(clearOutgoing, setOutgoing)`. The second function in each example
-would be serialized as ordinary data and can fail after React Compiler changes
-callback identity or capture shape.
+Failures remain local:
 
-## Blur behavior
+- Recent first-page and later-page failures have separate Retry states.
+- Monthly marker failure keeps grids and Day selection available.
+- One canonical preview failure replaces only that preview.
+- The sheet error boundary leaves the external X dismissal available.
+- Home clears the previous Day on an uncached route change and presents a
+  stable loading/error state, so stale entries are never labelled as the new
+  Day.
 
-The app root is wrapped in `BlurTargetView`. `BloomPanel` reads that ref and
-adds `blurTarget` plus `blurMethod="dimezisBlurViewSdk31Plus"` only on Android.
-Expo SDK 57 documents those props as Android-only. iOS uses the native
-`BlurView` path without a target prop, avoiding the deprecated
-`findNodeHandle` lookup that StrictMode reports.
+## Date invariants
 
-## Back and dismissal behavior
+`users.creation_day` is an immutable local `YYYY-MM-DD`, distinct from the UTC
+millisecond `created_at`. Migration backfills existing Users once using local
+calendar time; the deterministic development seed uses January 1, 2026. New
+Users persist today's local Day at creation.
 
-- Backdrop press requests `onOpenChange(false)`.
-- Android hardware back is subscribed only while open and requests the same
-  controlled close.
-- The panel stays mounted through the close spring.
-- `onClose` runs only after a finished close, so post-close state never changes
-  the calendar midway through animation.
+Untrusted Home and Widget values pass through the strict canonical Day
+validator before any query or calendar calculation. Impossible values such as
+`2026-02-30` fall back to today rather than being normalized by JavaScript.
 
-## Legacy `MorphOverlay`
+## Dormant legacy path
 
-`MorphOverlay.tsx` has no callsite under `src/`. It still contains a
-function-valued Worklets close bridge and must not be wired into active UI in
-its current form. Either remove it in a dedicated cleanup or first migrate its
-completion signaling to the primitive-sequence pattern above.
-
-## Validation
-
-Automated gates cover type safety, formatting, Oxlint React Compiler rules, and
-production transformation. Native acceptance still requires the calendar row
-in [`qa/react-compiler-closure.md`](./qa/react-compiler-closure.md):
-
-- repeatedly open and close;
-- choose dates in both directions;
-- dismiss with backdrop and Android hardware back;
-- confirm no `findNodeHandle`, Worklets, render-write, or unmounted-update logs.
+`BloomButton`, `BloomPanel`, and the `bloom` portal remain active for other
+features. `CalendarOverlay` and `MorphOverlay` have no calendar callsite after
+this change; their removal is intentionally deferred so this feature does not
+mix behavior work with unrelated cleanup.

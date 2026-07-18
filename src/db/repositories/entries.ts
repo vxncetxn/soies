@@ -1,5 +1,6 @@
 import type { Artefact, Entry, PaperArtefact, PrintArtefact } from "../../data/entries";
 
+import { takeStableRecentPage, type CalendarEntryPreview } from "../../data/calendarBrowse";
 import { getDatabase } from "../client";
 import { type DbExecutor, withTransaction } from "../executor";
 import { getEntryRowid, indexEntryTitle, reindexEntryTitle, removeEntryFromFts } from "../fts";
@@ -24,6 +25,23 @@ export type InsertEntryInput = {
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
+};
+
+export type RecentEntryCursor = {
+  date: string;
+  sortOrder: number;
+  id: string;
+};
+
+export type RecentEntryPreviewPage = {
+  items: CalendarEntryPreview[];
+  nextCursor: RecentEntryCursor | null;
+  hasMore: boolean;
+};
+
+export type EntryTypePresence = {
+  day: string;
+  types: string[];
 };
 
 function mapEntryRow(row: EntryRow, artefacts: Artefact[]): Entry {
@@ -199,40 +217,126 @@ export async function getEntryDates(): Promise<Set<string>> {
 }
 
 /**
- * Load every non-deleted entry with its artefacts, grouped by date. Used to
- * warm the in-memory entry cache on app start so any date picked from the
- * calendar is a cache hit — the DayPager then updates in place with the correct
- * entries during the calendar's close morph (no flash of the stale previous
- * date) and the close spring isn't contended by a stale-then-update double
- * commit or a remount. Two queries total (entries + artefacts), regardless of
- * date count.
+ * Keyset-page lightweight Recent cards. Only the first Artefact and total count
+ * are hydrated; hidden stack silhouettes never cause hidden Artefact reads.
  */
-export async function getAllEntriesByDate(): Promise<Map<string, Entry[]>> {
-  const db = await getDatabase();
+export async function getRecentEntryPreviewPage(
+  cursor: RecentEntryCursor | null,
+  requestedLimit: number,
+  tx?: DbExecutor,
+): Promise<RecentEntryPreviewPage> {
+  const db = tx ?? (await getDatabase());
+  const limit = Math.max(1, Math.min(50, Math.floor(requestedLimit)));
+  const cursorClause = cursor
+    ? `AND (
+         date < ?
+         OR (date = ? AND sort_order < ?)
+         OR (date = ? AND sort_order = ? AND id < ?)
+       )`
+    : "";
+  const params = cursor
+    ? [cursor.date, cursor.date, cursor.sortOrder, cursor.date, cursor.sortOrder, cursor.id]
+    : [];
   const result = await db.execute(
     `SELECT id, title, type, date, sort_order, created_at, updated_at, deleted_at
      FROM entries
      WHERE deleted_at IS NULL
-     ORDER BY date, sort_order`,
+       ${cursorClause}
+     ORDER BY date DESC, sort_order DESC, id DESC
+     LIMIT ?`,
+    [...params, limit + 2],
   );
 
-  const rows = result.rows as EntryRow[];
-  const artefactsByEntry = await getArtefactsForEntries(
-    rows.map((row) => row.id),
-    db,
-  );
+  const fetched = (result.rows as EntryRow[]).map<CalendarEntryPreview>((row) => ({
+    id: row.id,
+    date: row.date,
+    title: row.title,
+    type: row.type,
+    sortOrder: row.sort_order,
+    artefactCount: 0,
+    firstArtefact: null,
+  }));
+  const stable = takeStableRecentPage(fetched, limit);
+  const entryIds = stable.items.map((entry) => entry.id);
+  const previewByEntry = new Map<string, { artefactCount: number; firstArtefact: Artefact }>();
 
-  const byDate = new Map<string, Entry[]>();
-  for (const row of rows) {
-    const entry = mapEntryRow(row, (artefactsByEntry.get(row.id) ?? []).map(mapArtefactRow));
-    const list = byDate.get(row.date);
-    if (list) {
-      list.push(entry);
-    } else {
-      byDate.set(row.date, [entry]);
+  if (entryIds.length > 0) {
+    const placeholders = entryIds.map(() => "?").join(", ");
+    const artefactResult = await db.execute(
+      `SELECT a.id, a.entry_id, a.type, a.sort_order, a.data,
+              CASE WHEN a.annotations IS NULL OR a.annotations = '' THEN 0 ELSE 1 END AS has_ink,
+              a.created_at, a.updated_at, a.deleted_at,
+              (SELECT COUNT(*)
+               FROM artefacts counted
+               WHERE counted.entry_id = a.entry_id AND counted.deleted_at IS NULL) AS artefact_count
+       FROM artefacts a
+       WHERE a.entry_id IN (${placeholders})
+         AND a.deleted_at IS NULL
+         AND a.id = (
+           SELECT first.id
+           FROM artefacts first
+           WHERE first.entry_id = a.entry_id AND first.deleted_at IS NULL
+           ORDER BY first.sort_order, first.id
+           LIMIT 1
+         )`,
+      entryIds,
+    );
+
+    for (const row of artefactResult.rows as (ArtefactRow & { artefact_count: number })[]) {
+      previewByEntry.set(row.entry_id, {
+        artefactCount: Number(row.artefact_count),
+        firstArtefact: mapArtefactRow(row),
+      });
     }
   }
-  return byDate;
+
+  const items = stable.items.map((entry) => {
+    const preview = previewByEntry.get(entry.id);
+    return preview
+      ? {
+          ...entry,
+          artefactCount: preview.artefactCount,
+          firstArtefact: preview.firstArtefact,
+        }
+      : entry;
+  });
+  const last = items.at(-1);
+
+  return {
+    items,
+    hasMore: stable.hasMore,
+    nextCursor:
+      stable.hasMore && last ? { date: last.date, sortOrder: last.sortOrder, id: last.id } : null,
+  };
+}
+
+/** Read type presence for bounded Monthly marker windows without Entry bodies. */
+export async function getEntryTypePresence(
+  startDay: string,
+  endDay: string,
+  tx?: DbExecutor,
+): Promise<EntryTypePresence[]> {
+  const db = tx ?? (await getDatabase());
+  const result = await db.execute(
+    `SELECT date, type
+     FROM entries
+     WHERE date BETWEEN ? AND ? AND deleted_at IS NULL
+     GROUP BY date, type
+     ORDER BY date, type`,
+    [startDay, endDay],
+  );
+
+  const byDay = new Map<string, string[]>();
+  for (const row of result.rows) {
+    const day = String(row.date);
+    const types = byDay.get(day);
+    if (types) {
+      types.push(String(row.type));
+    } else {
+      byDay.set(day, [String(row.type)]);
+    }
+  }
+  return Array.from(byDay, ([day, types]) => ({ day, types }));
 }
 
 export async function getEntriesByIds(ids: string[]): Promise<Entry[]> {

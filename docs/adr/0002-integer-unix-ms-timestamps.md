@@ -4,7 +4,7 @@ status: accepted
 
 # Timestamps as INTEGER Unix ms (UTC); date as TEXT
 
-Sync uses last-write-wins by `updated_at`/`deleted_at`, so timestamps must compare cheaply and unambiguously; TEXT ISO only sorts lexically if every value is strictly UTC with a `Z` and fixed fractional digits (any zoned value silently breaks ordering), and string compare is slower on indexed columns. `created_at`/`updated_at`/`deleted_at` are `INTEGER` Unix milliseconds (UTC); `date` (the user-facing, editable calendar Day) stays `TEXT 'YYYY-MM-DD'` — it's independent of `created_at` (back-dating, re-dating, timezone edges make them diverge). Timestamps are formatted to ISO only at the sync-export boundary.
+Sync uses last-write-wins by `updated_at`/`deleted_at`, so timestamps must compare cheaply and unambiguously; TEXT ISO only sorts lexically if every value is strictly UTC with a `Z` and fixed fractional digits (any zoned value silently breaks ordering), and string compare is slower on indexed columns. `created_at`/`updated_at`/`deleted_at` are `INTEGER` Unix milliseconds (UTC); `date` (the user-facing, editable calendar Day) stays `TEXT 'YYYY-MM-DD'` — it's independent of `created_at` (back-dating, re-dating, timezone edges make them diverge). A User's immutable creation Day is likewise stored separately as local `TEXT 'YYYY-MM-DD'`: deriving it from `created_at` in the device's current timezone could move the journal's lower calendar boundary after travel. Timestamps are formatted to ISO only at the sync-export boundary.
 
 ## Considered options
 

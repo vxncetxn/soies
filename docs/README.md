@@ -8,7 +8,7 @@ experience. For domain terminology (`Entry`, `Artefact`, `Paper`, `Print`), read
 | # | Feature | Active implementation | Deep dive |
 |---|---------|-----------------------|-----------|
 | 1 | Stack expand/collapse | `Stack`, `CollapsedDeck`, `ArtefactWrapper` | [01-stack-expand-collapse.md](./01-stack-expand-collapse.md) |
-| 2 | Blooming calendar | `HomeHeader`, `BloomButton`, `BloomPanel`, `CalendarOverlay` | [02-calendar-morph-overlay.md](./02-calendar-morph-overlay.md) |
+| 2 | Calendar journal browser | `CalendarSheet`, `CalendarRecentTab`, `CalendarMonthlyTab` | [02-calendar-morph-overlay.md](./02-calendar-morph-overlay.md) |
 | 3 | Page scrubber | `ScrollIndicator`, `DayPager`, expanded `Stack` | [03-scroll-indicator.md](./03-scroll-indicator.md) |
 | 4 | Featured Artefact widgets | `FeaturedWidgetsSheet`, `WidgetFrameCaptureHost`, `FeaturedArtefactWidget` | [ADR 0011](./adr/0011-stable-raster-backed-featured-widget-slots.md) |
 
@@ -18,9 +18,10 @@ experience. For domain terminology (`Entry`, `Artefact`, `Paper`, `Print`), read
 flowchart TD
   Home["Home route"] --> Header["HomeHeader"]
   Home --> Pager["DayPager"]
-  Header --> Trigger["BloomButton date pill"]
-  Trigger --> Panel["BloomPanel in bloom portal"]
-  Panel --> Calendar["CalendarOverlay"]
+  Header --> Trigger["Plain date trigger"]
+  Home --> Sheet["Native CalendarSheet"]
+  Sheet --> Recent["Virtualized Recent entries"]
+  Sheet --> Monthly["Virtualized month grids"]
   Pager --> Entry["Stack"]
   Pager --> DayRail["Vertical ScrollIndicator"]
   Entry --> ArtefactPager["Expanded artefact pager"]
@@ -31,8 +32,8 @@ flowchart TD
   Slots --> Widget["Configured iOS Home Screen widget"]
 ```
 
-- The calendar updates the route date while `BloomPanel` closes, so the next
-  day is ready behind the animation.
+- Calendar selection starts the bounded complete-Day load while the native
+  sheet closes; Recent can also position the exact Entry after loading.
 - The day pager owns vertical scrolling; each expanded stack owns horizontal
   artefact scrolling. `ScrollIndicator` only asks those hosts to jump.
 - Focus mode and stack expansion are separate interactions. Focus clones the
@@ -48,7 +49,7 @@ subtree in `StrictMode`. It mounts three portal hosts:
 |------|----------|-----------|
 | `overlay` | Expanded `Stack` | Inside the safe area |
 | `morph` | `FocusOverlay` | Full-screen root |
-| `bloom` | `BloomPanel` | Full-screen root |
+| `bloom` | `BloomPanel` Create menus | Full-screen root |
 
 Create is a full-screen absolute sibling at the root rather than a fourth
 Portal. Its Bloom menu still uses `bloom`; avoiding a Portal nested inside a
