@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  finalMonthTrailingPadding,
+  formatMonthIndicator,
   formatMonthlyHeading,
   formatRecentDayLabel,
   formatRecentHeading,
@@ -96,6 +98,25 @@ test("calendar headings use the fixed lowercase English mockup format", () => {
     text: "september",
     year: "2026",
   });
+});
+
+test("Monthly indicators use compact uppercase English month names", () => {
+  assert.equal(formatMonthIndicator("2026-01"), "JAN");
+  assert.equal(formatMonthIndicator("2026-09"), "SEP");
+  assert.equal(formatMonthIndicator("2026-12"), "DEC");
+});
+
+test("Monthly trailing space pins the final month to the top of its viewport", () => {
+  const viewportHeight = 577;
+  const contentInset = 20;
+  const earlierMonthHeight = 278;
+  const finalMonthHeight = 308;
+  const trailingPadding = finalMonthTrailingPadding(viewportHeight, contentInset, finalMonthHeight);
+  const contentHeight = contentInset + earlierMonthHeight + finalMonthHeight + trailingPadding;
+
+  assert.equal(trailingPadding, 249);
+  assert.equal(contentHeight - viewportHeight, earlierMonthHeight);
+  assert.equal(finalMonthTrailingPadding(250, contentInset, finalMonthHeight), 0);
 });
 
 test("Recent Day labels use the compact uppercase English mockup format", () => {

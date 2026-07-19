@@ -211,6 +211,17 @@ test("Monthly selection underline sits fully above marker dots", async () => {
   assert.ok(underlineBottom > markerBottom + markerHeight);
 });
 
+test("Monthly labels Day one and derives its final bound from the real viewport", async () => {
+  const monthly = await readSource("src/components/CalendarMonthlyTab.tsx");
+
+  assert.match(monthly, /formatMonthIndicator\(monthId\)/);
+  assert.match(monthly, /day\.id === `\$\{monthId\}-01`/);
+  assert.match(monthly, /finalMonthTrailingPadding\(\s*viewportHeight/);
+  assert.match(monthly, /setViewportHeight/);
+  assert.doesNotMatch(monthly, /MIN_BOTTOM_PADDING/);
+  assert.doesNotMatch(monthly, /window\.height\s*-\s*LAYOUT\.CALENDAR_SHEET\.MONTHLY_CONTENT_TOP/);
+});
+
 test("Recent Artefact silhouettes use horizontal-only Home stack offsets", async () => {
   const preview = await readSource("src/components/CalendarEntryPreview.tsx");
 

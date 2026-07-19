@@ -12,7 +12,7 @@
 | `src/components/HomeHeader.tsx` | Plain accessible date trigger |
 | `src/components/CalendarSheet.tsx` | Persistent zero-detent shell, header, fades, tab lifecycle, dismissal, and containment |
 | `src/components/CalendarRecentTab.tsx` | Virtualized, keyset-paged Recent rows with inline Day labels |
-| `src/components/CalendarMonthlyTab.tsx` | Virtualized chronological month grids, range bounds, markers, and Focused Month tracking |
+| `src/components/CalendarMonthlyTab.tsx` | Virtualized chronological month grids, inline month indicators, range bounds, markers, Focused Month tracking, and the final scroll bound |
 | `src/components/CalendarEntryPreview.tsx` | Visible first-Artefact renderer and static count silhouettes |
 | `src/data/calendarBrowse.ts` | Pure grouping, heading, month-range, and focal-line helpers |
 | `src/data/calendarBrowseCache.ts` | First Recent page and four-month lightweight marker cache |
@@ -111,6 +111,10 @@ Month IDs are chronological from the persisted User Creation Month through the
 current month. The current month is positioned under the fixed header on first
 visit; scrolling upward reveals the past. The complete first month is visible,
 but Days before the exact User Creation Day are disabled, as are future Days.
+Every grid places a fixed-English uppercase three-letter month indicator in the
+same weekday column as Day 1. The list's measured viewport determines its
+trailing space, making the current month's start the final resting position
+rather than allowing the grid to stop partially behind the header.
 
 Visible months and a one-month buffer request only distinct Entry-type presence.
 Each Day renders at most one yellow Paper marker, one magenta Print marker, and

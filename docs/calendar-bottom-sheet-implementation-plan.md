@@ -60,6 +60,8 @@ No new runtime dependency is needed. Reuse the installed native bottom sheet, Fl
 
 - Months are chronological from the User Creation Month through the current month. The sheet opens focused on the current month at the bottom of the range; the user scrolls upward into the past.
 - The fixed heading uses `september 2026`. The weekday row is fixed English `M T W T F S S`, Monday first.
+- Every month grid places its compact uppercase English indicator (`JAN`, `FEB`, and so on) directly above Day 1 in the same weekday column.
+- The final scroll bound is derived from the measured list viewport, so the current month can rest directly below the fixed header but cannot stop partially hidden behind it.
 - The same 40%-viewport focal rule and hysteresis determine the Focused Month. Its complete month grid receives the darker background.
 - The underlined Day is the Selected Day currently displayed on Home, not necessarily today.
 - The complete User Creation Month is visible, but Days before the exact User Creation Day are disabled. Days after today are disabled. Empty in-range Days remain selectable.
@@ -150,7 +152,7 @@ This completes UX-11 rather than fixing only its hardcoded-month symptom.
 
 ### Rendering and focus tracking
 
-- Recent uses FlashList row items with stable row keys and a deliberately small draw distance. Monthly continues to use flash-calendar's month data but supplies the redesigned fixed weekday row, month-grid renderer, markers, and Monday-first configuration.
+- Recent uses FlashList row items with stable row keys and a deliberately small draw distance. Monthly continues to use flash-calendar's month data but supplies the redesigned fixed weekday row, Day-1-aligned month indicator, month-grid renderer, markers, and Monday-first configuration.
 - Keep both layouts centered and width-capped on wide windows. Recent never exceeds two columns; Monthly remains exactly seven columns. Derive one or two width tokens from the mockup during implementation rather than adding a breakpoint framework.
 - Measure month frames and resolve the month intersecting the 40% focal line with a pure helper. Apply a small hysteresis token, pin the first/last month at list boundaries, and bridge to React only when the Focused Month ID changes.
 - Monthly header and background updates therefore occur at month boundaries, not on every scroll event. Recent scroll events update only bounded pagination, preview visibility, and bottom-fade state.
@@ -209,7 +211,8 @@ Gate: test no entries, 1/2/3/5 Entries per Day, a page boundary in a large Day, 
 ### 5. Implement Monthly end to end
 
 - Derive the month count from User Creation Month through current month and open at current.
-- Render fixed Monday-first weekdays, virtualized chronological grids, Focused Month background, Selected Day underline, and bounded disabled Days.
+- Render fixed Monday-first weekdays, Day-1-aligned compact month indicators, virtualized chronological grids, Focused Month background, Selected Day underline, and bounded disabled Days.
+- Derive the trailing spacer from the measured list viewport so the current month's start is the final reachable resting position.
 - Query type-presence summaries only for visible/buffered months, merging the current/previous idle-warmed windows.
 - Add marker degraded/retry UI without blocking Day selection.
 

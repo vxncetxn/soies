@@ -19,6 +19,8 @@ import {
 
 import { LAYOUT } from "../constants/layout";
 import {
+  finalMonthTrailingPadding,
+  formatMonthIndicator,
   formatRecentHeading,
   mondayFirstWeekCount,
   monthIdsBetween,
@@ -34,11 +36,11 @@ const MONTHLY_CONTENT_INSET =
 const CONTENT_GUTTER = 20;
 const CONTENT_MAX_WIDTH = 600;
 const DAY_HEIGHT = 44;
+const MONTH_INDICATOR_HEIGHT = 24;
 const WEEK_GAP = 6;
 const MONTH_PADDING = 10;
 const MONTH_GAP = 14;
 const FOCUS_HYSTERESIS = 12;
-const MIN_BOTTOM_PADDING = 180;
 const PAPER_MARKER = "#E4DF00";
 const PRINT_MARKER = "#F32DD5";
 const UNKNOWN_MARKER = "#99938E";
@@ -51,7 +53,9 @@ type MonthItem = {
 
 function monthHeight(monthId: string): number {
   const weeks = mondayFirstWeekCount(monthId);
-  return MONTH_PADDING * 2 + weeks * DAY_HEIGHT + Math.max(0, weeks - 1) * WEEK_GAP + MONTH_GAP;
+  return (
+    MONTH_PADDING * 2 + MONTH_INDICATOR_HEIGHT + weeks * DAY_HEIGHT + weeks * WEEK_GAP + MONTH_GAP
+  );
 }
 
 function buildMonthFrames(items: readonly MonthItem[]): PeriodFrame[] {
@@ -167,6 +171,17 @@ function MonthGrid({
         },
       ]}
     >
+      <View style={styles.monthIndicatorRow}>
+        {(weeksList[0] ?? []).map((day) => (
+          <View key={day.id} style={styles.monthIndicatorCell}>
+            {day.id === `${monthId}-01` ? (
+              <Text accessibilityRole="header" style={styles.monthIndicator}>
+                {formatMonthIndicator(monthId)}
+              </Text>
+            ) : null}
+          </View>
+        ))}
+      </View>
       {weeksList.map((week, weekIndex) => (
         <Calendar.Row.Week key={weekIndex}>
           {week.map((day) => (
@@ -214,12 +229,6 @@ export default function CalendarMonthlyTab({
   const monthFrames = buildMonthFrames(monthItems);
   const currentMonth = maxDay.slice(0, 7);
   const firstMonth = minDay.slice(0, 7);
-  // Leave enough trailing space for the final (current) month to sit directly
-  // below the fixed header instead of being pushed down by the scroll bound.
-  const currentMonthTrailingSpace =
-    window.height - LAYOUT.CALENDAR_SHEET.MONTHLY_CONTENT_TOP - monthHeight(currentMonth);
-  const bottomPadding =
-    currentMonthTrailingSpace > MIN_BOTTOM_PADDING ? currentMonthTrailingSpace : MIN_BOTTOM_PADDING;
   const listRef = useRef<FlashListRef<MonthItem>>(null);
   const mountedRef = useRef(true);
   const resetVersionRef = useRef(resetVersion);
@@ -227,12 +236,18 @@ export default function CalendarMonthlyTab({
   const viewportHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
   const scrollOffsetRef = useRef(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const [focusedMonth, setFocusedMonth] = useState(currentMonth);
   const [observedResetVersion, setObservedResetVersion] = useState(resetVersion);
   const [markerTypesByDay, setMarkerTypesByDay] = useState<Map<string, readonly string[]>>(
     new Map(),
   );
   const [failedMonths, setFailedMonths] = useState<Set<string>>(new Set());
+  const bottomPadding = finalMonthTrailingPadding(
+    viewportHeight,
+    MONTHLY_CONTENT_INSET,
+    monthHeight(currentMonth),
+  );
   const listExtraData = { focusedMonth, markerTypesByDay };
 
   if (observedResetVersion !== resetVersion) {
@@ -413,7 +428,11 @@ export default function CalendarMonthlyTab({
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onLayout={(event) => {
-          viewportHeightRef.current = event.nativeEvent.layout.height;
+          const nextViewportHeight = event.nativeEvent.layout.height;
+          viewportHeightRef.current = nextViewportHeight;
+          setViewportHeight((current) =>
+            Math.abs(current - nextViewportHeight) > 0.5 ? nextViewportHeight : current,
+          );
           updateBottomFade(scrollOffsetRef.current);
         }}
         onContentSizeChange={(_width, height) => {
@@ -438,6 +457,21 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: MONTH_PADDING,
     paddingVertical: MONTH_PADDING,
+  },
+  monthIndicatorRow: {
+    flexDirection: "row",
+    height: MONTH_INDICATOR_HEIGHT,
+  },
+  monthIndicatorCell: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  monthIndicator: {
+    color: "#171717",
+    fontFamily: "Geist-Medium",
+    fontSize: 17,
+    lineHeight: MONTH_INDICATOR_HEIGHT,
   },
   dayCell: {
     alignItems: "center",

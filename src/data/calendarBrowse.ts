@@ -126,8 +126,25 @@ export function formatRecentHeading(dayId: string): CalendarHeading {
 
 export function formatRecentDayLabel(dayId: string): string {
   const [year, month, day] = dayId.split("-");
-  const abbreviatedMonth = ENGLISH_MONTHS[Number(month) - 1].slice(0, 3).toUpperCase();
-  return `${Number(day)} ${abbreviatedMonth} ${year}`;
+  return `${Number(day)} ${formatMonthIndicator(`${year}-${month}`)} ${year}`;
+}
+
+/** Fixed-English compact label used by the agreed calendar mockups. */
+export function formatMonthIndicator(monthId: string): string {
+  const [, month] = monthId.split("-");
+  return ENGLISH_MONTHS[Number(month) - 1].slice(0, 3).toUpperCase();
+}
+
+/**
+ * Space the final month so its item start, rather than an arbitrary point
+ * inside it, is the list's last reachable resting position.
+ */
+export function finalMonthTrailingPadding(
+  viewportHeight: number,
+  contentInset: number,
+  finalMonthHeight: number,
+): number {
+  return Math.max(0, viewportHeight - contentInset - finalMonthHeight);
 }
 
 export function formatMonthlyHeading(monthId: string): CalendarHeading {
