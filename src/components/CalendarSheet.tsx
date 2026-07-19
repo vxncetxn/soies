@@ -18,7 +18,6 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { scheduleOnRN } from "react-native-worklets";
 
 import {
   formatMonthlyHeading,
@@ -31,11 +30,8 @@ import {
 } from "../data/calendarBrowseCache";
 import { getUserCreationDay } from "../db/repositories/users";
 import { todayISO } from "../utils/date";
-import CalendarMonthlyTab, { MONTHLY_CONTENT_TOP } from "./CalendarMonthlyTab";
-import CalendarRecentTab, {
-  RECENT_CONTENT_TOP,
-  type RecentTabSessionState,
-} from "./CalendarRecentTab";
+import CalendarMonthlyTab from "./CalendarMonthlyTab";
+import CalendarRecentTab from "./CalendarRecentTab";
 import FeatureErrorBoundary from "./feature-error-boundary";
 import { Icon } from "./Icon";
 
@@ -43,8 +39,12 @@ type CalendarTab = "recent" | "monthly";
 type PositionChange = { index: number; position: number };
 
 const SHEET_SURFACE = "#FFFFFF";
+const SHEET_RADIUS = 24;
 const TAB_FADE_MS = 160;
 const BOTTOM_FADE_SIZE = 90;
+const RECENT_HEADER_OPAQUE_HEIGHT = 146;
+const MONTHLY_HEADER_OPAQUE_HEIGHT = 194;
+const HEADER_FADE_SIZE = 36;
 
 type CalendarSheetProps = {
   dataVersion: number;
@@ -91,14 +91,8 @@ export default function CalendarSheet({
   const insets = useSafeAreaInsets();
   const sheetHeight = Math.max(320, window.height - Math.max(insets.top, 12));
   const [activeTab, setActiveTab] = useState<CalendarTab>("recent");
-  const [outgoingTab, setOutgoingTab] = useState<CalendarTab | null>(null);
-  const [savedOffsets, setSavedOffsets] = useState<Record<CalendarTab, number | null>>({
-    recent: 0,
-    monthly: null,
-  });
-  const [recentSessionState, setRecentSessionState] = useState<RecentTabSessionState | null>(null);
   const [contentMounted, setContentMounted] = useState(false);
-  const [sessionKey, setSessionKey] = useState(0);
+  const [browseResetVersion, setBrowseResetVersion] = useState(0);
   const [recentFocusedDay, setRecentFocusedDay] = useState(() => todayISO());
   const [monthlyFocusedMonth, setMonthlyFocusedMonth] = useState(() => todayISO().slice(0, 7));
   const [presentationSelectedDay, setPresentationSelectedDay] = useState(selectedDay);
@@ -107,16 +101,19 @@ export default function CalendarSheet({
   const previousOpenRef = useRef(false);
   const creationDayRequestRef = useRef<Promise<string> | null>(null);
   const mountedRef = useRef(true);
-  const recentOffsetRef = useRef(0);
-  const monthlyOffsetRef = useRef(0);
   const openStartedAtRef = useRef<number | null>(null);
   const openingMeasuredRef = useRef(false);
   const bottomFadeVisibleRef = useRef(false);
-  const tabProgress = useSharedValue(1);
+  const hasMoreBelowByTabRef = useRef<Record<CalendarTab, boolean>>({
+    recent: false,
+    monthly: false,
+  });
+  const recentOpacity = useSharedValue(1);
+  const monthlyOpacity = useSharedValue(0);
   const bottomFade = useSharedValue(0);
 
-  const activeStyle = useAnimatedStyle(() => ({ opacity: tabProgress.get() }));
-  const outgoingStyle = useAnimatedStyle(() => ({ opacity: 1 - tabProgress.get() }));
+  const recentStyle = useAnimatedStyle(() => ({ opacity: recentOpacity.get() }));
+  const monthlyStyle = useAnimatedStyle(() => ({ opacity: monthlyOpacity.get() }));
 
   const loadCreationDay = () => {
     if (creationDayRequestRef.current) {
@@ -150,8 +147,14 @@ export default function CalendarSheet({
 
   useEffect(() => {
     const idleId = requestIdleCallback(() => {
-      void loadCreationDay().catch(() => {});
-      void warmCalendarBrowseData(todayISO());
+      void Promise.allSettled([loadCreationDay(), warmCalendarBrowseData(todayISO())]).then(() => {
+        if (mountedRef.current) {
+          // Prepare both bounded, virtualized browse trees once while the
+          // sheet is hidden. Retaining them avoids renderer/marker flashes on
+          // every presentation without restoring the old whole-journal tree.
+          setContentMounted(true);
+        }
+      });
     });
     return () => cancelIdleCallback(idleId);
   }, []);
@@ -164,17 +167,15 @@ export default function CalendarSheet({
     if (open && !previousOpenRef.current) {
       openStartedAtRef.current = openRequestedAt ?? performance.now();
       openingMeasuredRef.current = false;
-      recentOffsetRef.current = 0;
-      monthlyOffsetRef.current = 0;
-      setSavedOffsets({ recent: 0, monthly: null });
-      setRecentSessionState(null);
       const today = todayISO();
       setRecentFocusedDay(today);
       setMonthlyFocusedMonth(today.slice(0, 7));
       setPresentationSelectedDay(selectedDay);
-      setSessionKey((current) => current + 1);
-      bottomFadeVisibleRef.current = false;
-      bottomFade.set(0);
+      recentOpacity.set(activeTab === "recent" ? 1 : 0);
+      monthlyOpacity.set(activeTab === "monthly" ? 1 : 0);
+      const hasMoreBelow = hasMoreBelowByTabRef.current[activeTab];
+      bottomFadeVisibleRef.current = hasMoreBelow;
+      bottomFade.set(hasMoreBelow ? BOTTOM_FADE_SIZE : 0);
       void loadCreationDay().catch(() => {});
       const frame = requestAnimationFrame(() => setContentMounted(true));
       previousOpenRef.current = true;
@@ -183,7 +184,7 @@ export default function CalendarSheet({
     if (!open) {
       previousOpenRef.current = false;
     }
-  }, [bottomFade, open, openRequestedAt, selectedDay]);
+  }, [activeTab, bottomFade, monthlyOpacity, open, openRequestedAt, recentOpacity, selectedDay]);
 
   useEffect(() => {
     if (!open) {
@@ -217,38 +218,24 @@ export default function CalendarSheet({
     if (nextTab === activeTab) {
       return;
     }
-    setOutgoingTab(activeTab);
-    // Snapshot refs only at the tab boundary; scroll itself stays out of React
-    // state, while the remounted tab receives a render-safe saved offset.
-    setSavedOffsets((current) => ({
-      ...current,
-      [activeTab]: activeTab === "recent" ? recentOffsetRef.current : monthlyOffsetRef.current,
-    }));
     setActiveTab(nextTab);
     bottomFadeVisibleRef.current = false;
     bottomFade.set(0);
-    tabProgress.set(0);
-    tabProgress.set(
-      withTiming(1, { duration: TAB_FADE_MS, easing: Easing.out(Easing.quad) }, (finished) => {
-        if (finished) {
-          scheduleOnRN(setOutgoingTab, null);
-        }
-      }),
-    );
+    const transition = { duration: TAB_FADE_MS, easing: Easing.out(Easing.quad) };
+    recentOpacity.set(withTiming(nextTab === "recent" ? 1 : 0, transition));
+    monthlyOpacity.set(withTiming(nextTab === "monthly" ? 1 : 0, transition));
+    setHasMoreBelow(hasMoreBelowByTabRef.current[nextTab]);
   };
 
   const renderTab = (tab: CalendarTab) => {
     if (tab === "recent") {
       return (
         <CalendarRecentTab
-          key={`recent:${sessionKey}:${dataVersion}`}
-          initialState={recentSessionState}
-          initialOffset={savedOffsets.recent ?? 0}
-          onOffsetChange={(offset) => {
-            recentOffsetRef.current = offset;
-          }}
+          key={`recent:${dataVersion}`}
+          resetVersion={browseResetVersion}
           onFocusedDayChange={setRecentFocusedDay}
           onHasMoreBelowChange={(hasMoreBelow) => {
+            hasMoreBelowByTabRef.current.recent = hasMoreBelow;
             if (activeTab === "recent") {
               setHasMoreBelow(hasMoreBelow);
             }
@@ -257,7 +244,6 @@ export default function CalendarSheet({
             onSelectEntry(day, entryId);
             requestClose();
           }}
-          onSessionStateChange={setRecentSessionState}
         />
       );
     }
@@ -290,17 +276,14 @@ export default function CalendarSheet({
     const rangeStartDay = creationDay <= currentDay ? creationDay : currentDay;
     return (
       <CalendarMonthlyTab
-        key={`monthly:${sessionKey}:${dataVersion}`}
-        initialOffset={savedOffsets.monthly}
-        initialFocusedMonth={monthlyFocusedMonth}
+        key={`monthly:${dataVersion}`}
+        resetVersion={browseResetVersion}
         minDay={rangeStartDay}
         maxDay={currentDay}
         selectedDay={presentationSelectedDay}
-        onOffsetChange={(offset) => {
-          monthlyOffsetRef.current = offset;
-        }}
         onFocusedMonthChange={setMonthlyFocusedMonth}
         onHasMoreBelowChange={(hasMoreBelow) => {
+          hasMoreBelowByTabRef.current.monthly = hasMoreBelow;
           if (activeTab === "monthly") {
             setHasMoreBelow(hasMoreBelow);
           }
@@ -317,7 +300,8 @@ export default function CalendarSheet({
     activeTab === "recent"
       ? formatRecentHeading(recentFocusedDay)
       : formatMonthlyHeading(monthlyFocusedMonth);
-  const topFadeSize = activeTab === "monthly" ? MONTHLY_CONTENT_TOP : RECENT_CONTENT_TOP;
+  const headerOpaqueHeight =
+    activeTab === "monthly" ? MONTHLY_HEADER_OPAQUE_HEIGHT : RECENT_HEADER_OPAQUE_HEIGHT;
 
   return (
     <ModalBottomSheet
@@ -349,21 +333,29 @@ export default function CalendarSheet({
       }}
       onSettle={(index) => {
         if (index === 0 && !open) {
-          setContentMounted(false);
-          setOutgoingTab(null);
-          setRecentSessionState(null);
+          // Reset retained lists while they are hidden so their first visible
+          // frame in the next presentation is already at newest/current.
+          setBrowseResetVersion((current) => current + 1);
+          recentOpacity.set(activeTab === "recent" ? 1 : 0);
+          monthlyOpacity.set(activeTab === "monthly" ? 1 : 0);
           bottomFadeVisibleRef.current = false;
           bottomFade.set(0);
         }
       }}
     >
-      <View style={{ height: sheetHeight, paddingBottom: Math.max(insets.bottom, 12) }}>
+      <View
+        style={[
+          styles.sheetViewport,
+          { height: sheetHeight, paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
         <View style={styles.handle} />
         <AnimatedEdgeFadeView
           mode="overlay"
           color={SHEET_SURFACE}
-          top={topFadeSize}
+          top={0}
           bottom={bottomFade}
+          radius={SHEET_RADIUS}
           style={styles.body}
         >
           {contentMounted ? (
@@ -375,16 +367,15 @@ export default function CalendarSheet({
               <View style={StyleSheet.absoluteFill}>
                 {(["recent", "monthly"] as const).map((tab) => {
                   const isActive = tab === activeTab;
-                  if (!isActive && tab !== outgoingTab) {
-                    return null;
-                  }
                   return (
                     <Animated.View
                       key={tab}
                       pointerEvents={isActive ? "auto" : "none"}
+                      accessibilityElementsHidden={!isActive}
+                      importantForAccessibility={isActive ? "auto" : "no-hide-descendants"}
                       style={[
                         StyleSheet.absoluteFill,
-                        isActive ? activeStyle : outgoingStyle,
+                        tab === "recent" ? recentStyle : monthlyStyle,
                         isActive ? styles.activeTabBody : styles.outgoingTabBody,
                       ]}
                     >
@@ -397,6 +388,18 @@ export default function CalendarSheet({
           ) : (
             <BodyPlaceholder showActivity={open} />
           )}
+        </AnimatedEdgeFadeView>
+
+        <View pointerEvents="none" style={[styles.headerScrim, { height: headerOpaqueHeight }]} />
+        <AnimatedEdgeFadeView
+          pointerEvents="none"
+          mode="overlay"
+          color={SHEET_SURFACE}
+          top={HEADER_FADE_SIZE}
+          bottom={0}
+          style={[styles.headerFade, { height: HEADER_FADE_SIZE, top: headerOpaqueHeight }]}
+        >
+          <View style={StyleSheet.absoluteFill} />
         </AnimatedEdgeFadeView>
 
         <View pointerEvents="box-none" style={styles.header}>
@@ -448,8 +451,14 @@ export default function CalendarSheet({
 const styles = StyleSheet.create({
   surface: {
     backgroundColor: SHEET_SURFACE,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+  },
+  sheetViewport: {
+    backgroundColor: SHEET_SURFACE,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    overflow: "hidden",
   },
   handle: {
     alignSelf: "center",
@@ -463,6 +472,20 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+  },
+  headerScrim: {
+    backgroundColor: SHEET_SURFACE,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 10,
+  },
+  headerFade: {
+    left: 0,
+    position: "absolute",
+    right: 0,
+    zIndex: 10,
   },
   activeTabBody: {
     zIndex: 2,

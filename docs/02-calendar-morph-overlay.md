@@ -24,9 +24,11 @@ The architecture decision and full interaction contract live in
 
 ## Presentation lifecycle
 
-`CalendarSheet` stays mounted with native detents `[0, openHeight]`, but its
-Recent/Monthly tree does not. This separates instant native motion from the
-cost of constructing lists and Artefact previews.
+`CalendarSheet` stays mounted with native detents `[0, openHeight]`. After the
+first Home frame, its bounded Recent and Monthly virtualized trees are prepared
+while hidden and then retained. This separates instant native motion from cold
+data work without rebuilding canonical previews or marker views at every open
+or tab visit.
 
 ```mermaid
 sequenceDiagram
@@ -40,12 +42,12 @@ sequenceDiagram
   Home->>Sheet: open=true + tap timestamp
   Sheet->>Native: move from detent 0 immediately
   Native-->>Sheet: first nonzero position
-  Sheet->>Tab: mount remembered active tab
-  Note over Sheet,Tab: warm summaries render immediately; cold data uses a stable placeholder
+  Note over Sheet,Tab: prepared trees are already painted; an immediate cold first open uses a stable placeholder
   User->>Sheet: X, drag, scrim, Back, Entry, or Day
   Sheet->>Native: move to detent 0
   Native-->>Sheet: settle(0)
-  Sheet->>Tab: release active and outgoing trees
+  Sheet->>Tab: reset Recent/current positions while hidden
+  Sheet->>Tab: trim Recent pages and old marker state
 ```
 
 After Home's first frame, idle work warms only the first Recent summary page
@@ -56,17 +58,18 @@ but must never delay native movement.
 
 The last selected tab survives dismissal. Each new presentation resets Recent
 to the newest Entry and Monthly to the current month. Within one presentation,
-switching tabs snapshots the outgoing native scroll offset and restores it on
-return. A short opacity crossfade temporarily retains both keyed tab trees;
-only the active tree remains after completion.
+both retained trees preserve their native positions. A short opacity crossfade
+uses fixed per-tab opacity values, so an in-flight animation never remaps
+active/outgoing roles. The inactive tree remains painted but non-interactive.
 
 ## Fixed header and fades
 
 The tabs, Focused Day/Month heading, close control, and Monthly weekday row are
-fixed above the lists. `AnimatedEdgeFadeView` uses a white overlay fade at the
-top, allowing content to pass underneath while keeping the header readable.
-Its bottom fade animates in only while real list content remains below; trailing
-layout padding is excluded from that decision.
+fixed above the lists. A solid white scrim makes the complete header opaque;
+a short `AnimatedEdgeFadeView` overlay begins only below its text. Content can
+pass underneath that lower fade without bleeding through the labels. The
+separate bottom fade animates in only while real list content remains below;
+trailing layout padding is excluded from that decision.
 
 Headings deliberately match the English mockups for this release:
 
@@ -84,10 +87,11 @@ later reshaping a one-card row into a pair.
 
 Rows contain at most two Entries and never mix Days. All rows belonging to the
 Day crossing the 40%-viewport reading line use the darker background; a small
-hysteresis band prevents boundary flicker. Only viewable cards mount the
-canonical Paper/Print/Ink renderer. Up to four offset white silhouettes sit
-behind it to communicate the complete one-to-five Artefact count without
-hydrating hidden Artefacts.
+hysteresis band prevents boundary flicker. The first four prepared rows and
+subsequent viewable rows mount the canonical Paper/Print/Ink renderer. Up to
+four horizontally offset white silhouettes use Home's stack spacing to
+communicate the complete one-to-five Artefact count without hydrating hidden
+Artefacts.
 
 Selecting a card begins the complete-Day query while the native sheet closes,
 updates the Home route, and asks `DayPager` to position the exact Entry without
@@ -104,6 +108,10 @@ Visible months and a one-month buffer request only distinct Entry-type presence.
 Each Day renders at most one yellow Paper marker, one magenta Print marker, and
 one neutral marker for future unsupported types. Marker failure leaves the
 calendar selectable and exposes a local Retry control.
+
+After dismissal, marker models outside the current/previous-month prepared
+window are removed while the list is hidden. This bounds retained state without
+making markers rehydrate in front of the user on the next presentation.
 
 The month crossing the shared focal line receives the darker background. The
 underline follows Home's Selected Day, not the current Day. Selecting any

@@ -135,11 +135,48 @@ const MIGRATION_V4: Migration = {
 };
 
 /**
- * Current clean-install baseline. Earlier development databases are discarded
- * before this sequence runs, so its contiguous versions contain only schema a
- * newly installed app needs rather than compatibility steps for old builds.
+ * Repair development databases that V4 legitimately backfilled from the old
+ * seed User's wall-clock timestamp. Clean installs already seed January 2026;
+ * the full fixture fingerprint keeps this correction away from real Users.
  */
-const MIGRATIONS: Migration[] = [MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4];
+const MIGRATION_V5: Migration = {
+  version: 5,
+  statements: [
+    `UPDATE users
+     SET creation_day = '2026-01-01',
+         created_at = 1767268800000
+     WHERE name = 'User'
+       AND email IS NULL
+       AND deleted_at IS NULL
+       AND (
+         SELECT COUNT(DISTINCT title)
+         FROM entries
+         WHERE title IN (
+           'An example entry that is very long',
+           'kiyomizudera',
+           'day in retro'
+         )
+       ) = 3
+       AND EXISTS (
+         SELECT 1
+         FROM tags
+         WHERE name = 'Japan 2026'
+       )`,
+  ],
+};
+
+/**
+ * Current contiguous schema sequence. V5 is the sole data-only compatibility
+ * repair because installed development fixtures had already committed V4's
+ * legitimate timestamp backfill before the deterministic seed date existed.
+ */
+const MIGRATIONS: Migration[] = [
+  MIGRATION_V1,
+  MIGRATION_V2,
+  MIGRATION_V3,
+  MIGRATION_V4,
+  MIGRATION_V5,
+];
 
 export async function runMigrations(db: DB): Promise<void> {
   const versionResult = await db.execute("PRAGMA user_version");

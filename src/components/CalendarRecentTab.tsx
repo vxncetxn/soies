@@ -1,5 +1,5 @@
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   type NativeScrollEvent,
@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 
-import type { RecentEntryCursor } from "../db/repositories/entries";
+import type { RecentEntryCursor, RecentEntryPreviewPage } from "../db/repositories/entries";
 
 import {
   packRecentEntryRows,
@@ -30,23 +30,14 @@ const CONTENT_MAX_WIDTH = 620;
 const CARD_GAP = 10;
 const FOCUS_HYSTERESIS = 12;
 const BOTTOM_PADDING = 96;
+const EAGER_PREVIEW_ROW_COUNT = 4;
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 };
 
 type CalendarRecentTabProps = {
-  initialState: RecentTabSessionState | null;
-  initialOffset: number;
-  onOffsetChange: (offset: number) => void;
+  resetVersion: number;
   onFocusedDayChange: (day: string) => void;
   onHasMoreBelowChange: (hasMoreBelow: boolean) => void;
   onSelectEntry: (day: string, entryId: string) => void;
-  onSessionStateChange: (state: RecentTabSessionState) => void;
-};
-
-export type RecentTabSessionState = {
-  previews: CalendarEntryPreview[];
-  cursor: RecentEntryCursor | null;
-  hasMore: boolean;
-  focusedDay: string | null;
 };
 
 function periodFrames(rows: readonly RecentEntryRow[], rowHeight: number): PeriodFrame[] {
@@ -75,13 +66,10 @@ function LoadingRows({ width, height }: { width: number; height: number }) {
 }
 
 export default function CalendarRecentTab({
-  initialState,
-  initialOffset,
-  onOffsetChange,
+  resetVersion,
   onFocusedDayChange,
   onHasMoreBelowChange,
   onSelectEntry,
-  onSessionStateChange,
 }: CalendarRecentTabProps) {
   const window = useWindowDimensions();
   const contentWidth = Math.min(
@@ -91,23 +79,19 @@ export default function CalendarRecentTab({
   const pairWidth = (contentWidth - CARD_GAP) / 2;
   const rowHeight = Math.min(220, pairWidth);
   const listRef = useRef<FlashListRef<RecentEntryRow>>(null);
-  const [previews, setPreviews] = useState<CalendarEntryPreview[]>(
-    () => initialState?.previews ?? [],
-  );
-  const [cursor, setCursor] = useState<RecentEntryCursor | null>(
-    () => initialState?.cursor ?? null,
-  );
-  const [hasMore, setHasMore] = useState(() => initialState?.hasMore ?? false);
-  const [loading, setLoading] = useState(() => initialState === null);
+  const [previews, setPreviews] = useState<CalendarEntryPreview[]>([]);
+  const [cursor, setCursor] = useState<RecentEntryCursor | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [firstError, setFirstError] = useState<Error | null>(null);
   const [moreError, setMoreError] = useState<Error | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [focusedDay, setFocusedDay] = useState<string | null>(
-    () => initialState?.focusedDay ?? null,
-  );
+  const [focusedDay, setFocusedDay] = useState<string | null>(null);
   const [visibleEntryIds, setVisibleEntryIds] = useState<Set<string>>(new Set());
-  const restoredOffsetRef = useRef(false);
+  const [firstPage, setFirstPage] = useState<RecentEntryPreviewPage | null>(null);
+  const [observedResetVersion, setObservedResetVersion] = useState(resetVersion);
+  const resetVersionRef = useRef(resetVersion);
   const mountedRef = useRef(true);
   const loadingMoreRef = useRef(false);
   const viewportHeightRef = useRef(0);
@@ -115,6 +99,20 @@ export default function CalendarRecentTab({
   const scrollOffsetRef = useRef(0);
   const rows = packRecentEntryRows(previews);
   const frames = periodFrames(rows, rowHeight);
+
+  // Reset retained browse state during render so React commits one coherent
+  // first-page frame. The native scroll position is synchronized below.
+  if (observedResetVersion !== resetVersion) {
+    setObservedResetVersion(resetVersion);
+    setLoadingMore(false);
+    setMoreError(null);
+    if (firstPage) {
+      setPreviews(firstPage.items);
+      setCursor(firstPage.nextCursor);
+      setHasMore(firstPage.hasMore);
+      setFocusedDay(firstPage.items[0]?.date ?? null);
+    }
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -124,15 +122,13 @@ export default function CalendarRecentTab({
   }, []);
 
   useEffect(() => {
-    if (initialState) {
-      return;
-    }
     let cancelled = false;
     loadRecentPreviewPage(null)
       .then((page) => {
         if (cancelled) {
           return;
         }
+        setFirstPage(page);
         setPreviews(page.items);
         setCursor(page.nextCursor);
         setHasMore(page.hasMore);
@@ -153,29 +149,7 @@ export default function CalendarRecentTab({
     return () => {
       cancelled = true;
     };
-  }, [attempt, initialState, onFocusedDayChange]);
-
-  // Keep only lightweight models in the owning sheet while this tab is
-  // unmounted. Canonical preview renderers still release after the crossfade.
-  useEffect(() => {
-    if (loading || firstError) {
-      return;
-    }
-    onSessionStateChange({ previews, cursor, hasMore, focusedDay });
-  }, [cursor, firstError, focusedDay, hasMore, loading, onSessionStateChange, previews]);
-
-  useEffect(() => {
-    if (loading || rows.length === 0 || restoredOffsetRef.current) {
-      return;
-    }
-    restoredOffsetRef.current = true;
-    const frame = requestAnimationFrame(() => {
-      if (initialOffset > 0) {
-        listRef.current?.scrollToOffset({ offset: initialOffset, animated: false });
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [initialOffset, loading, rows.length]);
+  }, [attempt, onFocusedDayChange]);
 
   const updateBottomFade = (offset: number) => {
     const contentEnd = Math.max(0, contentHeightRef.current - BOTTOM_PADDING);
@@ -189,7 +163,6 @@ export default function CalendarRecentTab({
     scrollOffsetRef.current = contentOffset.y;
     viewportHeightRef.current = layoutMeasurement.height;
     contentHeightRef.current = contentSize.height;
-    onOffsetChange(contentOffset.y);
     updateBottomFade(contentOffset.y);
 
     const nextFocused = resolveFocusedPeriod(
@@ -210,11 +183,12 @@ export default function CalendarRecentTab({
       return;
     }
     loadingMoreRef.current = true;
+    const requestResetVersion = resetVersionRef.current;
     setLoadingMore(true);
     setMoreError(null);
     void loadRecentPreviewPage(cursor)
       .then((page) => {
-        if (!mountedRef.current) {
+        if (!mountedRef.current || requestResetVersion !== resetVersionRef.current) {
           return;
         }
         setPreviews((current) => [...current, ...page.items]);
@@ -222,17 +196,33 @@ export default function CalendarRecentTab({
         setHasMore(page.hasMore);
       })
       .catch((error: unknown) => {
-        if (mountedRef.current) {
+        if (mountedRef.current && requestResetVersion === resetVersionRef.current) {
           setMoreError(error instanceof Error ? error : new Error(String(error)));
         }
       })
       .finally(() => {
-        loadingMoreRef.current = false;
-        if (mountedRef.current) {
-          setLoadingMore(false);
+        if (requestResetVersion === resetVersionRef.current) {
+          loadingMoreRef.current = false;
+          if (mountedRef.current) {
+            setLoadingMore(false);
+          }
         }
       });
   };
+
+  useLayoutEffect(() => {
+    resetVersionRef.current = resetVersion;
+    loadingMoreRef.current = false;
+    scrollOffsetRef.current = 0;
+    const frame = requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      const firstDay = firstPage?.items[0]?.date;
+      if (firstDay) {
+        onFocusedDayChange(firstDay);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [firstPage, onFocusedDayChange, resetVersion]);
 
   // React Compiler retains this callback while its captures are stable, so
   // FlashList receives stable observer identity without a manual useCallback.
@@ -287,7 +277,7 @@ export default function CalendarRecentTab({
       ref={listRef}
       data={rows}
       keyExtractor={(row) => row.id}
-      renderItem={({ item }) => (
+      renderItem={({ item, index }) => (
         <View style={[styles.row, { height: rowHeight, width: contentWidth }]}>
           {item.entries.map((entry) => (
             <CalendarEntryPreviewCard
@@ -296,7 +286,7 @@ export default function CalendarRecentTab({
               focused={focusedDay === item.day}
               height={rowHeight}
               width={item.entries.length === 1 ? contentWidth : pairWidth}
-              renderContent={visibleEntryIds.has(entry.id)}
+              renderContent={index < EAGER_PREVIEW_ROW_COUNT || visibleEntryIds.has(entry.id)}
               onPress={() => onSelectEntry(entry.date, entry.id)}
             />
           ))}

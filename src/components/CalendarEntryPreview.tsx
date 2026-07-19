@@ -78,12 +78,13 @@ function PreviewStack({ entry, cardHeight, cardWidth, renderContent }: PreviewSt
   const width = natural.width * presentationScale;
   const height = natural.height * presentationScale;
   const count = Math.max(1, Math.min(STACK_LIMIT, entry.artefactCount || 1));
+  const stackWidth = width + (count - 1) * LAYOUT.STACK_OFFSET;
 
   return (
     <PreviewBoundary key={entry.id} width={width} height={height}>
-      <View style={{ width: width + LAYOUT.STACK_OFFSET, height: height + LAYOUT.STACK_OFFSET }}>
+      <View style={{ width: stackWidth, height }}>
         {Array.from({ length: count - 1 }, (_, index) => {
-          const offset = (count - index - 1) * 2;
+          const offset = (count - index - 1) * LAYOUT.STACK_OFFSET;
           return (
             <View
               key={index}
@@ -92,7 +93,7 @@ function PreviewStack({ entry, cardHeight, cardWidth, renderContent }: PreviewSt
                 {
                   width,
                   height,
-                  transform: [{ translateX: offset }, { translateY: -offset }],
+                  transform: [{ translateX: offset }],
                 },
               ]}
             />
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 2,
-    top: LAYOUT.STACK_OFFSET,
+    top: 0,
   },
   artefact: {
     left: 0,
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 2,
-    top: LAYOUT.STACK_OFFSET,
+    top: 0,
   },
   unsupportedLabel: {
     color: "#79716B",

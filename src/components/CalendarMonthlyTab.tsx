@@ -5,7 +5,7 @@ import {
   useCalendar,
 } from "@marceloterreiro/flash-calendar";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -183,25 +183,20 @@ function MonthGrid({
 }
 
 type CalendarMonthlyTabProps = {
-  /** null means first visit this presentation: start at the current month. */
-  initialOffset: number | null;
-  initialFocusedMonth: string;
+  resetVersion: number;
   maxDay: string;
   minDay: string;
   selectedDay: string;
-  onOffsetChange: (offset: number) => void;
   onFocusedMonthChange: (month: string) => void;
   onHasMoreBelowChange: (hasMoreBelow: boolean) => void;
   onSelectDay: (day: string) => void;
 };
 
 export default function CalendarMonthlyTab({
-  initialOffset,
-  initialFocusedMonth,
+  resetVersion,
   maxDay,
   minDay,
   selectedDay,
-  onOffsetChange,
   onFocusedMonthChange,
   onHasMoreBelowChange,
   onSelectDay,
@@ -217,22 +212,40 @@ export default function CalendarMonthlyTab({
   const firstMonth = minDay.slice(0, 7);
   // Leave enough trailing space for the final (current) month to sit directly
   // below the fixed header instead of being pushed down by the scroll bound.
-  const bottomPadding = Math.max(
-    MIN_BOTTOM_PADDING,
-    window.height - MONTHLY_CONTENT_TOP - monthHeight(currentMonth),
-  );
+  const currentMonthTrailingSpace = window.height - MONTHLY_CONTENT_TOP - monthHeight(currentMonth);
+  const bottomPadding =
+    currentMonthTrailingSpace > MIN_BOTTOM_PADDING ? currentMonthTrailingSpace : MIN_BOTTOM_PADDING;
   const listRef = useRef<FlashListRef<MonthItem>>(null);
   const mountedRef = useRef(true);
+  const resetVersionRef = useRef(resetVersion);
   const loadedMonthsRef = useRef(new Set<string>());
   const viewportHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
   const scrollOffsetRef = useRef(0);
-  const [focusedMonth, setFocusedMonth] = useState(initialFocusedMonth);
+  const [focusedMonth, setFocusedMonth] = useState(currentMonth);
+  const [observedResetVersion, setObservedResetVersion] = useState(resetVersion);
   const [markerTypesByDay, setMarkerTypesByDay] = useState<Map<string, readonly string[]>>(
     new Map(),
   );
   const [failedMonths, setFailedMonths] = useState<Set<string>>(new Set());
   const listExtraData = { focusedMonth, markerTypesByDay };
+
+  if (observedResetVersion !== resetVersion) {
+    setObservedResetVersion(resetVersion);
+    setFocusedMonth(currentMonth);
+    const previousMonth = previousMonthId(currentMonth);
+    setMarkerTypesByDay((current) => {
+      const retained = new Map<string, readonly string[]>();
+      for (const [day, types] of current) {
+        const month = day.slice(0, 7);
+        if (month === currentMonth || month === previousMonth) {
+          retained.set(day, types);
+        }
+      }
+      return retained;
+    });
+    setFailedMonths(new Set());
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -248,9 +261,10 @@ export default function CalendarMonthlyTab({
       return;
     }
     loadedMonthsRef.current.add(monthId);
+    const requestResetVersion = resetVersionRef.current;
     void loadMonthTypePresence(monthId)
       .then((presence) => {
-        if (!mountedRef.current) {
+        if (!mountedRef.current || requestResetVersion !== resetVersionRef.current) {
           return;
         }
         setMarkerTypesByDay((current) => {
@@ -270,12 +284,23 @@ export default function CalendarMonthlyTab({
         });
       })
       .catch(() => {
+        if (requestResetVersion !== resetVersionRef.current) {
+          return;
+        }
         loadedMonthsRef.current.delete(monthId);
         if (mountedRef.current) {
           setFailedMonths((current) => new Set(current).add(monthId));
         }
       });
   };
+
+  useLayoutEffect(() => {
+    resetVersionRef.current = resetVersion;
+    // The hidden list immediately requests its current visible window again.
+    // Clearing request identities also prevents an older in-flight month from
+    // repopulating data that was deliberately pruned after dismissal.
+    loadedMonthsRef.current.clear();
+  }, [resetVersion]);
 
   const updateBottomFade = (offset: number) => {
     const contentEnd = Math.max(0, contentHeightRef.current - bottomPadding);
@@ -290,7 +315,6 @@ export default function CalendarMonthlyTab({
     scrollOffsetRef.current = contentOffset.y;
     viewportHeightRef.current = layoutMeasurement.height;
     contentHeightRef.current = contentSize.height;
-    onOffsetChange(contentOffset.y);
     updateBottomFade(contentOffset.y);
 
     const nextFocused = resolveFocusedPeriod(
@@ -323,16 +347,14 @@ export default function CalendarMonthlyTab({
     }
   };
 
-  const restoreInitialPosition = () => {
-    if (initialOffset != null) {
-      listRef.current?.scrollToOffset({ offset: initialOffset, animated: false });
-      return;
-    }
+  const restoreCurrentPosition = () => {
     // Every month row has a deterministic height. Keep the current grid below
     // the fixed header by scrolling past older rows, not by aligning the last
     // item to the viewport's obscured top edge.
     const currentOffset = monthItems.slice(0, -1).reduce((offset, item) => offset + item.height, 0);
+    scrollOffsetRef.current = currentOffset;
     listRef.current?.scrollToOffset({ offset: currentOffset, animated: false });
+    updateBottomFade(currentOffset);
   };
 
   return (
@@ -354,9 +376,10 @@ export default function CalendarMonthlyTab({
         </View>
       ) : null}
       <FlashList
+        key={`monthly-list:${resetVersion}`}
         ref={listRef}
         data={monthItems}
-        initialScrollIndex={initialOffset === null ? monthItems.length - 1 : undefined}
+        initialScrollIndex={monthItems.length - 1}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={{ height: item.height, alignItems: "center" }}>
@@ -375,7 +398,10 @@ export default function CalendarMonthlyTab({
         contentContainerStyle={{ paddingTop: MONTHLY_CONTENT_TOP, paddingBottom: bottomPadding }}
         drawDistance={monthHeight(currentMonth)}
         maxItemsInRecyclePool={6}
-        onLoad={restoreInitialPosition}
+        onLoad={() => {
+          restoreCurrentPosition();
+          onFocusedMonthChange(currentMonth);
+        }}
         onScroll={handleScroll}
         scrollEventThrottle={32}
         onViewableItemsChanged={onViewableItemsChanged}
@@ -430,7 +456,7 @@ const styles = StyleSheet.create({
   selectedUnderline: {
     backgroundColor: "#171717",
     borderRadius: 1,
-    bottom: 3,
+    bottom: 8,
     height: 2,
     position: "absolute",
     width: 20,

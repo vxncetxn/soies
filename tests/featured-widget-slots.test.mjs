@@ -100,7 +100,7 @@ test("migration creates only the current application schema and starts with five
       .all(),
     [],
   );
-  assert.equal(fixture.database.prepare("PRAGMA user_version").get().user_version, 4);
+  assert.equal(fixture.database.prepare("PRAGMA user_version").get().user_version, 5);
   const creationDayColumn = fixture.database
     .prepare("PRAGMA table_info(users)")
     .all()
@@ -132,9 +132,14 @@ test("User Creation Day is backfilled once from a version-three timestamp", asyn
     );
     CREATE TABLE entries (
       id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
       date TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       deleted_at INTEGER
+    );
+    CREATE TABLE tags (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL
     );
     PRAGMA user_version = 3;
   `);

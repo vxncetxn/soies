@@ -6,8 +6,8 @@
  *   - a `HomeHeader` (calendar button + animated entry titles),
  *   - a `DayPager` (a vertical, paging ScrollView that shows one entry-stack
  *     per "page"), and
- *   - a persistently mounted `CalendarSheet` whose expensive content is
- *     created only after the native sheet has begun opening.
+ *   - a persistently mounted `CalendarSheet` whose bounded tab content is
+ *     prepared after Home's first paint and retained for flash-free opening.
  *
  * Most of the interesting work here is setting up the **shared animation
  * values** that the header and the pager read from. These values live above

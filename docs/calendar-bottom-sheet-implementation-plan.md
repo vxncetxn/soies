@@ -12,7 +12,7 @@ The priority order is fixed: performance, user experience, code simplicity/hygie
 
 In scope:
 
-- a persistent lightweight native sheet shell with lazy active content;
+- a persistent lightweight native sheet shell with bounded, prepared tab content;
 - Recent and Monthly browsing, selection, loading, retry, and empty states;
 - a bounded Day cache and lightweight idle warming;
 - an immutable User Creation Day and strict ISO Day validation;
@@ -38,11 +38,11 @@ No new runtime dependency is needed. Reuse the installed native bottom sheet, Fl
 - The trigger opens one white, near-full-height, full-width sheet with no intermediate detent.
 - The handle and X button match Featured Artefacts; X, downward drag, scrim press, Android Back, Entry selection, and Day selection all dismiss it.
 - The sheet's fixed header contains `Recent` and `Monthly`, the formatted Focused Day or Focused Month, and the X button.
-- The scrolling content passes beneath a white top overlay fade. The header is rendered above that fade, so it stays fully legible.
+- The scrolling content passes beneath a solid white header scrim and a short overlay fade that starts below the header text, so the labels stay fully legible.
 - A bottom fade is visible only while more content exists below. Both fades use `react-native-edge-fade` in white overlay mode; no live blur is introduced.
 - The first app-launch opening selects Recent. Later openings remember the last selected tab.
-- Every presentation resets Recent to its newest Entry and Monthly to the current month. Switching tabs within one presentation preserves each tab's position.
-- Tab changes are press-only and use a short opacity crossfade. Only the active tab remains mounted after the crossfade.
+- Every presentation resets Recent to its newest Entry and Monthly to the current month. Switching tabs within one presentation preserves each retained tab's position.
+- Tab changes are press-only and use a short opacity crossfade. Both bounded virtualized trees stay mounted; the inactive tab is transparent and non-interactive.
 
 ### Recent
 
@@ -52,7 +52,7 @@ No new runtime dependency is needed. Reuse the installed native bottom sheet, Fl
 - A focal line approximately 40% down the scroll viewport determines the Focused Day. A small hysteresis band prevents header/background flicker at row boundaries.
 - Every card belonging to the Focused Day uses the slightly darker background. The heading changes only when the Focused Day changes.
 - Each card renders the complete first Artefact at thumbnail scale: all Paper text and paragraph styling, Print image and caption, and flattened Ink. Text is never truncated.
-- Only visible cards mount a real first-Artefact renderer. Remaining Artefacts are represented by offset white silhouettes using the existing stack spacing. The silhouette count is capped at five defensively, with no `5+` label.
+- The first prepared viewport and later visible cards mount a real first-Artefact renderer. Remaining Artefacts are represented by horizontally offset white silhouettes using the existing Home stack spacing. The silhouette count is capped at five defensively, with no `5+` label.
 - One marker appears per card: Paper yellow, Print magenta, and an unsupported future Entry type neutral gray.
 - Selecting a card starts the target Day load and sheet close concurrently, navigates Home to that Day, and positions DayPager on the exact Entry once data is available. The Entry remains collapsed.
 - With no Entries, the heading shows today and the body says `No entries yet` without another call to action.
@@ -105,12 +105,12 @@ The existing `BloomButton`, `BloomPanel`, `CalendarOverlay`, and `MorphOverlay` 
 
 ### Sheet lifecycle
 
-1. Home mounts `CalendarSheet` once at detent zero with only its surface, handle, fixed header, close control, and layout-stable body placeholder.
-2. After Home's first committed frame, `requestIdleCallback` warms the first Recent page and marker summaries for the current and immediately previous month. Cancel the request on teardown and make failures observable/retryable.
-3. A trigger tap updates the native detent immediately. The active list mounts after the first nonzero position event (or the next frame fallback), so cold list construction cannot delay native motion.
-4. Warm data replaces the placeholder immediately; a cold query retains the same geometry until it resolves.
-5. A close request sets the zero detent but retains the active tree through the closing animation.
-6. Only `onSettle(0)` releases the active/outgoing trees and resets both presentation offsets. The remembered tab ID survives.
+1. Home mounts `CalendarSheet` once at detent zero with its surface, handle, fixed header, close control, and layout-stable body placeholder.
+2. After Home's first committed frame, `requestIdleCallback` warms the first Recent page and marker summaries for the current and immediately previous month. When those settle, both bounded virtualized tab trees are prepared while hidden and retained. Cancel the idle request on teardown and keep failures observable/retryable.
+3. A trigger tap updates the native detent immediately. If preparation has not completed on the first-ever cold open, the first native position event or next-frame fallback mounts the content without holding sheet motion.
+4. Prepared content is already painted for normal openings and tab visits; a cold first query retains the same geometry until it resolves.
+5. A close request sets the zero detent and retains both trees through the closing animation.
+6. Only `onSettle(0)` resets the native lists while hidden, trims Recent to its first page, and removes Monthly marker state outside the current/previous-month window. The remembered tab ID and bounded prepared content survive.
 
 Do not put per-frame sheet position into React state. Use the native position event only for the opening latency mark and the one-time content-mount transition.
 
@@ -132,7 +132,7 @@ Inspect `EXPLAIN QUERY PLAN` with the stress dataset. Add a partial active-entry
 ### Bounded caches and freshness
 
 - Replace the process-lifetime all-journal Map with an eight-Day LRU that also deduplicates in-flight loads. An invalidated or rejected promise is never retained.
-- Cache Recent pages and month marker summaries only for the active session plus the two idle-warmed windows. Closing releases scrolled pages; the small warm seed may remain.
+- Retain the first Recent page and current/previous marker window between presentations. Pages and older marker models visited during a session are trimmed after close settles; the process-level summary caches keep their independent documented bounds.
 - `entriesVersion` invalidates affected Day, Recent, and marker data after Create. Any edit/delete/restore path touched by this implementation must issue the same invalidation rather than relying on time-to-live.
 - Recompute today and the User Creation Day at each presentation. This handles foregrounding or crossing midnight without a permanent timer.
 - Delete the `getAllEntriesByDate` startup call and its silent one-shot guard. Remove the now-unused all-journal preload/cache APIs rather than leaving an attractive accidental call path.
@@ -155,8 +155,8 @@ This completes UX-11 rather than fixing only its hardcoded-month symptom.
 - Keep both layouts centered and width-capped on wide windows. Recent never exceeds two columns; Monthly remains exactly seven columns. Derive one or two width tokens from the mockup during implementation rather than adding a breakpoint framework.
 - Measure list row/month frames and resolve the item intersecting the 40% focal line with a pure helper. Apply a small shared hysteresis token, pin the first/last period at list boundaries, and bridge to React only when the Focused Day/Month ID changes.
 - Header, tab, and background updates therefore occur at period boundaries, not on every scroll event.
-- Wrap scrolling content with `AnimatedEdgeFadeView` in `mode="overlay"` using the sheet white. The top fade is persistent as the header scrim. Drive the bottom fade to zero on the UI thread when no content remains below.
-- Mount canonical Artefact renderers only for visible Recent cards. Offset placeholders are plain Views and never mount hidden Paper, Print, Image, or Ink trees.
+- Clip the white viewport and edge-fade native view to the same sheet radius. Use a solid white header scrim followed by a short `AnimatedEdgeFadeView` in `mode="overlay"`; drive the separate bottom fade to zero on the UI thread when no content remains below.
+- Eagerly mount canonical Artefact renderers for the first prepared viewport, then only for visible Recent cards. Horizontally offset placeholders are plain Views and never mount hidden Paper, Print, Image, or Ink trees.
 
 ## Implementation sequence and gates
 
@@ -179,12 +179,12 @@ Gate: Node tests prove ordering, range, aggregation, migration, and malformed-in
 
 ### 2. Replace the bloom with the warm sheet shell
 
-- Add `CalendarSheet` with zero/open detents, Featured-style surface/handle/X, scrim, drag/scrim/Back dismissal, and settle-owned teardown.
+- Add `CalendarSheet` with zero/open detents, Featured-style surface/handle/X, scrim, drag/scrim/Back dismissal, and settle-owned hidden-state reset.
 - Convert HomeHeader's trigger without changing its visual label or chrome fade.
 - Initially render only placeholders behind the fixed header; wire both tabs to simple placeholder bodies.
 - Implement last-tab memory, per-presentation reset, per-tab offset preservation, and press-only crossfade as a small explicit state machine.
 
-Gate: p95 tap-to-first-nonzero-position is at most 50 ms on both physical-device release builds before either real list is added. One hundred open/close cycles reach a stable memory plateau and leave no retained active-tab trees.
+Gate: p95 tap-to-first-nonzero-position is at most 50 ms on both physical-device release builds before either real list is added. One hundred open/close cycles reach a stable memory plateau with only the documented bounded prepared trees retained.
 
 ### 3. Replace the all-journal preload and wire selection
 
@@ -202,7 +202,7 @@ If a 100+-Entry Day exposes the separately audited non-virtualized DayPager as t
 
 - Add keyset pagination, stable Day-only row packing, empty/error/footer states, and focus tracking.
 - Add the responsive one/two-card design, type marker, canonical first-Artefact renderer, static count silhouettes, and per-card preview boundary.
-- Keep expensive preview children limited to the visible window.
+- Prepare expensive preview children for the first viewport, then limit later children to the visible window.
 - Wire exact Entry selection and restore the saved offset when returning to Recent during the same presentation.
 
 Gate: test no entries, 1/2/3/5 Entries per Day, a page boundary in a large Day, long complete Paper text, Print/Ink readiness and failure, unknown data, rapid pagination, rotation, and repeated selection.
@@ -221,7 +221,7 @@ Gate: test same-month and multi-year journals, Jan 1 seed, creation mid-month, l
 - Add top/bottom native fades, focused-period hysteresis, wide-layout caps, safe-area geometry, pressed/disabled states, and reduced-motion behavior.
 - Add accessibility roles/states for tabs, close, cards, and Days; card labels include date, Entry type, title when present, and Artefact count.
 - Add the sheet-level error boundary and verify every async branch has a visible or logged failure path.
-- Confirm the active outgoing tab exists only for the crossfade duration and is then released.
+- Confirm both retained tabs use fixed opacity ownership, the inactive tab rejects pointer events, and rapid switching never exposes an unpainted frame.
 
 Gate: VoiceOver/TalkBack, largest supported text settings, reduce motion, rotation, Android Back, drag/scrim/X dismissal, rapid tab tapping, and app foreground/midnight refresh all work without crashes or inaccessible controls.
 
@@ -229,7 +229,7 @@ Gate: VoiceOver/TalkBack, largest supported text settings, reduce motion, rotati
 
 - Run a release stress seed with at least 10,000 Entries, up to five Artefacts each, long journal history, unknown types, and a 100+-Entry Day.
 - Measure cold Home startup, warm/cold sheet opening, Recent pagination, Monthly scrolling, selection close, JS/UI frame time, JS/native heap, and image memory.
-- Repeat at least 100 open/close cycles and 50 tab switches; memory must plateau after caches reach their documented bounds and active trees must disappear after settle.
+- Repeat at least 100 open/close cycles and 50 tab switches; memory must plateau after caches and retained browse windows reach their documented bounds, with no blank preview or marker frame.
 - Run `pnpm check`, React Compiler lint/health checks, and production Expo exports for iOS and Android using the SDK 57 toolchain.
 - Rewrite `docs/02-calendar-morph-overlay.md` to describe the active sheet (the filename may remain for link stability), update `docs/README.md` and `docs/overview.md`, and mark PERF-01, PERF-04, and UX-11 addressed only with test/profile evidence.
 
@@ -238,12 +238,12 @@ Gate: all static, automated, device, performance, and failure-injection checks p
 ## Acceptance checklist
 
 - Sheet motion begins within the 50 ms p95 contract on warm and cold-data paths.
-- Closed state retains only the native shell and bounded lightweight caches.
+- Closed state retains the native shell, both virtualized browse trees reset to their bounded prepared windows, and bounded lightweight caches.
 - Recent and Monthly exactly follow their agreed ordering, focus, formatting, marker, range, and selection rules.
 - The top header fade and conditional bottom fade are native overlay fades, not blur effects.
 - No preview truncates its first Artefact or mounts hidden Artefact renderers.
 - Navigation never shows stale previous-Day content and lands on the intended Entry.
 - Errors stay local, visible, retryable, and dismissible.
 - User Creation Day is immutable, the seed is January 1, 2026, and impossible/external Days cannot enter Home.
-- Cache size and memory stabilize under stress; active lists unmount only after close settles.
+- Cache size and memory stabilize under stress; retained lists reset and trim only after close settles.
 - Legacy overlay cleanup remains clearly deferred and untouched by this implementation.
