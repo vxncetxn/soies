@@ -3,7 +3,9 @@ import { AccessibilityInfo } from "react-native";
 
 /** Tracks the platform Reduce Motion preference for declarative Ease transitions. */
 export function useReducedMotionPreference() {
-  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+  // Unknown is treated conservatively so startup never animates before the
+  // asynchronous platform preference has been read.
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -22,5 +24,5 @@ export function useReducedMotionPreference() {
     };
   }, []);
 
-  return reduceMotionEnabled;
+  return reduceMotionEnabled !== false;
 }

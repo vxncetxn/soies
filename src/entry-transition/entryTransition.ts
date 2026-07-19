@@ -8,6 +8,10 @@ export type EntryTransitionPhase =
   | "settling";
 export type EntryExitGate = "immediate" | "manual";
 export type EntryChromeMode = "fixed" | "crossfade";
+export type EntryMotionCompletion = {
+  requestId: number;
+  kind: "source-exit" | "target-enter";
+};
 
 export type EntryTransitionState = {
   phase: EntryTransitionPhase;
@@ -63,27 +67,83 @@ export function createEntryTransitionState(
 export function entrySurfaceMotion(
   state: EntryTransitionState,
   participant: EntryParticipant,
-): { visible: boolean; instant: boolean } {
+): { visible: boolean; instant: boolean; completion: EntryMotionCompletion | null } {
   if (state.phase === "idle") {
-    return { visible: state.canonicalParticipant === participant, instant: false };
+    return {
+      visible: state.canonicalParticipant === participant,
+      instant: false,
+      completion: null,
+    };
   }
 
   // A prepared Home cover stays opaque while the complete canonical Day adopts
   // final geometry behind it. That reset must not create a second visible enter.
   if (participant === "home" && state.target === "prepared-home" && state.phase === "settling") {
-    return { visible: true, instant: true };
+    return { visible: true, instant: true, completion: null };
   }
 
   if (state.source === participant) {
-    return { visible: state.phase === "preparing", instant: false };
+    return {
+      visible: state.phase === "preparing",
+      instant: false,
+      completion:
+        state.phase === "exiting" && state.requestId !== null
+          ? { requestId: state.requestId, kind: "source-exit" }
+          : null,
+    };
   }
   if (state.target === participant) {
     return {
       visible: state.phase === "entering" || state.phase === "settling",
       instant: false,
+      completion:
+        state.phase === "entering" && state.requestId !== null
+          ? { requestId: state.requestId, kind: "target-enter" }
+          : null,
     };
   }
-  return { visible: false, instant: false };
+  return { visible: false, instant: false, completion: null };
+}
+
+/**
+ * Associates native completion events with the visibility change that started
+ * them. Interrupted and recovery animations remain in order, so a delayed event
+ * can never borrow a newer coordinator request ID.
+ */
+export class EntryMotionCompletionQueue {
+  private visible: boolean;
+  private hiddenOffset: number;
+  private readonly pending: (EntryMotionCompletion | null)[] = [];
+
+  constructor(initialVisible: boolean, initialHiddenOffset = 0) {
+    this.visible = initialVisible;
+    this.hiddenOffset = initialHiddenOffset;
+  }
+
+  transition(
+    visible: boolean,
+    hiddenOffset: number,
+    completion: EntryMotionCompletion | null,
+  ): void {
+    const visibilityChanged = visible !== this.visible;
+    const hiddenOffsetChanged = !visible && hiddenOffset !== this.hiddenOffset;
+    if (!visibilityChanged && !hiddenOffsetChanged) {
+      return;
+    }
+    this.visible = visible;
+    this.hiddenOffset = hiddenOffset;
+    // Rotation can interrupt an in-flight exit while retargeting the hidden
+    // offset. Carry the same request onto the replacement native batch: the
+    // interrupted event consumes the original token and the replacement's
+    // successful event must still advance the coordinator. Outside an active
+    // phase `completion` is null, so a stationary hidden surface stays inert.
+    this.pending.push(completion);
+  }
+
+  finish(finished: boolean): EntryMotionCompletion | null {
+    const completion = this.pending.shift() ?? null;
+    return finished ? completion : null;
+  }
 }
 
 export function entryChromeVisible(

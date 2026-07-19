@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createEntryTransitionState,
   entryChromeVisible,
+  EntryMotionCompletionQueue,
   entrySurfaceMotion,
   entryTransitionReducer,
 } from "../src/entry-transition/entryTransition.ts";
@@ -105,19 +106,56 @@ test("surface and chrome selectors keep Home chrome fixed while prepared Home re
     chromeMode: "fixed",
   });
 
-  assert.deepEqual(entrySurfaceMotion(state, "home"), { visible: true, instant: false });
+  assert.deepEqual(entrySurfaceMotion(state, "home"), {
+    visible: true,
+    instant: false,
+    completion: null,
+  });
   assert.equal(entryChromeVisible(state, "home"), true);
 
   state = entryTransitionReducer(state, { type: "allowExit", requestId: 8 });
-  assert.deepEqual(entrySurfaceMotion(state, "home"), { visible: false, instant: false });
+  assert.deepEqual(entrySurfaceMotion(state, "home"), {
+    visible: false,
+    instant: false,
+    completion: { requestId: 8, kind: "source-exit" },
+  });
   state = entryTransitionReducer(state, { type: "targetReady", requestId: 8 });
   state = entryTransitionReducer(state, { type: "sourceExitFinished", requestId: 8 });
   assert.deepEqual(entrySurfaceMotion(state, "prepared-home"), {
     visible: true,
     instant: false,
+    completion: { requestId: 8, kind: "target-enter" },
   });
   state = entryTransitionReducer(state, { type: "targetEnterFinished", requestId: 8 });
-  assert.deepEqual(entrySurfaceMotion(state, "home"), { visible: true, instant: true });
+  assert.deepEqual(entrySurfaceMotion(state, "home"), {
+    visible: true,
+    instant: true,
+    completion: null,
+  });
+});
+
+test("native completion events retain the request that started each visibility change", () => {
+  const queue = new EntryMotionCompletionQueue(true);
+  const first = { requestId: 21, kind: "source-exit" };
+  const second = { requestId: 22, kind: "source-exit" };
+
+  queue.transition(false, 800, first);
+  queue.transition(true, 800, null); // Abort recovery.
+  queue.transition(false, 800, second); // A newer request starts before recovery settles.
+
+  assert.deepEqual(queue.finish(true), first);
+  assert.equal(queue.finish(false), null);
+  assert.deepEqual(queue.finish(true), second);
+
+  const rotatedHiddenSurface = new EntryMotionCompletionQueue(false, 800);
+  rotatedHiddenSurface.transition(false, 900, null);
+  assert.equal(rotatedHiddenSurface.finish(true), null);
+
+  const rotatingExit = new EntryMotionCompletionQueue(true, 800);
+  rotatingExit.transition(false, 800, first);
+  rotatingExit.transition(false, 900, first);
+  assert.equal(rotatingExit.finish(false), null);
+  assert.deepEqual(rotatingExit.finish(true), first);
 });
 
 test("every request-scoped completion ignores a stale request id", () => {

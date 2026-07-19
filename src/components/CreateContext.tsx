@@ -1,9 +1,10 @@
 import { createContext, PropsWithChildren, useContext, useState } from "react";
 
+import { targetForCreateDismissal, type CreateDismissalReason } from "../data/createTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 
 export type CreateMode = "paper" | "print" | null;
-export type CreateDismissalReason = "cancel" | "save";
+export type { CreateDismissalReason } from "../data/createTransition";
 
 type OpenCreateOptions = {
   imageUri: string;
@@ -124,7 +125,7 @@ export const CreateProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    const target = reason === "save" ? "prepared-home" : "home";
+    const target = targetForCreateDismissal(reason);
     const requestId = entryTransition.begin("create", target, "immediate", "crossfade");
     setCreateSessionBusy(false);
     setCreate((current) => {

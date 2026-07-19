@@ -18,14 +18,12 @@ import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
-import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
 import { useCreateContext } from "./CreateContext";
 import CreatePaperScreen from "./CreatePaperScreen";
 import CreatePrintScreen from "./CreatePrintScreen";
 
 const CreateOverlay = () => {
-  const { createMode, createDate, createImageUri, createSessionBusy, closeCreate } =
-    useCreateContext();
+  const { createMode, createDate, createImageUri, closeCreate } = useCreateContext();
   const entryTransition = useEntryTransition();
   const targetRequestId =
     entryTransition.state.target === "create" ? entryTransition.state.requestId : null;
@@ -33,10 +31,6 @@ const CreateOverlay = () => {
     createMode !== null &&
     entryTransition.state.phase === "idle" &&
     entryTransition.state.canonicalParticipant === "create";
-
-  // Hardware-back dismisses the create overlay while a mode is open — but not
-  // mid-save (would orphan an in-flight persist / race a new session).
-  useHardwareBackDismiss(createIsInteractive && !createSessionBusy, () => closeCreate("cancel"));
 
   useEffect(() => {
     if (

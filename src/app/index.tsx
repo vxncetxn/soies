@@ -1,5 +1,3 @@
-import type { TransitionEndEvent } from "react-native-ease";
-
 /**
  * Home screen — the root `index` route.
  *
@@ -32,7 +30,7 @@ import { ActivityIndicator, Alert, Pressable, Text, View, useWindowDimensions } 
 import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { PreparedHomeHandoff } from "../data/preparedHomeHandoff";
+import type { PreparedHomeHandoff, PreparedHomeTransition } from "../data/preparedHomeHandoff";
 
 import AppErrorFallback from "../components/app-error-fallback";
 import CalendarSheet from "../components/CalendarSheet";
@@ -50,8 +48,12 @@ import {
   invalidateEntriesCache,
   loadEntriesCached,
 } from "../data/entriesCache";
+import { buildPreparedHomeTransition, resolvePreparedHomeEntry } from "../data/preparedHomeHandoff";
 import { isFeaturedWidgetSourceAvailable } from "../db/repositories/featuredWidgetSlots";
-import { entrySurfaceMotion } from "../entry-transition/entryTransition";
+import {
+  entrySurfaceMotion,
+  type EntryMotionCompletion,
+} from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntrySurfaceMotion } from "../entry-transition/EntryTransitionMotion";
 import { todayISO, validISODateOr } from "../utils/date";
@@ -72,12 +74,6 @@ import {
 let cachedPagerHeight = 0;
 
 const EMPTY_ENTRIES: Entry[] = [];
-type PreparedCalendarHandoff = PreparedHomeHandoff & {
-  requestId: number;
-  origin: "calendar" | "save";
-  error: Error | null;
-};
-
 type CalendarTransitionState = {
   requestId: number;
   sheetDismissed: boolean;
@@ -112,7 +108,7 @@ function HomeScreen() {
   const [pendingCalendarEntryId, setPendingCalendarEntryId] = useState<string | null>(null);
   const [calendarHandoff, setCalendarHandoff] = useState<PreparedHomeHandoff | null>(null);
   const [calendarPreparedHandoff, setCalendarPreparedHandoff] =
-    useState<PreparedCalendarHandoff | null>(null);
+    useState<PreparedHomeTransition | null>(null);
   const [calendarAdoptedRequestId, setCalendarAdoptedRequestId] = useState<number | null>(null);
   const [calendarCanonicalEntryReadyRequestId, setCalendarCanonicalEntryReadyRequestId] = useState<
     number | null
@@ -225,7 +221,7 @@ function HomeScreen() {
     setLoading(!prepared);
     setError(null);
     setPendingCalendarEntryId(
-      matchingHandoff ? (matchingHandoff.entryId ?? matchingHandoff.entries[0]?.id ?? null) : null,
+      matchingHandoff ? (resolvePreparedHomeEntry(matchingHandoff)?.id ?? null) : null,
     );
     if (matchingHandoff) {
       setCalendarHandoff(null);
@@ -324,27 +320,27 @@ function HomeScreen() {
         if (cancelled) {
           return;
         }
-        setCalendarPreparedHandoff({
-          requestId,
-          day: createDate,
-          entryId: nextEntries.at(-1)?.id ?? null,
-          entries: nextEntries,
-          origin: "save",
-          error: null,
-        });
+        setCalendarPreparedHandoff(
+          buildPreparedHomeTransition({
+            requestId,
+            day: createDate,
+            origin: "save",
+            entries: nextEntries,
+          }),
+        );
       })
       .catch((nextError: unknown) => {
         if (cancelled) {
           return;
         }
-        setCalendarPreparedHandoff({
-          requestId,
-          day: createDate,
-          entryId: null,
-          entries: [],
-          origin: "save",
-          error: nextError instanceof Error ? nextError : new Error(String(nextError)),
-        });
+        setCalendarPreparedHandoff(
+          buildPreparedHomeTransition({
+            requestId,
+            day: createDate,
+            origin: "save",
+            error: nextError instanceof Error ? nextError : new Error(String(nextError)),
+          }),
+        );
       });
 
     return () => {
@@ -355,7 +351,7 @@ function HomeScreen() {
   const retry = () => setAttempt((previous) => previous + 1);
 
   const adoptCalendarHandoff = (handoff: PreparedHomeHandoff) => {
-    const targetEntryId = handoff.entryId ?? handoff.entries[0]?.id ?? null;
+    const targetEntryId = resolvePreparedHomeEntry(handoff)?.id ?? null;
     setError(null);
 
     if (handoff.day === effectiveDate) {
@@ -419,14 +415,15 @@ function HomeScreen() {
       .then((nextEntries) => {
         const transition = calendarTransitionStateRef.current;
         if (transition?.requestId === requestId) {
-          setCalendarPreparedHandoff({
-            requestId,
-            day,
-            entryId,
-            entries: nextEntries,
-            origin: "calendar",
-            error: null,
-          });
+          setCalendarPreparedHandoff(
+            buildPreparedHomeTransition({
+              requestId,
+              day,
+              entryId,
+              entries: nextEntries,
+              origin: "calendar",
+            }),
+          );
         }
       })
       .catch((nextError: unknown) => {
@@ -473,41 +470,27 @@ function HomeScreen() {
   const homeBodyMotion = entrySurfaceMotion(entryTransition.state, "home");
   const preparedHomeMotion = entrySurfaceMotion(entryTransition.state, "prepared-home");
 
-  const handleHomeBodyTransitionEnd = (event: TransitionEndEvent) => {
-    const { phase, requestId, source, target } = entryTransition.state;
-    if (!event.finished || requestId === null) {
+  const handleHomeBodyMotionEnd = (completion: EntryMotionCompletion) => {
+    if (completion.kind === "source-exit") {
+      entryTransition.sourceExitFinished(completion.requestId);
       return;
     }
-    if (phase === "exiting" && source === "home") {
-      entryTransition.sourceExitFinished(requestId);
-      return;
-    }
-    if (phase === "entering" && target === "home") {
-      entryTransition.targetEnterFinished(requestId);
-      entryTransition.complete(requestId, "home");
-    }
+    entryTransition.targetEnterFinished(completion.requestId);
+    entryTransition.complete(completion.requestId, "home");
   };
 
-  const handlePreparedHomeTransitionEnd = (event: TransitionEndEvent) => {
-    const { phase, requestId, target } = entryTransition.state;
+  const handlePreparedHomeMotionEnd = (completion: EntryMotionCompletion) => {
     if (
-      event.finished &&
-      requestId !== null &&
-      phase === "entering" &&
-      target === "prepared-home" &&
-      calendarPreparedHandoff?.requestId === requestId
+      completion.kind === "target-enter" &&
+      calendarPreparedHandoff?.requestId === completion.requestId
     ) {
-      entryTransition.targetEnterFinished(requestId);
+      entryTransition.targetEnterFinished(completion.requestId);
     }
   };
 
   const widgetTargetForPager = widgetTargetForEntries(pendingWidgetTarget, effectiveDate, entries);
   const calendarPreparedEntry = calendarPreparedHandoff
-    ? (calendarPreparedHandoff.entries.find(
-        (entry) => entry.id === calendarPreparedHandoff.entryId,
-      ) ??
-      calendarPreparedHandoff.entries[0] ??
-      null)
+    ? resolvePreparedHomeEntry(calendarPreparedHandoff)
     : null;
   const canonicalPreparedEntryNeedsReadiness = Boolean(
     calendarPreparedEntry?.artefacts[0] && !isUnknownArtefact(calendarPreparedEntry.artefacts[0]),
@@ -516,13 +499,11 @@ function HomeScreen() {
     calendarPreparedHandoff && calendarAdoptedRequestId === calendarPreparedHandoff.requestId
       ? {
           requestId: calendarPreparedHandoff.requestId,
-          entryId:
-            calendarPreparedHandoff.entryId ?? calendarPreparedHandoff.entries[0]?.id ?? null,
+          entryId: calendarPreparedEntry?.id ?? null,
         }
       : null;
   const handleEntryContentReady = (requestId: number, entryId: string) => {
-    const targetEntryId =
-      calendarPreparedHandoff?.entryId ?? calendarPreparedHandoff?.entries[0]?.id ?? null;
+    const targetEntryId = calendarPreparedEntry?.id ?? null;
     if (!calendarPreparedHandoff || requestId !== calendarPreparedHandoff.requestId) {
       return;
     }
@@ -562,6 +543,39 @@ function HomeScreen() {
     }, 1000);
     return () => clearTimeout(watchdog);
   }, [entryTransition]);
+
+  useEffect(() => {
+    const handoff = calendarPreparedHandoff;
+    if (
+      !handoff ||
+      handoff.error ||
+      entryTransition.state.phase !== "settling" ||
+      entryTransition.state.requestId !== handoff.requestId ||
+      calendarAdoptedRequestId !== handoff.requestId ||
+      handoff.day !== effectiveDate ||
+      !canonicalPreparedEntryNeedsReadiness ||
+      calendarCanonicalEntryReadyRequestId === handoff.requestId
+    ) {
+      return;
+    }
+
+    // Adoption has committed the canonical native tree behind the opaque cover.
+    // Bound a missing Paper/Image callback without starting the clock while the
+    // target is still absent or the route has not adopted its Day.
+    const requestId = handoff.requestId;
+    const watchdog = setTimeout(() => {
+      setCalendarCanonicalEntryReadyRequestId(requestId);
+    }, 1000);
+    return () => clearTimeout(watchdog);
+  }, [
+    calendarAdoptedRequestId,
+    calendarCanonicalEntryReadyRequestId,
+    calendarPreparedHandoff,
+    canonicalPreparedEntryNeedsReadiness,
+    effectiveDate,
+    entryTransition.state.phase,
+    entryTransition.state.requestId,
+  ]);
 
   useEffect(() => {
     if (!pendingWidgetTarget || loading || error || pendingWidgetTarget.date !== effectiveDate) {
@@ -680,8 +694,9 @@ function HomeScreen() {
           className="absolute inset-0"
           visible={homeBodyMotion.visible}
           instant={homeBodyMotion.instant}
+          completion={homeBodyMotion.completion}
           viewportHeight={window.height}
-          onTransitionEnd={handleHomeBodyTransitionEnd}
+          onMotionEnd={handleHomeBodyMotionEnd}
         >
           {error ? (
             <View className="flex-1 items-center justify-center gap-4 px-5">
@@ -737,8 +752,9 @@ function HomeScreen() {
             className="absolute inset-0 bg-background"
             visible={preparedHomeMotion.visible}
             instant={preparedHomeMotion.instant}
+            completion={preparedHomeMotion.completion}
             viewportHeight={window.height}
-            onTransitionEnd={handlePreparedHomeTransitionEnd}
+            onMotionEnd={handlePreparedHomeMotionEnd}
             onLayout={() => {
               entryTransition.targetMounted(calendarPreparedHandoff.requestId);
             }}

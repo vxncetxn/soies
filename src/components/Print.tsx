@@ -8,9 +8,10 @@
  * complete raster surface; caption capacity remains canonical.
  */
 import { Image } from "expo-image";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
+import { ContentReadinessLatch } from "../data/contentReadiness";
 import { useArtefactPresentationScale } from "./ArtefactPresentationScale";
 import InkOverlay from "./InkOverlay";
 import PrintCaptionSurface from "./PrintCaptionSurface";
@@ -105,6 +106,10 @@ export function PrintCanvas({
 type PrintProps = Omit<PrintCanvasProps, "captionSurface" | "presentationScale"> & {
   /** Persisted plain caption content adapted into the shared native renderer. */
   children?: ReactNode;
+  /** Entry-transition request waiting for this exact image source. */
+  imageReadinessRequestId?: number | null;
+  /** Signals display or terminal error, including replay for an already-mounted image. */
+  onImageReady?: (requestId: number) => void;
 };
 
 const Print = ({
@@ -114,18 +119,47 @@ const Print = ({
   onImageError,
   onInkDisplay,
   onInkError,
+  imageReadinessRequestId = null,
+  onImageReady,
   children,
 }: PrintProps) => {
   const presentationScale = useArtefactPresentationScale();
   const caption = typeof children === "string" ? children : String(children ?? "");
+  const [contentReadiness] = useState(() => new ContentReadinessLatch());
+
+  const reportImageReady = () => {
+    if (
+      contentReadiness.contentReady(imagePath, imageReadinessRequestId) &&
+      imageReadinessRequestId !== null
+    ) {
+      onImageReady?.(imageReadinessRequestId);
+    }
+  };
+
+  // Expo Image display/error events are edges. A retained same-Day Print may
+  // receive a Calendar request after that edge, so replay its source readiness.
+  useEffect(() => {
+    if (
+      imageReadinessRequestId !== null &&
+      contentReadiness.request(imagePath, imageReadinessRequestId)
+    ) {
+      onImageReady?.(imageReadinessRequestId);
+    }
+  }, [contentReadiness, imagePath, imageReadinessRequestId, onImageReady]);
 
   return (
     <PrintCanvas
       imagePath={imagePath}
       presentationScale={presentationScale}
       inkOverlayPath={inkOverlayPath}
-      onImageDisplay={onImageDisplay}
-      onImageError={onImageError}
+      onImageDisplay={() => {
+        onImageDisplay?.();
+        reportImageReady();
+      }}
+      onImageError={() => {
+        onImageError?.();
+        reportImageReady();
+      }}
       onInkDisplay={onInkDisplay}
       onInkError={onInkError}
       captionSurface={<PrintCaptionSurface value={caption} presentationScale={presentationScale} />}

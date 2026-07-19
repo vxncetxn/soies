@@ -39,7 +39,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EASE_DEFAULT_TIMING } from "../constants/animation";
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
-import { entryChromeVisible, entrySurfaceMotion } from "../entry-transition/entryTransition";
+import {
+  entryChromeVisible,
+  entrySurfaceMotion,
+  type EntryMotionCompletion,
+} from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion, EntrySurfaceMotion } from "../entry-transition/EntryTransitionMotion";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
@@ -164,19 +168,13 @@ const CreateScreenChrome = ({
     },
   );
 
-  const handleEntryBodyTransitionEnd = (event: { finished: boolean }) => {
-    const { phase, requestId, source, target } = entryTransition.state;
-    if (!event.finished || requestId === null) {
+  const handleEntryBodyMotionEnd = (completion: EntryMotionCompletion) => {
+    if (completion.kind === "source-exit") {
+      entryTransition.sourceExitFinished(completion.requestId);
       return;
     }
-    if (phase === "exiting" && source === "create") {
-      entryTransition.sourceExitFinished(requestId);
-      return;
-    }
-    if (phase === "entering" && target === "create") {
-      entryTransition.targetEnterFinished(requestId);
-      entryTransition.complete(requestId, "create");
-    }
+    entryTransition.targetEnterFinished(completion.requestId);
+    entryTransition.complete(completion.requestId, "create");
   };
 
   const headerTotalHeightStyle = useAnimatedStyle(() => ({
@@ -255,18 +253,18 @@ const CreateScreenChrome = ({
   const contentKey = showAddBloomPanel && bloomConfig ? bloomConfig.contentKey : barScreen;
 
   return (
-    <View style={{ flex: 1 }} className="bg-background">
+    <View style={{ flex: 1 }}>
       <BlurTargetView ref={createBlurTargetRef} style={styles.blurTarget}>
         <View className="flex-1" pointerEvents={saving ? "none" : "auto"}>
-          <Animated.View style={headerTotalHeightStyle} />
-
           <EntrySurfaceMotion
-            style={{ flex: 1 }}
+            className="flex-1 bg-background"
             visible={createBodyMotion.visible}
             instant={createBodyMotion.instant}
+            completion={createBodyMotion.completion}
             viewportHeight={viewportHeight}
-            onTransitionEnd={handleEntryBodyTransitionEnd}
+            onMotionEnd={handleEntryBodyMotionEnd}
           >
+            <Animated.View style={headerTotalHeightStyle} />
             {children}
           </EntrySurfaceMotion>
         </View>

@@ -164,9 +164,9 @@ test("Calendar selection adapts to the shared full-viewport Entry transition", a
   assert.doesNotMatch(home, /scheduleOnRN|scheduleOnUI/);
   assert.match(home, /<EntrySurfaceMotion/);
   assert.match(home, /viewportHeight=\{window\.height\}/);
-  assert.match(home, /onTransitionEnd=\{handleHomeBodyTransitionEnd\}/);
-  assert.match(home, /onTransitionEnd=\{handlePreparedHomeTransitionEnd\}/);
-  assert.match(home, /event\.finished/);
+  assert.match(home, /onMotionEnd=\{handleHomeBodyMotionEnd\}/);
+  assert.match(home, /onMotionEnd=\{handlePreparedHomeMotionEnd\}/);
+  assert.match(motion, /completionQueue\.finish\(event\.finished\)/);
   assert.match(home, /calendarPreparedHandoff/);
   assert.match(
     home,

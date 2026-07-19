@@ -9,6 +9,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import {
+  clearShareActionToast,
+  createShareActionToastState,
+  showShareActionToast,
+} from "../src/share/shareActionToastState.ts";
+
 const readSource = (relativePath) =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
@@ -24,9 +30,12 @@ test("the shared Entry primitive owns full-viewport Ease motion and reduced-moti
   assert.match(motion, /from "react-native-ease\/uniwind"/);
   assert.match(motion, /translateY: visible \? 0 : viewportHeight/);
   assert.match(motion, /easing: visible \? "easeOut" : "easeIn"/);
+  assert.match(motion, /EntryMotionCompletionQueue/);
   assert.match(motion, /\{ type: "none" \}/);
   assert.doesNotMatch(motion, /useHardwareLayer/);
   assert.match(createChrome, /<EntrySurfaceMotion[\s\S]*?<EntryChromeMotion/);
+  assert.match(createChrome, /<EntrySurfaceMotion[\s\S]{0,240}className="[^"]*bg-background[^"]*"/);
+  assert.doesNotMatch(createChrome, /<View style=\{\{ flex: 1 \}\} className="bg-background">/);
   assert.match(
     homeChrome,
     /Stack-expansion opacity; Entry navigation owns its separate Ease wrapper/,
@@ -43,6 +52,7 @@ test("Calendar and Create gate entrance on mounted native content with mount-sco
   const print = readSource("src/components/EditablePrint.tsx");
   const prepared = readSource("src/components/PreparedHomeEntry.tsx");
   const collapsed = readSource("src/components/CollapsedDeck.tsx");
+  const printSource = readSource("src/components/Print.tsx");
 
   assert.match(home, /!targetMounted \|\| targetReady/);
   assert.match(home, /setTimeout\([\s\S]{0,120}targetReady\(requestId\)[\s\S]{0,40}1000/);
@@ -54,10 +64,31 @@ test("Calendar and Create gate entrance on mounted native content with mount-sco
   assert.match(print, /onImageDisplay=\{onImageReady\}/);
   assert.match(print, /onImageError=\{onImageReady\}/);
   assert.match(prepared, /onPaperContentReady: onContentReady/);
-  assert.match(prepared, /onPrintContentReady: \(\) => onContentReady\(requestId\)/);
+  assert.match(prepared, /printContentReadinessRequestId: requestId/);
+  assert.match(prepared, /onPrintContentReady: onContentReady/);
+  assert.match(collapsed, /printContentReadinessRequestId: firstArtefactReadinessRequestId/);
   assert.match(collapsed, /onPrintContentReady:/);
-  assert.match(collapsed, /onFirstArtefactReady\(firstArtefactReadinessRequestId\)/);
+  assert.match(printSource, /ContentReadinessLatch/);
+  assert.match(printSource, /contentReadiness\.request\(imagePath, imageReadinessRequestId\)/);
   assert.match(home, /canonicalPreparedEntryNeedsReadiness/);
+  assert.match(home, /calendarAdoptedRequestId !== handoff\.requestId/);
+  assert.match(
+    home,
+    /setTimeout\(\(\) => \{[\s\S]{0,100}setCalendarCanonicalEntryReadyRequestId\(requestId\)[\s\S]{0,40}1000/,
+  );
+});
+
+test("hardware Back uses the responder-freeze Create dismissal path", () => {
+  const overlay = readSource("src/components/CreateOverlay.tsx");
+  const paper = readSource("src/components/CreatePaperScreen.tsx");
+  const print = readSource("src/components/CreatePrintScreen.tsx");
+
+  assert.doesNotMatch(overlay, /useHardwareBackDismiss/);
+  for (const source of [paper, print]) {
+    assert.match(source, /useHardwareBackDismiss\(true/);
+    assert.match(source, /if \(canDismissFromHardwareBack\)/);
+    assert.match(source, /handleClose\("cancel"\)/);
+  }
 });
 
 test("toast and tooltip stay mounted until their Ease exit completion", () => {
@@ -72,12 +103,30 @@ test("toast and tooltip stay mounted until their Ease exit completion", () => {
   }
   assert.match(toast, /const FADE_MS = 220/);
   assert.match(toast, /const RISE_Y = 8/);
-  assert.match(toast, /event\.finished && !cycle\.visible[\s\S]{0,60}onDone\(\)/);
+  assert.match(toast, /key=\{cycleId\}/);
+  assert.match(toast, /event\.finished && !cycle\.visible[\s\S]{0,60}onDone\(cycleId\)/);
   assert.match(tooltip, /const FADE_MS = 150/);
   assert.match(tooltip, /mounted: visible \|\| display\.mounted/);
   assert.match(tooltip, /!event\.finished \|\| display\.shown/);
   assert.match(tooltip, /mounted: false[\s\S]{0,60}onDismiss\(\)/);
   assert.doesNotMatch(tooltip, /<Pressable onPress=\{onDismiss\}/);
+});
+
+test("identical consecutive share toasts use distinct cycles and ignore stale exits", () => {
+  const initial = createShareActionToastState();
+  const first = showShareActionToast(initial, "copy", "Copied");
+  const second = showShareActionToast(first, "copy", "Copied");
+
+  assert.notEqual(second.cycleId, first.cycleId);
+  assert.equal(clearShareActionToast(second, first.cycleId), second);
+  assert.equal(clearShareActionToast(second, second.cycleId).message, null);
+});
+
+test("unknown startup Reduce Motion preference disables animation conservatively", () => {
+  const reducedMotion = readSource("src/hooks/useReducedMotionPreference.ts");
+
+  assert.match(reducedMotion, /useState<boolean \| null>\(null\)/);
+  assert.match(reducedMotion, /return reduceMotionEnabled !== false/);
 });
 
 test("Calendar and Featured Widgets retain both phase trees under Ease opacity owners", () => {

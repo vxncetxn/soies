@@ -67,7 +67,8 @@ const PreparedHomeEntry = ({ entry, requestId, onContentReady }: PreparedHomeEnt
             {renderArtefactContent(firstArtefact, firstArtefact.id, {
               paperContentReadinessRequestId: requestId,
               onPaperContentReady: onContentReady,
-              onPrintContentReady: () => onContentReady(requestId),
+              printContentReadinessRequestId: requestId,
+              onPrintContentReady: onContentReady,
             })}
           </ArtefactWrapper>
         ) : null}

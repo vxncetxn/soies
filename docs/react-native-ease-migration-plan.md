@@ -57,8 +57,9 @@ preserving native completion callbacks. Ease hardware layers remain disabled.
   silhouettes for the remaining Artefacts.
 - Paper readiness comes from native text layout; Print display and terminal
   image error both count as ready; empty and unsupported targets are immediate.
-- After the cover enters, canonical Home adopts the complete Day behind it. A
-  canonical Paper readiness replay prevents the cover from retiring too early.
+- After the cover enters, canonical Home adopts the complete Day behind it.
+  Paper layout and Print display/error readiness replay for already-mounted
+  content, with a separate post-adoption watchdog for a lost native callback.
 - A load failure aborts the request, restores unchanged Home, and keeps the
   existing alert/reopen path.
 
@@ -126,7 +127,9 @@ preserving native completion callbacks. Ease hardware layers remain disabled.
 
 - Reducer phases, readiness ordering, manual gates, stale events, abort, and
   settling are covered through the reducer interface.
-- Calendar and Create source contracts cover readiness adapters, retained
+- Behavioral adapter tests cover already-mounted Paper/Print readiness, exact
+  and fallback Entry targeting, Cancel/Save routing, newest-Entry selection,
+  and post-save reload failure. Source contracts additionally cover retained
   participants, pointer/accessibility blocking, and prepared-Home adoption.
 - Toast, Tooltip, retained crossfades, Focus rows, and the scrubber have
   retention/ownership contracts.
@@ -136,7 +139,7 @@ preserving native completion callbacks. Ease hardware layers remain disabled.
 ### Validation recorded on 2026-07-20
 
 - `pnpm check` passes: formatting, type checking, linting, React Compiler
-  health (121/121), Strict Mode checks, and all 110 tests.
+  health (121/121), Strict Mode checks, and all 118 tests.
 - Fresh production Expo exports pass for both iOS and Android.
 - A fresh arm64 iOS Simulator Debug build passes with Expo SDK 57 and the
   native Ease module linked.

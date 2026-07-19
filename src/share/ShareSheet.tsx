@@ -55,6 +55,13 @@ import {
   OthersGlyph,
 } from "./ShareActionGlyphs";
 import { ShareActionToast } from "./ShareActionToast";
+import {
+  clearShareActionToast,
+  createShareActionToastState,
+  resetShareActionToast,
+  showShareActionToast,
+  type ShareActionToastAnchor,
+} from "./shareActionToastState";
 import { useShareCapture } from "./ShareCaptureHost";
 import { ShareComposition } from "./ShareComposition";
 import {
@@ -71,8 +78,6 @@ type ShareSheetProps = {
 
 type BusyAction = "copy" | "download" | "instagram" | "facebook" | "others" | null;
 
-type ToastAnchor = "copy" | "download" | "instagram" | "facebook" | "others" | null;
-
 type ShareableArtefact = {
   artefact: PaperArtefact | PrintArtefact;
   sourceIndex: number;
@@ -81,6 +86,13 @@ type ShareableArtefact = {
 const ACTION_COUNT = 5;
 const TOAST_WIDTH = 128;
 const TOAST_EDGE_INSET = 8;
+const TOAST_ANCHORS = [
+  "copy",
+  "download",
+  "instagram",
+  "facebook",
+  "others",
+] as const satisfies readonly ShareActionToastAnchor[];
 
 function isShareableArtefact(a: Artefact): a is PaperArtefact | PrintArtefact {
   return !isUnknownArtefact(a);
@@ -164,7 +176,7 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
   );
   const [background, setBackground] = useState<ShareBackgroundId>("light");
   const [busy, setBusy] = useState<BusyAction>(null);
-  const [toast, setToast] = useState<{ anchor: ToastAnchor; message: string } | null>(null);
+  const [toast, setToast] = useState(createShareActionToastState);
   const [prevOpen, setPrevOpen] = useState(open);
   // The native `content` detent under-measures this tree after the horizontal
   // carousel (runtime: 614pt sheet for 806pt React content). Feed the measured
@@ -188,7 +200,7 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
     if (positionChange.page !== undefined) {
       setPage(positionChange.page);
       setBackground("light");
-      setToast(null);
+      setToast(resetShareActionToast);
     }
     setSheetIndex(positionChange.sheetIndex);
   }
@@ -222,7 +234,10 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
   );
 
   const selected = artefacts[page]?.artefact ?? null;
-  const clearToast = useCallback(() => setToast(null), []);
+  const clearToast = useCallback(
+    (cycleId: number) => setToast((current) => clearShareActionToast(current, cycleId)),
+    [],
+  );
 
   const runAction = useCallback(
     (action: Exclude<BusyAction, null>, fn: () => Promise<void>, successToast?: string) => {
@@ -240,11 +255,13 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
         .then(() => fn())
         .then(() => {
           if (successToast) {
-            setToast({ anchor: action, message: successToast });
+            setToast((current) => showShareActionToast(current, action, successToast));
           }
         })
         .catch((error: unknown) => {
-          setToast({ anchor: action, message: actionErrorMessage(action, error) });
+          setToast((current) =>
+            showShareActionToast(current, action, actionErrorMessage(action, error)),
+          );
         })
         .finally(() => {
           busyRef.current = false;
@@ -295,7 +312,9 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
       }
       const available = await isInstagramAvailable();
       if (!available) {
-        setToast({ anchor: "instagram", message: "Instagram isn’t installed" });
+        setToast((current) =>
+          showShareActionToast(current, "instagram", "Instagram isn’t installed"),
+        );
         return;
       }
       const uri = await captureShareImage({
@@ -315,7 +334,9 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
       }
       const available = await isFacebookAvailable();
       if (!available) {
-        setToast({ anchor: "facebook", message: "Facebook isn’t installed" });
+        setToast((current) =>
+          showShareActionToast(current, "facebook", "Facebook isn’t installed"),
+        );
         return;
       }
       const uri = await captureShareImage({
@@ -339,10 +360,7 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
     });
   };
 
-  const toastAnchorIndex =
-    toast?.anchor == null
-      ? -1
-      : (["copy", "download", "instagram", "facebook", "others"] as const).indexOf(toast.anchor);
+  const toastAnchorIndex = toast.anchor == null ? -1 : TOAST_ANCHORS.indexOf(toast.anchor);
   const toastLeft =
     toastAnchorIndex < 0
       ? TOAST_EDGE_INSET
@@ -458,7 +476,11 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
               clamping keeps Copy/Others inside the sheet's measured bounds. */}
           <View pointerEvents="none" style={styles.toastLane}>
             <View style={[styles.toastAnchor, { left: toastLeft }]}>
-              <ShareActionToast message={toast?.message ?? null} onDone={clearToast} />
+              <ShareActionToast
+                cycleId={toast.message ? toast.cycleId : null}
+                message={toast.message}
+                onDone={clearToast}
+              />
             </View>
           </View>
 

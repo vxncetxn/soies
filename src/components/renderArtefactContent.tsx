@@ -14,7 +14,8 @@ import Print from "./Print";
 type RenderArtefactContentOptions = {
   paperContentReadinessRequestId?: number | null;
   onPaperContentReady?: (requestId: number) => void;
-  onPrintContentReady?: () => void;
+  printContentReadinessRequestId?: number | null;
+  onPrintContentReady?: (requestId: number) => void;
 };
 
 export function renderArtefactContent(
@@ -28,8 +29,8 @@ export function renderArtefactContent(
         key={key}
         imagePath={artefact.imagePath}
         inkOverlayPath={artefact.inkOverlayPath}
-        onImageDisplay={options?.onPrintContentReady}
-        onImageError={options?.onPrintContentReady}
+        imageReadinessRequestId={options?.printContentReadinessRequestId}
+        onImageReady={options?.onPrintContentReady}
       >
         {artefact.text}
       </Print>

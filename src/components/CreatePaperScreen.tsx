@@ -36,9 +36,11 @@ import type { PaperSelectionState, PaperTextSurfaceHandle } from "./PaperTextSur
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { createPaperDocument } from "../data/paperDocument";
 import { savePaperEntry } from "../data/savePaperEntry";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
 import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
 import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
+import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
 import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
@@ -85,6 +87,7 @@ type CreatePaperScreenProps = {
 
 const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperScreenProps) => {
   const { setCreateSessionBusy } = useCreateContext();
+  const entryTransition = useEntryTransition();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
   const { width: windowWidth } = useWindowDimensions();
 
@@ -193,6 +196,21 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
     onSuccess: () => {
       handleClose("save");
     },
+  });
+
+  const canDismissFromHardwareBack =
+    !saving &&
+    !scribbleSaving &&
+    !closing &&
+    entryTransition.state.phase === "idle" &&
+    entryTransition.state.canonicalParticipant === "create";
+  // This screen owns Back for its complete mounted session. Busy, closing, and
+  // transition-time presses are consumed as no-ops instead of falling through
+  // to Expo Router or Android's root activity.
+  useHardwareBackDismiss(true, () => {
+    if (canDismissFromHardwareBack) {
+      handleClose("cancel");
+    }
   });
 
   /** Mirror one already-accepted native document into the JS draft on the JS thread. */

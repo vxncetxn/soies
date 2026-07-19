@@ -18,9 +18,11 @@ import type { DraftInk } from "../data/ink";
 
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import { savePrintEntry } from "../data/savePrintEntry";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { useCreateArtefactAuthoring } from "../hooks/useCreateArtefactAuthoring";
 import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
 import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
+import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
 import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
@@ -62,6 +64,7 @@ const CreatePrintScreen = ({
   onFirstArtefactReady,
 }: CreatePrintScreenProps) => {
   const { setCreateSessionBusy } = useCreateContext();
+  const entryTransition = useEntryTransition();
   const { width: windowWidth } = useWindowDimensions();
   // Create allocates the final device-sized canonical Print from mount. Default
   // only downscales it, so caption/caret and Ink settle at identity in Type.
@@ -174,6 +177,20 @@ const CreatePrintScreen = ({
     onSuccess: () => {
       handleClose("save");
     },
+  });
+
+  const canDismissFromHardwareBack =
+    !saving &&
+    !scribbleSaving &&
+    !closing &&
+    entryTransition.state.phase === "idle" &&
+    entryTransition.state.canonicalParticipant === "create";
+  // Keep consuming Back while Create is retained through its Entry transition;
+  // only an idle, non-busy press is allowed to begin the dismissal handshake.
+  useHardwareBackDismiss(true, () => {
+    if (canDismissFromHardwareBack) {
+      handleClose("cancel");
+    }
   });
 
   const updateText = (index: number, text: string) => {

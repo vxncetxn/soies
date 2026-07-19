@@ -98,10 +98,8 @@ export const useWrappedArtefacts = ({
           ? {
               paperContentReadinessRequestId: firstArtefactReadinessRequestId,
               onPaperContentReady: onFirstArtefactReady,
-              onPrintContentReady:
-                firstArtefactReadinessRequestId != null && onFirstArtefactReady
-                  ? () => onFirstArtefactReady(firstArtefactReadinessRequestId)
-                  : undefined,
+              printContentReadinessRequestId: firstArtefactReadinessRequestId,
+              onPrintContentReady: onFirstArtefactReady,
             }
           : undefined,
       )}

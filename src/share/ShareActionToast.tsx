@@ -18,34 +18,36 @@ const FADE_MS = 220;
 const RISE_Y = 8;
 
 type ShareActionToastProps = {
+  cycleId: number | null;
   message: string | null;
-  onDone: () => void;
+  onDone: (cycleId: number) => void;
 };
 
-export function ShareActionToast({ message, onDone }: ShareActionToastProps) {
+export function ShareActionToast({ cycleId, message, onDone }: ShareActionToastProps) {
   const reduceMotionEnabled = useReducedMotionPreference();
-  const [cycle, setCycle] = useState({ message, visible: Boolean(message) });
+  const [cycle, setCycle] = useState({ cycleId, message, visible: Boolean(message) });
 
-  if (cycle.message !== message) {
-    setCycle({ message, visible: Boolean(message) });
+  if (cycle.cycleId !== cycleId || cycle.message !== message) {
+    setCycle({ cycleId, message, visible: Boolean(message) });
   }
 
   useEffect(() => {
-    if (!message) {
+    if (cycleId === null || !message) {
       return;
     }
     const timer = setTimeout(() => {
       setCycle((current) => ({ ...current, visible: false }));
     }, SHOW_MS);
     return () => clearTimeout(timer);
-  }, [message]);
+  }, [cycleId, message]);
 
-  if (!message) {
+  if (cycleId === null || !message) {
     return null;
   }
 
   return (
     <EaseView
+      key={cycleId}
       pointerEvents="none"
       style={styles.toast}
       initialAnimate={{ opacity: 0, translateY: RISE_Y }}
@@ -55,7 +57,7 @@ export function ShareActionToast({ message, onDone }: ShareActionToastProps) {
       }
       onTransitionEnd={(event) => {
         if (event.finished && !cycle.visible) {
-          onDone();
+          onDone(cycleId);
         }
       }}
     >
