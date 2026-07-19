@@ -23,8 +23,8 @@
  *
  * Chrome fade:
  *   The trigger fades out with `chromeProgress` (entry expand) and
- *   `createProgress` (create overlay open) — combined via `useHomeChromeFade`,
- *   the same signal that hides the Featured launcher and `HomeHeader`. Its
+ *   the root Entry transition — nested outside `useHomeChromeFade`, which still
+ *   owns Stack-expansion opacity for this launcher and `HomeHeader`. Its
  *   bloomed panel lives in the root `bloom` portal (outside this fade wrapper),
  *   so an open menu stays visible regardless of the fade.
  *
@@ -42,6 +42,9 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 
+import { entryChromeVisible } from "../entry-transition/entryTransition";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
+import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { todayISO } from "../utils/date";
@@ -61,6 +64,8 @@ const CreateEntryButton = () => {
   /** `main` = Paper/Print chooser; otherwise mirrors pick-flow media screen. */
   const [onMainMenu, setOnMainMenu] = useState(true);
   const chromeFadeStyle = useHomeChromeFade();
+  const { state: entryTransitionState } = useEntryTransition();
+  const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
   const {
     picking,
@@ -140,29 +145,31 @@ const CreateEntryButton = () => {
   );
 
   return (
-    <Animated.View
-      style={chromeFadeStyle}
+    <EntryChromeMotion
+      visible={entryChromeIsVisible}
       pointerEvents="box-none"
       className="absolute right-5 bottom-5 z-50"
     >
-      <BloomButton
-        variant="menu"
-        open={open}
-        onOpenChange={setOpen}
-        onClose={() => {
-          setOnMainMenu(true);
-          resetToMedia();
-        }}
-        contentKey={contentKey}
-        panelNode={panelNode}
-        accessibilityRole="button"
-        accessibilityLabel="Create entry"
-      >
-        <View className="flex items-center justify-center p-2">
-          <Icon name="plus" size={TRIGGER_ICON_SIZE} color={TRIGGER_ICON_COLOR} />
-        </View>
-      </BloomButton>
-    </Animated.View>
+      <Animated.View style={chromeFadeStyle}>
+        <BloomButton
+          variant="menu"
+          open={open}
+          onOpenChange={setOpen}
+          onClose={() => {
+            setOnMainMenu(true);
+            resetToMedia();
+          }}
+          contentKey={contentKey}
+          panelNode={panelNode}
+          accessibilityRole="button"
+          accessibilityLabel="Create entry"
+        >
+          <View className="flex items-center justify-center p-2">
+            <Icon name="plus" size={TRIGGER_ICON_SIZE} color={TRIGGER_ICON_COLOR} />
+          </View>
+        </BloomButton>
+      </Animated.View>
+    </EntryChromeMotion>
   );
 };
 

@@ -14,7 +14,7 @@
  * Map:
  * - `PickerPhase` snaps raw live Artefacts and owns retry/duplicate/full copy;
  * - `FeaturedPhase` pages five cached frames or branded framed placeholders;
- * - `FeaturedWidgetsSheet` owns the fixed detent and one shared fade progress;
+ * - `FeaturedWidgetsSheet` owns the fixed detent and two retained Ease fades;
  * - native scroll identity is retained across rotation and new center commands.
  */
 import { ModalBottomSheet, programmatic } from "@swmansion/react-native-bottom-sheet";
@@ -31,7 +31,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { EaseView, type Transition } from "react-native-ease";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Artefact, Entry } from "../data/entries";
@@ -45,9 +45,11 @@ import { FRAME_BOARD_SCALE } from "../components/artefactFrameGeometry";
 import { getArtefactCanvasLayout } from "../components/artefactLayout";
 import { Icon } from "../components/Icon";
 import { renderArtefactContent } from "../components/renderArtefactContent";
+import { EASE_DEFAULT_TIMING } from "../constants/animation";
 import { isPrintArtefact } from "../data/entries";
 import { createPaperDocument } from "../data/paperDocument";
 import { getFeaturedWidgetPickerState } from "../db/repositories/featuredWidgetSlots";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { cachedWidgetFrameUri } from "./widgetFrameCache";
 import { type WidgetFrameGeometry, widgetFrameGeometryFittingBoard } from "./widgetFrameGeometry";
 import {
@@ -605,6 +607,7 @@ export function FeaturedWidgetsSheet({
 }: FeaturedWidgetsSheetProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const reduceMotionEnabled = useReducedMotionPreference();
   // The detent stays constant across phases, but must still fit the current
   // orientation. Carousel previews absorb the height change so controls remain
   // reachable on a short landscape viewport.
@@ -618,19 +621,9 @@ export function FeaturedWidgetsSheet({
   const [busy, setBusy] = useState(false);
   /** Distinguishes a real close settlement from transient index callbacks. */
   const closingRef = useRef(false);
-  /** Zero is picker, one is featured; both phase trees read this one clock. */
-  const phaseProgress = useSharedValue(session.phase === "featured" ? 1 : 0);
-
-  useEffect(() => {
-    phaseProgress.set(
-      withTiming(session.phase === "featured" ? 1 : 0, {
-        duration: FEATURED_WIDGET_PHASE_FADE_MS,
-      }),
-    );
-  }, [phaseProgress, session.phase]);
-
-  const pickerStyle = useAnimatedStyle(() => ({ opacity: 1 - phaseProgress.get() }));
-  const featuredStyle = useAnimatedStyle(() => ({ opacity: phaseProgress.get() }));
+  const phaseTransition: Transition = reduceMotionEnabled
+    ? { type: "none" }
+    : { ...EASE_DEFAULT_TIMING, duration: FEATURED_WIDGET_PHASE_FADE_MS };
 
   /** Begin native dismissal; session cleanup waits for the zero detent to settle. */
   const requestClose = () => {
@@ -677,9 +670,14 @@ export function FeaturedWidgetsSheet({
         </Pressable>
 
         <View style={{ height: bodyHeight, overflow: "hidden" }}>
-          <Animated.View
+          <EaseView
             pointerEvents={session.phase === "picker" ? "auto" : "none"}
-            style={[StyleSheet.absoluteFill, pickerStyle]}
+            accessibilityElementsHidden={session.phase !== "picker"}
+            importantForAccessibility={session.phase === "picker" ? "auto" : "no-hide-descendants"}
+            style={StyleSheet.absoluteFill}
+            initialAnimate={{ opacity: session.phase === "picker" ? 1 : 0 }}
+            animate={{ opacity: session.phase === "picker" ? 1 : 0 }}
+            transition={phaseTransition}
           >
             <PickerPhase
               entry={session.entry}
@@ -690,10 +688,17 @@ export function FeaturedWidgetsSheet({
               onFeatureArtefact={onFeatureArtefact}
               onBusyChange={setBusy}
             />
-          </Animated.View>
-          <Animated.View
+          </EaseView>
+          <EaseView
             pointerEvents={session.phase === "featured" ? "auto" : "none"}
-            style={[StyleSheet.absoluteFill, featuredStyle]}
+            accessibilityElementsHidden={session.phase !== "featured"}
+            importantForAccessibility={
+              session.phase === "featured" ? "auto" : "no-hide-descendants"
+            }
+            style={StyleSheet.absoluteFill}
+            initialAnimate={{ opacity: session.phase === "featured" ? 1 : 0 }}
+            animate={{ opacity: session.phase === "featured" ? 1 : 0 }}
+            transition={phaseTransition}
           >
             <FeaturedPhase
               slots={slots}
@@ -704,7 +709,7 @@ export function FeaturedWidgetsSheet({
               publicationWarning={publicationWarning}
               onRefreshSlots={onRefreshSlots}
             />
-          </Animated.View>
+          </EaseView>
         </View>
       </View>
     </ModalBottomSheet>

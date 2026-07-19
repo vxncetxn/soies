@@ -34,6 +34,10 @@ test("Home is the root Stack route and no tab navigator ships", () => {
   const rootLayout = readFileSync(rootLayoutUrl, "utf8");
   const homeRoute = readFileSync(homeRouteUrl, "utf8");
   assert.match(rootLayout, /<Stack\.Screen name="index"/);
+  assert.match(
+    rootLayout,
+    /<EntryTransitionProvider>[\s\S]*?<CreateProvider>[\s\S]*?<Stack\.Screen name="index"[\s\S]*?<CreateOverlay/,
+  );
   assert.doesNotMatch(rootLayout, /\(tabs\)|TabSlot|TabList|TabTrigger/);
   assert.match(homeRoute, /<ExpandProvider>/);
   assert.match(homeRoute, /<FeaturedArtefactsButton \/>/);

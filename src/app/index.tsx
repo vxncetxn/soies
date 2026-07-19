@@ -1,3 +1,5 @@
+import type { TransitionEndEvent } from "react-native-ease";
+
 /**
  * Home screen — the root `index` route.
  *
@@ -26,33 +28,22 @@
  */
 import { type ErrorBoundaryProps, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
-import { EaseView, type Transition, type TransitionEndEvent } from "react-native-ease/uniwind";
+import { ActivityIndicator, Alert, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import type { PreparedHomeHandoff } from "../data/preparedHomeHandoff";
+
 import AppErrorFallback from "../components/app-error-fallback";
-import CalendarPreparedEntry from "../components/CalendarPreparedEntry";
 import CalendarSheet from "../components/CalendarSheet";
-import { useEntriesVersion } from "../components/CreateContext";
+import { useCreateContext, useEntriesVersion } from "../components/CreateContext";
 import CreateEntryButton from "../components/CreateEntryButton";
 import DayPager from "../components/DayPager";
 import { ExpandProvider } from "../components/ExpandContext";
 import FeaturedArtefactsButton from "../components/FeaturedArtefactsButton";
 import HomeHeader from "../components/HomeHeader";
-import {
-  CalendarNavigationCoordinator,
-  type CalendarNavigationHandoff,
-} from "../data/calendarNavigationTransition";
-import { getEntriesByDate, type Entry } from "../data/entries";
+import PreparedHomeEntry from "../components/PreparedHomeEntry";
+import { getEntriesByDate, isUnknownArtefact, type Entry } from "../data/entries";
 import {
   getCachedEntries,
   hasCachedEntries,
@@ -60,6 +51,9 @@ import {
   loadEntriesCached,
 } from "../data/entriesCache";
 import { isFeaturedWidgetSourceAvailable } from "../db/repositories/featuredWidgetSlots";
+import { entrySurfaceMotion } from "../entry-transition/entryTransition";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
+import { EntrySurfaceMotion } from "../entry-transition/EntryTransitionMotion";
 import { todayISO, validISODateOr } from "../utils/date";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import {
@@ -78,11 +72,10 @@ import {
 let cachedPagerHeight = 0;
 
 const EMPTY_ENTRIES: Entry[] = [];
-const CALENDAR_ENTRY_EXIT_MS = 350;
-const CALENDAR_ENTRY_REVEAL_MS = 350;
-
-type PreparedCalendarHandoff = CalendarNavigationHandoff & {
+type PreparedCalendarHandoff = PreparedHomeHandoff & {
   requestId: number;
+  origin: "calendar" | "save";
+  error: Error | null;
 };
 
 type CalendarTransitionState = {
@@ -90,43 +83,15 @@ type CalendarTransitionState = {
   sheetDismissed: boolean;
 };
 
-type CalendarBodyAnimation =
-  | { phase: "visible"; requestId: null }
-  | { phase: "exiting"; requestId: number }
-  | { phase: "resetting"; requestId: number }
-  | { phase: "recovering"; requestId: number | null };
-
-function useReducedMotionPreference() {
-  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      setReduceMotionEnabled,
-    );
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (active) {
-        setReduceMotionEnabled(enabled);
-      }
-    });
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
-
-  return reduceMotionEnabled;
-}
-
 function HomeScreen() {
   const searchParams = useLocalSearchParams<WidgetSearchParams>();
   const router = useRouter();
   const { openFeatured } = useFeaturedWidgets();
-  const { entriesVersion } = useEntriesVersion();
+  const { entriesVersion, bumpEntriesVersion } = useEntriesVersion();
+  const { createDate, createDismissal } = useCreateContext();
+  const entryTransition = useEntryTransition();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
-  const reduceMotionEnabled = useReducedMotionPreference();
 
   const routeDate = Array.isArray(searchParams.date) ? searchParams.date[0] : searchParams.date;
   const effectiveDate = validISODateOr(routeDate, todayISO());
@@ -145,33 +110,18 @@ function HomeScreen() {
     { kind: "artefact" }
   > | null>(null);
   const [pendingCalendarEntryId, setPendingCalendarEntryId] = useState<string | null>(null);
-  const [calendarHandoff, setCalendarHandoff] = useState<CalendarNavigationHandoff | null>(null);
+  const [calendarHandoff, setCalendarHandoff] = useState<PreparedHomeHandoff | null>(null);
   const [calendarPreparedHandoff, setCalendarPreparedHandoff] =
     useState<PreparedCalendarHandoff | null>(null);
-  const [calendarEntranceHandoff, setCalendarEntranceHandoff] =
-    useState<PreparedCalendarHandoff | null>(null);
-  const [calendarNavigationCoordinator] = useState(() => new CalendarNavigationCoordinator());
-  const [calendarExitFinishedRequestId, setCalendarExitFinishedRequestId] = useState<number | null>(
-    null,
-  );
-  const [calendarEntranceFinishedRequestId, setCalendarEntranceFinishedRequestId] = useState<
-    number | null
-  >(null);
   const [calendarAdoptedRequestId, setCalendarAdoptedRequestId] = useState<number | null>(null);
   const [calendarCanonicalEntryReadyRequestId, setCalendarCanonicalEntryReadyRequestId] = useState<
     number | null
   >(null);
-  const [calendarBodyAnimation, setCalendarBodyAnimation] = useState<CalendarBodyAnimation>({
-    phase: "visible",
-    requestId: null,
-  });
-  const [calendarBodyTransitionActive, setCalendarBodyTransitionActive] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarOpenRequestedAt, setCalendarOpenRequestedAt] = useState<number | null>(null);
   const consumedWidgetSignatureRef = useRef<string | null>(null);
   const widgetValidationRequestRef = useRef(0);
   const skipNextDayLoadRef = useRef<string | null>(null);
-  const calendarEntranceStartedRequestIdRef = useRef<number | null>(null);
   const calendarTransitionStateRef = useRef<CalendarTransitionState | null>(null);
   const pendingCalendarFailureRequestRef = useRef<number | null>(null);
 
@@ -303,6 +253,11 @@ function HomeScreen() {
     setError(null);
   }
 
+  const saveReloadOwnsHome =
+    createDismissal?.reason === "save" &&
+    createDismissal.requestId === entryTransition.state.requestId &&
+    entryTransition.state.target === "prepared-home";
+
   useEffect(() => {
     let cancelled = false;
 
@@ -311,6 +266,15 @@ function HomeScreen() {
     // render, so do not issue a second query from this effect.
     if (skipNextDayLoadRef.current === effectiveDate) {
       skipNextDayLoadRef.current = null;
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // A successful Save has its own prepared-Home adapter below. Letting this
+    // ordinary reload mount the complete Day during Create's exit would put the
+    // expensive canonical tree back on the critical animation path.
+    if (saveReloadOwnsHome) {
       return () => {
         cancelled = true;
       };
@@ -342,11 +306,55 @@ function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [effectiveDate, attempt, entriesVersion]);
+  }, [effectiveDate, attempt, entriesVersion, saveReloadOwnsHome]);
+
+  useEffect(() => {
+    if (
+      !saveReloadOwnsHome ||
+      !createDismissal ||
+      entryTransition.state.requestId !== createDismissal.requestId
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const requestId = createDismissal.requestId;
+
+    loadEntriesCached(createDate, () => getEntriesByDate(createDate))
+      .then((nextEntries) => {
+        if (cancelled) {
+          return;
+        }
+        setCalendarPreparedHandoff({
+          requestId,
+          day: createDate,
+          entryId: nextEntries.at(-1)?.id ?? null,
+          entries: nextEntries,
+          origin: "save",
+          error: null,
+        });
+      })
+      .catch((nextError: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setCalendarPreparedHandoff({
+          requestId,
+          day: createDate,
+          entryId: null,
+          entries: [],
+          origin: "save",
+          error: nextError instanceof Error ? nextError : new Error(String(nextError)),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createDate, createDismissal, entryTransition.state.requestId, saveReloadOwnsHome]);
 
   const retry = () => setAttempt((previous) => previous + 1);
 
-  const adoptCalendarHandoff = (handoff: CalendarNavigationHandoff) => {
+  const adoptCalendarHandoff = (handoff: PreparedHomeHandoff) => {
     const targetEntryId = handoff.entryId ?? handoff.entries[0]?.id ?? null;
     setError(null);
 
@@ -359,54 +367,40 @@ function HomeScreen() {
     }
   };
 
-  // The prepared Entry owns the entrance animation. Keep canonical Home
-  // unchanged until that animation settles so mounting a complete Day cannot
-  // contend with its main-thread frames.
-  if (
-    calendarPreparedHandoff &&
-    calendarExitFinishedRequestId === calendarPreparedHandoff.requestId &&
-    calendarEntranceHandoff?.requestId !== calendarPreparedHandoff.requestId
-  ) {
-    setCalendarEntranceHandoff(calendarPreparedHandoff);
-  }
-
   // The prepared layer is now stationary and opaque. Adopt the complete Day
   // behind it, then retire the cover only after the canonical Paper is ready.
   if (
     calendarPreparedHandoff &&
-    calendarEntranceFinishedRequestId === calendarPreparedHandoff.requestId &&
+    entryTransition.state.phase === "settling" &&
+    entryTransition.state.requestId === calendarPreparedHandoff.requestId &&
+    entryTransition.state.target === "prepared-home" &&
     calendarAdoptedRequestId !== calendarPreparedHandoff.requestId
   ) {
     setCalendarAdoptedRequestId(calendarPreparedHandoff.requestId);
-    adoptCalendarHandoff(calendarPreparedHandoff);
+    if (calendarPreparedHandoff.error) {
+      setError(calendarPreparedHandoff.error);
+      setLoading(false);
+      setPendingCalendarEntryId(null);
+    } else {
+      adoptCalendarHandoff(calendarPreparedHandoff);
+    }
   }
 
   const clearPreparedCalendarTransition = () => {
-    calendarEntranceStartedRequestIdRef.current = null;
     setCalendarPreparedHandoff(null);
-    setCalendarEntranceHandoff(null);
-    setCalendarExitFinishedRequestId(null);
-    setCalendarEntranceFinishedRequestId(null);
     setCalendarAdoptedRequestId(null);
     setCalendarCanonicalEntryReadyRequestId(null);
-  };
-
-  const restoreCalendarBodyAfterFailure = () => {
-    setCalendarBodyAnimation({ phase: "recovering", requestId: null });
   };
 
   const showCalendarNavigationFailure = () => {
     // A failed selection never replaces `entries`, so return the unchanged Day
     // from below before the alert is dismissed or Calendar is opened again.
     clearPreparedCalendarTransition();
-    setCalendarBodyTransitionActive(false);
-    restoreCalendarBodyAfterFailure();
     Alert.alert("Couldn’t open this day.", "Please try again.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Open calendar",
         onPress: () => {
-          calendarNavigationCoordinator.cancel();
           pendingCalendarFailureRequestRef.current = null;
           setCalendarOpenRequestedAt(performance.now());
           setCalendarOpen(true);
@@ -418,27 +412,32 @@ function HomeScreen() {
   const navigateFromCalendar = (day: string, entryId: string | null): number => {
     setPendingWidgetTarget(null);
     clearPreparedCalendarTransition();
-    setCalendarBodyAnimation({ phase: "visible", requestId: null });
-    setCalendarBodyTransitionActive(true);
-    const requestId = calendarNavigationCoordinator.begin(day, entryId);
+    const requestId = entryTransition.begin("home", "prepared-home", "manual", "fixed");
     calendarTransitionStateRef.current = { requestId, sheetDismissed: false };
 
     void loadEntriesCached(day, () => getEntriesByDate(day))
       .then((nextEntries) => {
         const transition = calendarTransitionStateRef.current;
         if (transition?.requestId === requestId) {
-          setCalendarPreparedHandoff({ requestId, day, entryId, entries: nextEntries });
+          setCalendarPreparedHandoff({
+            requestId,
+            day,
+            entryId,
+            entries: nextEntries,
+            origin: "calendar",
+            error: null,
+          });
         }
-        calendarNavigationCoordinator.resolve(requestId, nextEntries);
       })
       .catch((nextError: unknown) => {
-        if (!calendarNavigationCoordinator.reject(requestId)) {
+        const transition = calendarTransitionStateRef.current;
+        if (transition?.requestId !== requestId) {
           return;
         }
+        entryTransition.abort(requestId);
         if (__DEV__) {
           console.warn("Calendar Day load failed", nextError);
         }
-        const transition = calendarTransitionStateRef.current;
         calendarTransitionStateRef.current = null;
         if (transition?.sheetDismissed) {
           showCalendarNavigationFailure();
@@ -462,59 +461,44 @@ function HomeScreen() {
     if (transition?.requestId === requestId) {
       transition.sheetDismissed = true;
     }
-    if (!calendarNavigationCoordinator.sheetDismissed(requestId)) {
+    if (transition?.requestId !== requestId) {
       return;
     }
     // Native dismissal has completely settled at zero. Only now may the old
     // Home body start its visible exit; the Day query has already been running
     // throughout the sheet collapse and may have staged its replacement below.
-    setCalendarBodyAnimation({ phase: "exiting", requestId });
+    entryTransition.allowExit(requestId);
   };
 
-  const calendarBodyIsVisible = calendarBodyAnimation.phase !== "exiting";
-  const calendarEntranceIsVisible =
-    calendarPreparedHandoff != null &&
-    calendarEntranceHandoff?.requestId === calendarPreparedHandoff.requestId;
-  const calendarBodyTransition: Transition =
-    reduceMotionEnabled ||
-    calendarBodyAnimation.phase === "visible" ||
-    calendarBodyAnimation.phase === "resetting"
-      ? { type: "none" }
-      : calendarBodyAnimation.phase === "exiting"
-        ? { type: "timing", duration: CALENDAR_ENTRY_EXIT_MS, easing: "easeIn" }
-        : { type: "timing", duration: CALENDAR_ENTRY_EXIT_MS, easing: "easeOut" };
-  const calendarEntranceTransition: Transition = reduceMotionEnabled
-    ? { type: "none" }
-    : { type: "timing", duration: CALENDAR_ENTRY_REVEAL_MS, easing: "easeOut" };
+  const homeBodyMotion = entrySurfaceMotion(entryTransition.state, "home");
+  const preparedHomeMotion = entrySurfaceMotion(entryTransition.state, "prepared-home");
 
-  const handleCalendarBodyTransitionEnd = (event: TransitionEndEvent) => {
-    if (
-      !event.finished ||
-      calendarBodyAnimation.phase !== "exiting" ||
-      calendarExitFinishedRequestId === calendarBodyAnimation.requestId
-    ) {
+  const handleHomeBodyTransitionEnd = (event: TransitionEndEvent) => {
+    const { phase, requestId, source, target } = entryTransition.state;
+    if (!event.finished || requestId === null) {
       return;
     }
-    const requestId = calendarBodyAnimation.requestId;
-    calendarNavigationCoordinator.exitFinished(requestId);
-    setCalendarExitFinishedRequestId(requestId);
+    if (phase === "exiting" && source === "home") {
+      entryTransition.sourceExitFinished(requestId);
+      return;
+    }
+    if (phase === "entering" && target === "home") {
+      entryTransition.targetEnterFinished(requestId);
+      entryTransition.complete(requestId, "home");
+    }
   };
 
-  const handleCalendarEntranceTransitionEnd = (event: TransitionEndEvent) => {
+  const handlePreparedHomeTransitionEnd = (event: TransitionEndEvent) => {
+    const { phase, requestId, target } = entryTransition.state;
     if (
-      !event.finished ||
-      !calendarPreparedHandoff ||
-      calendarEntranceHandoff?.requestId !== calendarPreparedHandoff.requestId ||
-      calendarEntranceFinishedRequestId === calendarPreparedHandoff.requestId
+      event.finished &&
+      requestId !== null &&
+      phase === "entering" &&
+      target === "prepared-home" &&
+      calendarPreparedHandoff?.requestId === requestId
     ) {
-      return;
+      entryTransition.targetEnterFinished(requestId);
     }
-    const requestId = calendarPreparedHandoff.requestId;
-    // The prepared layer is now stationary and opaque. Reset canonical Home
-    // to final geometry without another animation before adopting the full Day
-    // behind that cover.
-    setCalendarBodyAnimation({ phase: "resetting", requestId });
-    setCalendarEntranceFinishedRequestId(requestId);
   };
 
   const widgetTargetForPager = widgetTargetForEntries(pendingWidgetTarget, effectiveDate, entries);
@@ -525,12 +509,17 @@ function HomeScreen() {
       calendarPreparedHandoff.entries[0] ??
       null)
     : null;
-  const calendarEntryContentReadinessRequest = calendarPreparedHandoff
-    ? {
-        requestId: calendarPreparedHandoff.requestId,
-        entryId: calendarPreparedHandoff.entryId ?? calendarPreparedHandoff.entries[0]?.id ?? null,
-      }
-    : null;
+  const canonicalPreparedEntryNeedsReadiness = Boolean(
+    calendarPreparedEntry?.artefacts[0] && !isUnknownArtefact(calendarPreparedEntry.artefacts[0]),
+  );
+  const calendarEntryContentReadinessRequest =
+    calendarPreparedHandoff && calendarAdoptedRequestId === calendarPreparedHandoff.requestId
+      ? {
+          requestId: calendarPreparedHandoff.requestId,
+          entryId:
+            calendarPreparedHandoff.entryId ?? calendarPreparedHandoff.entries[0]?.id ?? null,
+        }
+      : null;
   const handleEntryContentReady = (requestId: number, entryId: string) => {
     const targetEntryId =
       calendarPreparedHandoff?.entryId ?? calendarPreparedHandoff?.entries[0]?.id ?? null;
@@ -541,6 +530,38 @@ function HomeScreen() {
       setCalendarCanonicalEntryReadyRequestId(requestId);
     }
   };
+
+  const handlePreparedEntryContentReady = (requestId: number) => {
+    if (calendarPreparedHandoff?.requestId === requestId) {
+      entryTransition.targetReady(requestId);
+    }
+  };
+
+  useEffect(() => {
+    const handoff = calendarPreparedHandoff;
+    if (
+      !handoff ||
+      entryTransition.state.requestId !== handoff.requestId ||
+      entryTransition.state.target !== "prepared-home"
+    ) {
+      return;
+    }
+    const requestId = handoff.requestId;
+    if (handoff.error || !calendarPreparedEntry) {
+      entryTransition.targetReady(requestId);
+    }
+  }, [calendarPreparedEntry, calendarPreparedHandoff, entryTransition]);
+
+  useEffect(() => {
+    const { requestId, target, targetMounted, targetReady } = entryTransition.state;
+    if (requestId == null || target !== "prepared-home" || !targetMounted || targetReady) {
+      return;
+    }
+    const watchdog = setTimeout(() => {
+      entryTransition.targetReady(requestId);
+    }, 1000);
+    return () => clearTimeout(watchdog);
+  }, [entryTransition]);
 
   useEffect(() => {
     if (!pendingWidgetTarget || loading || error || pendingWidgetTarget.date !== effectiveDate) {
@@ -566,62 +587,51 @@ function HomeScreen() {
   useLayoutEffect(() => {
     if (
       !calendarPreparedHandoff ||
-      !calendarEntranceHandoff ||
-      calendarPreparedHandoff.requestId !== calendarEntranceHandoff.requestId ||
-      calendarEntranceStartedRequestIdRef.current === calendarEntranceHandoff.requestId
-    ) {
-      return;
-    }
-    const requestId = calendarEntranceHandoff.requestId;
-    calendarEntranceStartedRequestIdRef.current = requestId;
-    calendarTransitionStateRef.current = null;
-  }, [calendarEntranceHandoff, calendarPreparedHandoff]);
-
-  useLayoutEffect(() => {
-    if (
-      calendarEntranceFinishedRequestId == null ||
-      calendarPreparedHandoff?.requestId !== calendarEntranceFinishedRequestId ||
-      calendarPreparedHandoff.day !== effectiveDate ||
-      (calendarPreparedEntry?.type === "paper" &&
-        calendarPreparedEntry.artefacts.length > 0 &&
-        calendarCanonicalEntryReadyRequestId !== calendarEntranceFinishedRequestId)
+      entryTransition.state.phase !== "settling" ||
+      entryTransition.state.requestId !== calendarPreparedHandoff.requestId ||
+      entryTransition.state.target !== "prepared-home" ||
+      calendarAdoptedRequestId !== calendarPreparedHandoff.requestId ||
+      (!calendarPreparedHandoff.error && calendarPreparedHandoff.day !== effectiveDate) ||
+      (!calendarPreparedHandoff.error &&
+        canonicalPreparedEntryNeedsReadiness &&
+        calendarCanonicalEntryReadyRequestId !== calendarPreparedHandoff.requestId)
     ) {
       return;
     }
     // Home already occupies final geometry behind the opaque prepared layer.
     // Retire that cover on the next frame only after the route has adopted the
     // same Day, preventing a post-animation flash.
+    const requestId = calendarPreparedHandoff.requestId;
+    const shouldRefreshCalendar =
+      calendarPreparedHandoff.origin === "save" && !calendarPreparedHandoff.error;
     const retirePreparedFrame = requestAnimationFrame(() => {
-      if (calendarEntranceStartedRequestIdRef.current !== calendarEntranceFinishedRequestId) {
-        return;
+      entryTransition.complete(requestId, "home");
+      if (shouldRefreshCalendar) {
+        bumpEntriesVersion();
       }
-      calendarEntranceStartedRequestIdRef.current = null;
-      setCalendarBodyAnimation({ phase: "visible", requestId: null });
+      calendarTransitionStateRef.current = null;
       setCalendarPreparedHandoff(null);
-      setCalendarEntranceHandoff(null);
-      setCalendarExitFinishedRequestId(null);
-      setCalendarEntranceFinishedRequestId(null);
       setCalendarAdoptedRequestId(null);
       setCalendarCanonicalEntryReadyRequestId(null);
-      setCalendarBodyTransitionActive(false);
     });
     return () => cancelAnimationFrame(retirePreparedFrame);
   }, [
-    calendarEntranceFinishedRequestId,
+    calendarAdoptedRequestId,
     calendarCanonicalEntryReadyRequestId,
     calendarPreparedHandoff,
     calendarPreparedEntry,
+    canonicalPreparedEntryNeedsReadiness,
+    bumpEntriesVersion,
     effectiveDate,
+    entryTransition,
   ]);
 
-  useEffect(
-    () => () => {
-      calendarNavigationCoordinator.cancel();
+  useEffect(() => {
+    return () => {
       calendarTransitionStateRef.current = null;
       pendingCalendarFailureRequestRef.current = null;
-    },
-    [calendarNavigationCoordinator],
-  );
+    };
+  }, []);
 
   const onScroll = useAnimatedScrollHandler((event) => {
     scrollOffset.set(event.contentOffset.y);
@@ -642,36 +652,36 @@ function HomeScreen() {
     }
   };
 
+  const homeIsInteractive =
+    entryTransition.state.phase === "idle" && entryTransition.state.canonicalParticipant === "home";
+
   return (
-    <View className="relative flex-1 bg-background">
+    <View
+      className="relative flex-1 bg-background"
+      pointerEvents={homeIsInteractive ? "auto" : "none"}
+      accessibilityElementsHidden={!homeIsInteractive}
+      importantForAccessibility={homeIsInteractive ? "yes" : "no-hide-descendants"}
+    >
       <HomeHeader
         date={effectiveDate}
         titles={entries.map((entry) => entry.title)}
         currentPage={currentPage}
         onCalendarPress={() => {
-          calendarNavigationCoordinator.cancel();
           calendarTransitionStateRef.current = null;
           pendingCalendarFailureRequestRef.current = null;
           clearPreparedCalendarTransition();
-          setCalendarBodyTransitionActive(false);
-          restoreCalendarBodyAfterFailure();
           setCalendarOpenRequestedAt(performance.now());
           setCalendarOpen(true);
         }}
       />
 
       <View className="relative flex-1">
-        <EaseView
+        <EntrySurfaceMotion
           className="absolute inset-0"
-          animate={{
-            opacity: calendarBodyIsVisible ? 1 : 0,
-            translateY: calendarBodyIsVisible ? 0 : window.height,
-          }}
-          transition={calendarBodyTransition}
-          onTransitionEnd={handleCalendarBodyTransitionEnd}
-          pointerEvents={calendarBodyTransitionActive ? "none" : "auto"}
-          accessibilityElementsHidden={calendarBodyTransitionActive}
-          importantForAccessibility={calendarBodyTransitionActive ? "no-hide-descendants" : "auto"}
+          visible={homeBodyMotion.visible}
+          instant={homeBodyMotion.instant}
+          viewportHeight={window.height}
+          onTransitionEnd={handleHomeBodyTransitionEnd}
         >
           {error ? (
             <View className="flex-1 items-center justify-center gap-4 px-5">
@@ -719,32 +729,46 @@ function HomeScreen() {
               onEntryContentReady={handleEntryContentReady}
             />
           )}
-        </EaseView>
+        </EntrySurfaceMotion>
 
-        {calendarPreparedHandoff ? (
-          <EaseView
+        {calendarPreparedHandoff &&
+        calendarPreparedHandoff.requestId === entryTransition.state.requestId ? (
+          <EntrySurfaceMotion
             className="absolute inset-0 bg-background"
-            initialAnimate={{ opacity: 0, translateY: window.height }}
-            animate={{
-              opacity: calendarEntranceIsVisible ? 1 : 0,
-              translateY: calendarEntranceIsVisible ? 0 : window.height,
+            visible={preparedHomeMotion.visible}
+            instant={preparedHomeMotion.instant}
+            viewportHeight={window.height}
+            onTransitionEnd={handlePreparedHomeTransitionEnd}
+            onLayout={() => {
+              entryTransition.targetMounted(calendarPreparedHandoff.requestId);
             }}
-            transition={calendarEntranceTransition}
-            onTransitionEnd={handleCalendarEntranceTransitionEnd}
             pointerEvents="none"
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
-            {!calendarPreparedEntry ? (
+            {calendarPreparedHandoff.error ? (
+              <View className="flex-1 items-center justify-center gap-4 px-5">
+                <Text className="text-center text-primary">
+                  Couldn&apos;t load entries for this day.
+                </Text>
+                <View className="rounded-full border border-controls-border bg-controls-background px-5 py-2">
+                  <Text className="text-primary">Try again</Text>
+                </View>
+              </View>
+            ) : !calendarPreparedEntry ? (
               <View className="flex-1 items-center justify-center px-5">
                 <Text className="text-center text-primary">No entries for this day.</Text>
               </View>
             ) : (
               <View className="flex-1 items-center justify-center px-5">
-                <CalendarPreparedEntry entry={calendarPreparedEntry} />
+                <PreparedHomeEntry
+                  entry={calendarPreparedEntry}
+                  requestId={calendarPreparedHandoff.requestId}
+                  onContentReady={handlePreparedEntryContentReady}
+                />
               </View>
             )}
-          </EaseView>
+          </EntrySurfaceMotion>
         ) : null}
       </View>
       <CalendarSheet

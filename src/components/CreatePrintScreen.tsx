@@ -11,7 +11,7 @@ import { randomUUID } from "expo-crypto";
 import { Image } from "expo-image";
 import { useEffect, useRef, useState } from "react";
 import { View, useWindowDimensions } from "react-native";
-import Animated, { type SharedValue } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { withUniwind } from "uniwind";
 
 import type { DraftInk } from "../data/ink";
@@ -25,7 +25,7 @@ import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
-import { useCreateContext, useEntriesVersion } from "./CreateContext";
+import { useCreateContext } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePrint from "./EditablePrint";
 import FeatureErrorBoundary from "./feature-error-boundary";
@@ -46,18 +46,21 @@ type DraftPrint = {
 };
 
 type CreatePrintScreenProps = {
-  /** Root Create overlay progress supplied by the entry flow. */
-  progress: SharedValue<number>;
   /** Entry date persisted unchanged with the completed draft. */
   date: string;
   /** Initial image selected before the Print authoring screen opens. */
   imageUri: string;
   /** Begins root overlay dismissal after native responders settle. */
-  onClose: () => void;
+  onClose: (reason?: "cancel" | "save") => void;
+  onFirstArtefactReady: () => void;
 };
 
-const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScreenProps) => {
-  const { bumpEntriesVersion } = useEntriesVersion();
+const CreatePrintScreen = ({
+  date,
+  imageUri,
+  onClose,
+  onFirstArtefactReady,
+}: CreatePrintScreenProps) => {
   const { setCreateSessionBusy } = useCreateContext();
   const { width: windowWidth } = useWindowDimensions();
   // Create allocates the final device-sized canonical Print from mount. Default
@@ -169,8 +172,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
       });
     },
     onSuccess: () => {
-      bumpEntriesVersion();
-      handleClose();
+      handleClose("save");
     },
   });
 
@@ -204,7 +206,6 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
       title="Couldn’t continue editing this Print draft."
     >
       <CreateScreenChrome
-        progress={progress}
         expandProgress={expandProgress}
         typeLabel="PRINT"
         title={title}
@@ -309,6 +310,7 @@ const CreatePrintScreen = ({ progress, date, imageUri, onClose }: CreatePrintScr
                         locked={scribbleSaving}
                       />
                     }
+                    onImageReady={index === 0 ? onFirstArtefactReady : undefined}
                   />
                 </View>
               </Animated.ScrollView>

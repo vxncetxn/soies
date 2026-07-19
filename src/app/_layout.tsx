@@ -17,6 +17,7 @@ import { BlurTargetViewProvider } from "../components/BlurTargetViewContext";
 import { CreateProvider } from "../components/CreateContext";
 import CreateOverlay from "../components/CreateOverlay";
 import { DatabaseProvider } from "../db/DatabaseProvider";
+import { EntryTransitionProvider } from "../entry-transition/EntryTransitionContext";
 import { ShareProvider } from "../share/ShareContext";
 import { FeaturedWidgetsProvider } from "../widgets/FeaturedWidgetsContext";
 
@@ -45,32 +46,34 @@ export default function Layout() {
               <SafeAreaProvider>
                 <StatusBar style="auto" />
                 <ShareProvider>
-                  <CreateProvider>
-                    {/* This provider contributes React context, not a native
+                  <EntryTransitionProvider>
+                    <CreateProvider>
+                      {/* This provider contributes React context, not a native
                         view. It must span the root overlays because BloomPanel
                         reads the blur target before branching by platform. */}
-                    <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
-                      <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
-                        <DatabaseProvider>
-                          <FeaturedWidgetsProvider>
-                            <StyledSafeAreaView className="flex-1 bg-background">
-                              <Stack screenOptions={{ headerShown: false }}>
-                                <Stack.Screen name="index" />
-                              </Stack>
-                              <StyledPortalHost name="overlay" className="absolute inset-0" />
-                            </StyledSafeAreaView>
-                          </FeaturedWidgetsProvider>
-                        </DatabaseProvider>
-                      </BlurTargetView>
-                      <StyledPortalHost name="morph" className="absolute inset-0" />
-                      {/* Create is already a root-level overlay and must remain in
+                      <BlurTargetViewProvider blurTargetRef={blurTargetRef}>
+                        <BlurTargetView ref={blurTargetRef} style={{ flex: 1 }}>
+                          <DatabaseProvider>
+                            <FeaturedWidgetsProvider>
+                              <StyledSafeAreaView className="flex-1 bg-background">
+                                <Stack screenOptions={{ headerShown: false }}>
+                                  <Stack.Screen name="index" />
+                                </Stack>
+                                <StyledPortalHost name="overlay" className="absolute inset-0" />
+                              </StyledSafeAreaView>
+                            </FeaturedWidgetsProvider>
+                          </DatabaseProvider>
+                        </BlurTargetView>
+                        <StyledPortalHost name="morph" className="absolute inset-0" />
+                        {/* Create is already a root-level overlay and must remain in
                           this Fabric hierarchy. Its BloomBar portals only the small
                           menu into `bloom`; teleporting both levels caused duplicate
                           native-parent teardown on iOS. */}
-                      <CreateOverlay />
-                      <StyledPortalHost name="bloom" className="absolute inset-0" />
-                    </BlurTargetViewProvider>
-                  </CreateProvider>
+                        <CreateOverlay />
+                        <StyledPortalHost name="bloom" className="absolute inset-0" />
+                      </BlurTargetViewProvider>
+                    </CreateProvider>
+                  </EntryTransitionProvider>
                 </ShareProvider>
               </SafeAreaProvider>
             </PortalProvider>

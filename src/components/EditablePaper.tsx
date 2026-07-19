@@ -71,6 +71,8 @@ type EditablePaperProps = {
   scribbleActive?: boolean;
   /** Per-artefact live Ink canvas, mounted in the same canonical coordinates. */
   scribbleCanvas?: ReactNode;
+  /** First editable surface readiness gate for the root Entry transition. */
+  onContentReady?: () => void;
 };
 
 const EditablePaper = ({
@@ -85,6 +87,7 @@ const EditablePaper = ({
   inkOverlayUri = null,
   scribbleActive = false,
   scribbleCanvas = null,
+  onContentReady,
 }: EditablePaperProps) => {
   const { width: windowWidth } = useWindowDimensions();
   const localInputRef = useRef<PaperTextSurfaceHandle>(null);
@@ -151,6 +154,7 @@ const EditablePaper = ({
           editable={editable && !scribbleActive}
           presentationScale={presentationScale}
           placeholder={PAPER_PLACEHOLDER}
+          onContentReady={onContentReady}
         />
         {inkOverlayUri && !scribbleActive ? <InkOverlay uri={inkOverlayUri} /> : null}
         {scribbleCanvas}

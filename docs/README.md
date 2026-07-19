@@ -12,6 +12,10 @@ experience. For domain terminology (`Entry`, `Artefact`, `Paper`, `Print`), read
 | 3 | Page scrubber | `ScrollIndicator`, `DayPager`, expanded `Stack` | [03-scroll-indicator.md](./03-scroll-indicator.md) |
 | 4 | Featured Artefact widgets | `FeaturedWidgetsSheet`, `WidgetFrameCaptureHost`, `FeaturedArtefactWidget` | [ADR 0011](./adr/0011-stable-raster-backed-featured-widget-slots.md) |
 
+Cross-feature Entry and discrete-animation ownership is tracked in
+[React Native Ease migration tracker](./react-native-ease-migration-plan.md)
+and [ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md).
+
 ## How the features fit together
 
 ```mermaid
@@ -71,10 +75,15 @@ serialization contracts. Active UI→RN calls therefore use a stable React
 dispatcher as the `scheduleOnRN` target and serializable data arguments:
 
 ```ts
-scheduleOnRN(setCreate, null);
 scheduleOnRN(setOutgoing, null);
 scheduleOnRN(setCloseSequence, next);
 ```
+
+Fixed state-driven fades/translations/scales use `react-native-ease`; continuous
+gesture, scroll, keyboard, layout, and measured motion stays in Reanimated.
+When both are needed, nested views keep the engines from writing the same
+property on one native view. The full rule is recorded in
+[ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md).
 
 `BloomPanel` invokes an external `onClose` only after the primitive completion
 sequence reaches an RN effect. `FocusOverlay` uses the same sequence to invoke

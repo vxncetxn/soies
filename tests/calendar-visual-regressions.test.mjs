@@ -115,8 +115,12 @@ test("Calendar keeps prepared tab trees mounted and eagerly renders the first sc
   assert.doesNotMatch(sheet, /recent:\$\{sessionKey\}/);
   assert.doesNotMatch(sheet, /monthly:\$\{sessionKey\}/);
   assert.doesNotMatch(sheet, /tabProgress/);
-  assert.match(sheet, /recentOpacity/);
-  assert.match(sheet, /monthlyOpacity/);
+  assert.doesNotMatch(sheet, /recentOpacity|monthlyOpacity/);
+  assert.match(sheet, /from "react-native-ease"/);
+  assert.match(sheet, /animate=\{\{ opacity: isActive \? 1 : 0 \}\}/);
+  assert.match(sheet, /transition=\{tabTransition\}/);
+  assert.match(sheet, /reduceMotionEnabled[\s\S]{0,80}\{ type: "none" \}/);
+  assert.match(sheet, /pointerEvents=\{isActive \? "auto" : "none"\}/);
   assert.match(sheet, /accessibilityElementsHidden=\{!isActive\}/);
   assert.match(sheet, /importantForAccessibility=/);
   assert.match(recent, /EAGER_PREVIEW_ROW_COUNT/);
@@ -126,12 +130,13 @@ test("Calendar keeps prepared tab trees mounted and eagerly renders the first sc
   );
 });
 
-test("Calendar selection replaces Home through a full-viewport exit and entrance", async () => {
-  const [home, sheet, pager, preparedEntry] = await Promise.all([
+test("Calendar selection adapts to the shared full-viewport Entry transition", async () => {
+  const [home, sheet, pager, preparedEntry, motion] = await Promise.all([
     readSource("src/app/index.tsx"),
     readSource("src/components/CalendarSheet.tsx"),
     readSource("src/components/DayPager.tsx"),
-    readSource("src/components/CalendarPreparedEntry.tsx"),
+    readSource("src/components/PreparedHomeEntry.tsx"),
+    readSource("src/entry-transition/EntryTransitionMotion.tsx"),
   ]);
   const selectionHandler = home.slice(
     home.indexOf("const navigateFromCalendar"),
@@ -139,40 +144,36 @@ test("Calendar selection replaces Home through a full-viewport exit and entrance
   );
   const dismissalHandler = home.slice(
     home.indexOf("const handleCalendarDismissSettled"),
-    home.indexOf("const widgetTargetForPager"),
+    home.indexOf("const homeBodyMotion"),
   );
 
-  assert.match(home, /new CalendarNavigationCoordinator\(\)/);
-  assert.match(home, /CALENDAR_ENTRY_EXIT_MS = 350/);
-  assert.match(home, /CALENDAR_ENTRY_REVEAL_MS = 350/);
-  assert.doesNotMatch(home, /CALENDAR_ENTRY_REVEAL_OFFSET/);
-  assert.match(home, /from "react-native-ease\/uniwind"/);
-  assert.match(home, /translateY: calendarBodyIsVisible \? 0 : window\.height/);
-  assert.match(home, /translateY: calendarEntranceIsVisible \? 0 : window\.height/);
-  assert.doesNotMatch(home, /calendarRevealProgress|calendarEntranceProgress/);
-  assert.doesNotMatch(home, /scheduleOnRN|scheduleOnUI/);
-  assert.doesNotMatch(selectionHandler, /phase: "exiting"/);
+  assert.doesNotMatch(home, /CalendarNavigationCoordinator|calendarRevealProgress/);
+  assert.match(
+    selectionHandler,
+    /entryTransition\.begin\("home", "prepared-home", "manual", "fixed"\)/,
+  );
   assert.match(selectionHandler, /loadEntriesCached\(day/);
   assert.match(selectionHandler, /setCalendarPreparedHandoff/);
-  assert.match(dismissalHandler, /setCalendarBodyAnimation\(\{ phase: "exiting", requestId \}\)/);
-  assert.match(home, /<EaseView/);
-  assert.match(home, /onTransitionEnd=\{handleCalendarBodyTransitionEnd\}/);
-  assert.match(home, /onTransitionEnd=\{handleCalendarEntranceTransitionEnd\}/);
+  assert.doesNotMatch(selectionHandler, /allowExit/);
+  assert.match(dismissalHandler, /entryTransition\.allowExit\(requestId\)/);
+  assert.match(motion, /translateY: visible \? 0 : viewportHeight/);
+  assert.match(motion, /duration: ENTRY_TRANSITION_DURATION_MS/);
+  assert.match(motion, /easing: visible \? "easeOut" : "easeIn"/);
+  assert.match(motion, /reduceMotionEnabled \|\| instant[\s\S]{0,50}\{ type: "none" \}/);
+  assert.doesNotMatch(motion, /useHardwareLayer/);
+  assert.doesNotMatch(home, /scheduleOnRN|scheduleOnUI/);
+  assert.match(home, /<EntrySurfaceMotion/);
+  assert.match(home, /viewportHeight=\{window\.height\}/);
+  assert.match(home, /onTransitionEnd=\{handleHomeBodyTransitionEnd\}/);
+  assert.match(home, /onTransitionEnd=\{handlePreparedHomeTransitionEnd\}/);
   assert.match(home, /event\.finished/);
-  assert.match(home, /type: "timing", duration: CALENDAR_ENTRY_EXIT_MS, easing: "easeIn"/);
-  assert.match(home, /type: "timing", duration: CALENDAR_ENTRY_REVEAL_MS, easing: "easeOut"/);
-  assert.match(home, /phase: "resetting"/);
   assert.match(home, /calendarPreparedHandoff/);
   assert.match(
     home,
-    /calendarEntranceFinishedRequestId === calendarPreparedHandoff\.requestId[\s\S]{0,500}adoptCalendarHandoff\(calendarPreparedHandoff\)/,
-  );
-  assert.doesNotMatch(
-    home,
-    /calendarExitFinishedRequestId === calendarPreparedHandoff\.requestId[\s\S]{0,300}adoptCalendarHandoff\(calendarPreparedHandoff\)/,
+    /entryTransition\.state\.phase === "settling"[\s\S]{0,500}adoptCalendarHandoff\(calendarPreparedHandoff\)/,
   );
   assert.match(home, /calendarPreparedEntry/);
-  assert.match(home, /<CalendarPreparedEntry entry=\{calendarPreparedEntry\} \/>/);
+  assert.match(home, /<PreparedHomeEntry/);
   assert.match(
     home,
     /className="(?=[^"]*\babsolute\b)(?=[^"]*\binset-0\b)(?=[^"]*\bbg-background\b)[^"]*"/,
@@ -183,20 +184,27 @@ test("Calendar selection replaces Home through a full-viewport exit and entrance
   assert.match(preparedEntry, /entry\.artefacts\.slice\(1\)/);
   assert.match(preparedEntry, /renderArtefactContent/);
   assert.doesNotMatch(preparedEntry, /from "\.\/Stack"|<Stack|DayPager|ScrollView/);
-  assert.match(home, /setCalendarEntranceFinishedRequestId/);
+  assert.match(home, /entryTransition\.targetReady\(requestId\)/);
+  assert.match(home, /entryTransition\.targetMounted\(calendarPreparedHandoff\.requestId\)/);
+  assert.match(home, /!targetMounted \|\| targetReady/);
+  assert.match(
+    home,
+    /setTimeout\(\(\) => \{[\s\S]{0,100}targetReady\(requestId\)[\s\S]{0,40}, 1000\)/,
+  );
   assert.match(home, /calendarCanonicalEntryReadyRequestId/);
-  assert.match(home, /calendarPreparedEntry\?\.type === "paper"/);
+  assert.match(home, /canonicalPreparedEntryNeedsReadiness/);
+  assert.match(home, /!isUnknownArtefact\(calendarPreparedEntry\.artefacts\[0\]\)/);
   assert.match(home, /onEntryContentReady=/);
   assert.match(home, /calendarPreparedHandoff\.day !== effectiveDate/);
-  assert.match(home, /requestAnimationFrame\(\(\) =>/);
-  assert.match(home, /restoreCalendarBodyAfterFailure/);
-  assert.match(home, /pointerEvents=\{calendarBodyTransitionActive \? "none" : "auto"\}/);
-  assert.match(home, /accessibilityElementsHidden=\{calendarBodyTransitionActive\}/);
+  assert.match(home, /const retirePreparedFrame = requestAnimationFrame/);
+  assert.match(home, /entryTransition\.abort\(requestId\)/);
+  assert.match(home, /pointerEvents=\{homeIsInteractive \? "auto" : "none"\}/);
+  assert.match(home, /accessibilityElementsHidden=\{!homeIsInteractive\}/);
   assert.match(home, /importantForAccessibility=/);
   assert.doesNotMatch(home, /removeClippedSubviews=/);
   assert.match(pager, /\n\s+removeClippedSubviews\n/);
   assert.match(home, /onDismissSettled=\{handleCalendarDismissSettled\}/);
-  assert.match(home, /sheetDismissed\(requestId\)/);
+  assert.match(home, /transition\.sheetDismissed = true/);
   assert.match(home, /text: "Open calendar"/);
   assert.match(sheet, /selectionDismissRequestIdRef\.current = onSelect/);
   assert.match(sheet, /onDismissSettled\(requestId\)/);

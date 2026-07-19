@@ -14,10 +14,12 @@
 | `src/components/CalendarRecentTab.tsx` | Virtualized, keyset-paged Recent rows with inline Day labels |
 | `src/components/CalendarMonthlyTab.tsx` | Virtualized chronological month grids, inline month indicators, range bounds, markers, Focused Month tracking, and the final scroll bound |
 | `src/components/CalendarEntryPreview.tsx` | Visible first-Artefact renderer and static count silhouettes |
+| `src/components/PreparedHomeEntry.tsx` | Shared lightweight Calendar/Save target cover and first-Artefact readiness adapter |
+| `src/entry-transition/entryTransition.ts` | Request-scoped shared Entry reducer that joins exit gates, native readiness, and motion completion |
 | `src/data/calendarBrowse.ts` | Pure grouping, heading, month-range, and focal-line helpers |
 | `src/data/calendarBrowseCache.ts` | First Recent page and four-month lightweight marker cache |
 | `src/data/entriesCache.ts` | Eight-Day complete-entry LRU with in-flight de-duplication |
-| `src/data/calendarNavigationTransition.ts` | Pure coordinator that joins Day readiness to native-sheet dismissal |
+| `src/data/preparedHomeHandoff.ts` | Type-only hand-off model for the lightweight transition cover |
 | `src/data/paperContentReadiness.ts` | Document-scoped latch that bridges native Paper readiness to a later hand-off request |
 
 The architecture decision and full interaction contract live in
@@ -60,9 +62,9 @@ but must never delay native movement.
 
 The last selected tab survives dismissal. Each new presentation resets Recent
 to the newest Entry and Monthly to the current month. Within one presentation,
-both retained trees preserve their native positions. A short opacity crossfade
-uses fixed per-tab opacity values, so an in-flight animation never remaps
-active/outgoing roles. The inactive tree remains painted but non-interactive.
+both retained trees preserve their native positions. A short Ease opacity
+crossfade gives each retained tree its own fixed target, so an in-flight
+animation never remaps active/outgoing roles. The inactive tree remains painted but non-interactive.
 Its native list scrolling is disabled until it becomes active, so a retained
 shorter-header tab cannot steal drag recognition from the active header.
 
@@ -104,14 +106,18 @@ communicate the complete one-to-five Artefact count without hydrating hidden
 Artefacts.
 
 Selecting a card begins the complete-Day query while the native sheet closes.
-When that query resolves, Home mounts a lightweight, display-only copy of the
+The shared transition's manual exit gate opens only when the native sheet
+settles at zero. When the query resolves, Home mounts a lightweight,
+display-only copy of the
 selected Entry below the viewport: its first real Artefact plus horizontally
 offset white silhouettes for the remaining count. It deliberately omits
 `DayPager`, `Stack`, portals, hidden Artefacts, and interaction state so its
 native commit does not compete with the old body's exit. The old body does not
 begin its 350 ms exit until the native sheet has completely settled at zero.
-After that exit finishes, the prepared Entry immediately returns upward without
-expanding it.
+After that exit finishes and the target's first native Artefact is ready, the
+prepared Entry returns upward without expanding it. If readiness is late, the
+stage remains blank white; a one-second watchdog starts only after the target
+native view has mounted.
 
 ## Monthly
 

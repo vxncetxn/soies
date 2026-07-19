@@ -2,7 +2,7 @@
  * CreateScreenChrome — shared shell for Create Paper / Create Print.
  *
  * Owns the create-screen chrome that both entry types share:
- *   - Stage-2 enter fade (`createProgress`)
+ *   - Entry body surface transition plus opacity-only chrome transition (Ease)
  *   - Type label + title field (idle ellipsis / focus wrap + dark blur)
  *   - Header cross-fade between create header and expanded Back · n/N · Prev/Next
  *     (Scribble: Back · Save, no pager nav)
@@ -25,20 +25,24 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
+import { EaseView } from "react-native-ease";
 import Animated, {
   interpolate,
   type SharedValue,
   useAnimatedReaction,
   useAnimatedStyle,
   runOnJS,
-  useSharedValue,
-  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CREATE_HOME_EXIT_END } from "../constants/animation";
+import { EASE_DEFAULT_TIMING } from "../constants/animation";
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
+import { entryChromeVisible, entrySurfaceMotion } from "../entry-transition/entryTransition";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
+import { EntryChromeMotion, EntrySurfaceMotion } from "../entry-transition/EntryTransitionMotion";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import BloomBar from "./BloomBar";
 import { Icon } from "./Icon";
 import Tooltip from "./Tooltip";
@@ -69,7 +73,6 @@ export type CreateAddConfig =
     };
 
 export type CreateScreenChromeProps = {
-  progress: SharedValue<number>;
   /** 0 = default, 1 = artefact Type/Scribble — drives header/controls cross-fade. */
   expandProgress: SharedValue<number>;
   typeLabel: "PAPER" | "PRINT";
@@ -99,7 +102,6 @@ export type CreateScreenChromeProps = {
 };
 
 const CreateScreenChrome = ({
-  progress,
   expandProgress,
   typeLabel,
   title,
@@ -121,6 +123,9 @@ const CreateScreenChrome = ({
   children,
 }: CreateScreenChromeProps) => {
   const insets = useSafeAreaInsets();
+  const { height: viewportHeight } = useWindowDimensions();
+  const entryTransition = useEntryTransition();
+  const reduceMotionEnabled = useReducedMotionPreference();
   const createBlurTargetRef = useRef<View>(null);
   const topPad = insets.top + 12;
 
@@ -133,7 +138,8 @@ const CreateScreenChrome = ({
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [maxTooltipVisible, setMaxTooltipVisible] = useState(false);
   const titleInputRef = useRef<TextInput>(null);
-  const titleFocusProgress = useSharedValue(0);
+  const createBodyMotion = entrySurfaceMotion(entryTransition.state, "create");
+  const createChromeIsVisible = entryChromeVisible(entryTransition.state, "create");
 
   const atMax = artefactCount >= MAX_ARTEFACTS_PER_ENTRY;
   const canPrev = activeArtefactIndex > 0;
@@ -158,17 +164,20 @@ const CreateScreenChrome = ({
     },
   );
 
-  const screenEnterStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.get(), [CREATE_HOME_EXIT_END, 1], [0, 1], "clamp"),
-  }));
-
-  const paperStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateY: interpolate(progress.get(), [CREATE_HOME_EXIT_END, 1], [40, 0], "clamp"),
-      },
-    ],
-  }));
+  const handleEntryBodyTransitionEnd = (event: { finished: boolean }) => {
+    const { phase, requestId, source, target } = entryTransition.state;
+    if (!event.finished || requestId === null) {
+      return;
+    }
+    if (phase === "exiting" && source === "create") {
+      entryTransition.sourceExitFinished(requestId);
+      return;
+    }
+    if (phase === "entering" && target === "create") {
+      entryTransition.targetEnterFinished(requestId);
+      entryTransition.complete(requestId, "create");
+    }
+  };
 
   const headerTotalHeightStyle = useAnimatedStyle(() => ({
     height:
@@ -200,27 +209,20 @@ const CreateScreenChrome = ({
     opacity: interpolate(expandProgress.get(), [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
   }));
 
-  const titleFocusBackdropStyle = useAnimatedStyle(() => ({
-    opacity: titleFocusProgress.get(),
-  }));
-
   const handleTitleFocus = () => {
     if (saving) {
       return;
     }
     setIsTitleFocused(true);
-    titleFocusProgress.set(withTiming(1, { duration: TITLE_FOCUS_FADE_MS }));
   };
 
   const dismissTitleFocus = () => {
     setIsTitleFocused(false);
-    titleFocusProgress.set(withTiming(0, { duration: TITLE_FOCUS_FADE_MS }));
     titleInputRef.current?.blur();
   };
 
   const handleTitleBlur = () => {
     setIsTitleFocused(false);
-    titleFocusProgress.set(withTiming(0, { duration: TITLE_FOCUS_FADE_MS }));
   };
 
   const handleTitleBackdropPress = () => {
@@ -253,288 +255,319 @@ const CreateScreenChrome = ({
   const contentKey = showAddBloomPanel && bloomConfig ? bloomConfig.contentKey : barScreen;
 
   return (
-    <Animated.View style={[screenEnterStyle, { flex: 1 }]} className="bg-background">
+    <View style={{ flex: 1 }} className="bg-background">
       <BlurTargetView ref={createBlurTargetRef} style={styles.blurTarget}>
         <View className="flex-1" pointerEvents={saving ? "none" : "auto"}>
           <Animated.View style={headerTotalHeightStyle} />
 
-          <Animated.View style={[paperStyle, { flex: 1 }]}>{children}</Animated.View>
+          <EntrySurfaceMotion
+            style={{ flex: 1 }}
+            visible={createBodyMotion.visible}
+            instant={createBodyMotion.instant}
+            viewportHeight={viewportHeight}
+            onTransitionEnd={handleEntryBodyTransitionEnd}
+          >
+            {children}
+          </EntrySurfaceMotion>
         </View>
+
+        <EntryChromeMotion
+          visible={createChromeIsVisible}
+          pointerEvents="box-none"
+          style={StyleSheet.absoluteFill}
+        >
+          <Animated.View
+            style={[
+              controlsFadeStyle,
+              {
+                position: "absolute",
+                left: 20,
+                right: 20,
+                bottom: insets.bottom + 20,
+              },
+            ]}
+            className="flex-row items-center justify-between"
+            pointerEvents={isExpanded || saving ? "none" : "box-none"}
+          >
+            <Pressable
+              onPress={onClose}
+              disabled={saving}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel create entry"
+              accessibilityState={{ disabled: saving }}
+              className="rounded-full border border-controls-border bg-controls-background p-3"
+            >
+              <Icon name="x-mark" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+            </Pressable>
+
+            <View className="relative">
+              <BloomBar
+                slots={[
+                  {
+                    node: (
+                      <Icon
+                        name="line-squiggle"
+                        size={CONTROL_ICON_SIZE}
+                        color={CONTROL_ICON_COLOR}
+                      />
+                    ),
+                    onPress: onEnterScribble,
+                    accessibilityLabel: "Scribble",
+                  },
+                  {
+                    node: (
+                      <Icon
+                        name="document-plus"
+                        size={CONTROL_ICON_SIZE}
+                        color={CONTROL_ICON_COLOR}
+                      />
+                    ),
+                    onPress: handleDocumentPlus,
+                    opensPanel: addConfig.kind === "bloom" && !atMax && !saving,
+                    accessibilityLabel: "Add page",
+                  },
+                  {
+                    node: (
+                      <Icon
+                        name="ellipsis-horizontal-circle"
+                        size={CONTROL_ICON_SIZE}
+                        color={CONTROL_ICON_COLOR}
+                      />
+                    ),
+                    onPress: () => setBarScreen("menu"),
+                    accessibilityLabel: "More options",
+                  },
+                ]}
+                bloomTriggerIndex={2}
+                open={barOpen}
+                onOpenChange={(open) => {
+                  if (saving) {
+                    return;
+                  }
+                  setBarOpen(open);
+                  if (!open) {
+                    setBarScreen("menu");
+                  }
+                }}
+                panelNode={panelNode}
+                contentKey={contentKey}
+                portalHostName="bloom"
+              />
+              <Tooltip
+                visible={maxTooltipVisible}
+                message="Maximum of 5 per entry."
+                onDismiss={() => setMaxTooltipVisible(false)}
+                style={styles.maxTooltip}
+              />
+            </View>
+
+            <Pressable
+              onPress={onSubmit}
+              disabled={saving}
+              accessibilityRole="button"
+              accessibilityLabel="Save entry"
+              className="rounded-full border border-controls-border bg-controls-background p-3"
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={CONTROL_ICON_COLOR} />
+              ) : (
+                <Icon name="arrow-right" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+              )}
+            </Pressable>
+          </Animated.View>
+        </EntryChromeMotion>
+      </BlurTargetView>
+
+      <EntryChromeMotion
+        visible={createChromeIsVisible}
+        pointerEvents="box-none"
+        style={StyleSheet.absoluteFill}
+      >
+        {scribbleActive && scribbleTools ? (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: insets.bottom + 20,
+            }}
+          >
+            {scribbleTools}
+          </View>
+        ) : null}
+
+        <EaseView
+          style={StyleSheet.absoluteFill}
+          initialAnimate={{ opacity: 0 }}
+          animate={{ opacity: isTitleFocused ? 1 : 0 }}
+          transition={
+            reduceMotionEnabled
+              ? { type: "none" }
+              : { ...EASE_DEFAULT_TIMING, duration: TITLE_FOCUS_FADE_MS }
+          }
+          pointerEvents={isTitleFocused ? "auto" : "none"}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={handleTitleBackdropPress}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss title editing"
+          >
+            <BlurView
+              {...(Platform.OS === "android"
+                ? {
+                    blurTarget: createBlurTargetRef,
+                    blurMethod: "dimezisBlurViewSdk31Plus" as const,
+                  }
+                : {})}
+              tint="dark"
+              intensity={TITLE_FOCUS_BLUR_INTENSITY}
+              style={StyleSheet.absoluteFill}
+            />
+          </Pressable>
+        </EaseView>
 
         <Animated.View
           style={[
-            controlsFadeStyle,
-            {
-              position: "absolute",
-              left: 20,
-              right: 20,
-              bottom: insets.bottom + 20,
-            },
+            styles.headerOverlay,
+            { paddingTop: topPad },
+            isTitleFocused ? undefined : headerTotalHeightStyle,
           ]}
-          className="flex-row items-center justify-between"
-          pointerEvents={isExpanded || saving ? "none" : "box-none"}
+          className={isTitleFocused ? undefined : "overflow-hidden"}
+          pointerEvents={saving ? "none" : "box-none"}
         >
-          <Pressable
-            onPress={onClose}
-            disabled={saving}
-            accessibilityRole="button"
-            accessibilityLabel="Cancel create entry"
-            accessibilityState={{ disabled: saving }}
-            className="rounded-full border border-controls-border bg-controls-background p-3"
-          >
-            <Icon name="x-mark" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
-          </Pressable>
-
-          <View className="relative">
-            <BloomBar
-              slots={[
-                {
-                  node: (
-                    <Icon
-                      name="line-squiggle"
-                      size={CONTROL_ICON_SIZE}
-                      color={CONTROL_ICON_COLOR}
-                    />
-                  ),
-                  onPress: onEnterScribble,
-                  accessibilityLabel: "Scribble",
-                },
-                {
-                  node: (
-                    <Icon
-                      name="document-plus"
-                      size={CONTROL_ICON_SIZE}
-                      color={CONTROL_ICON_COLOR}
-                    />
-                  ),
-                  onPress: handleDocumentPlus,
-                  opensPanel: addConfig.kind === "bloom" && !atMax && !saving,
-                  accessibilityLabel: "Add page",
-                },
-                {
-                  node: (
-                    <Icon
-                      name="ellipsis-horizontal-circle"
-                      size={CONTROL_ICON_SIZE}
-                      color={CONTROL_ICON_COLOR}
-                    />
-                  ),
-                  onPress: () => setBarScreen("menu"),
-                  accessibilityLabel: "More options",
-                },
-              ]}
-              bloomTriggerIndex={2}
-              open={barOpen}
-              onOpenChange={(open) => {
-                if (saving) {
-                  return;
-                }
-                setBarOpen(open);
-                if (!open) {
-                  setBarScreen("menu");
-                }
-              }}
-              panelNode={panelNode}
-              contentKey={contentKey}
-              portalHostName="bloom"
-            />
-            <Tooltip
-              visible={maxTooltipVisible}
-              message="Maximum of 5 per entry."
-              onDismiss={() => setMaxTooltipVisible(false)}
-              style={styles.maxTooltip}
-            />
-          </View>
-
-          <Pressable
-            onPress={onSubmit}
-            disabled={saving}
-            accessibilityRole="button"
-            accessibilityLabel="Save entry"
-            className="rounded-full border border-controls-border bg-controls-background p-3"
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color={CONTROL_ICON_COLOR} />
-            ) : (
-              <Icon name="arrow-right" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
-            )}
-          </Pressable>
-        </Animated.View>
-      </BlurTargetView>
-
-      {scribbleActive && scribbleTools ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: insets.bottom + 20,
-          }}
-        >
-          {scribbleTools}
-        </View>
-      ) : null}
-
-      <Animated.View
-        style={[StyleSheet.absoluteFill, titleFocusBackdropStyle]}
-        pointerEvents={isTitleFocused ? "auto" : "none"}
-      >
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={handleTitleBackdropPress}
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss title editing"
-        >
-          <BlurView
-            {...(Platform.OS === "android"
-              ? {
-                  blurTarget: createBlurTargetRef,
-                  blurMethod: "dimezisBlurViewSdk31Plus" as const,
-                }
-              : {})}
-            tint="dark"
-            intensity={TITLE_FOCUS_BLUR_INTENSITY}
-            style={StyleSheet.absoluteFill}
+          {/* Plate fades in only for Type/expanded — not default, not title-focus. */}
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, headerPlateStyle]}
+            className="bg-background"
           />
-        </Pressable>
-      </Animated.View>
-
-      <Animated.View
-        style={[
-          styles.headerOverlay,
-          { paddingTop: topPad },
-          isTitleFocused ? undefined : headerTotalHeightStyle,
-        ]}
-        className={isTitleFocused ? undefined : "overflow-hidden"}
-        pointerEvents={saving ? "none" : "box-none"}
-      >
-        {/* Plate fades in only for Type/expanded — not default, not title-focus. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, headerPlateStyle]}
-          className="bg-background"
-        />
-        <Animated.View
-          style={createHeaderStyle}
-          className="px-5"
-          pointerEvents={isExpanded ? "none" : "auto"}
-        >
-          <View className="mb-3 flex-row items-center gap-2">
-            <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
-            <Text className="font-mono text-xs tracking-widest text-secondary">{typeLabel}</Text>
-          </View>
-          <View>
-            <TextInput
-              ref={titleInputRef}
-              value={title}
-              onChangeText={onChangeTitle}
-              onFocus={handleTitleFocus}
-              onBlur={handleTitleBlur}
-              editable={!saving}
-              placeholder="Title of entry"
-              placeholderTextColor="#79716B"
-              multiline
-              scrollEnabled={false}
-              style={[
-                styles.titleInput,
-                !isTitleFocused ? styles.titleInputIdle : null,
-                {
-                  color: isTitleFocused ? "#FFFFFF" : title.length > 0 ? "transparent" : "#79716B",
-                },
-              ]}
-            />
-            {!isTitleFocused && title.length > 0 ? (
-              <Text
-                numberOfLines={1}
-                ellipsizeMode="tail"
-                pointerEvents="none"
-                style={styles.titleIdleOverlay}
-              >
-                {title}
-              </Text>
-            ) : null}
-          </View>
-        </Animated.View>
-
-        <Animated.View
-          style={[styles.expandedHeader, expandedHeaderStyle, { top: topPad }]}
-          pointerEvents={isExpanded && !saving ? "auto" : "none"}
-        >
-          <View
-            className="flex-1 flex-row items-center justify-between"
-            style={{ paddingHorizontal: 10 }}
+          <Animated.View
+            style={createHeaderStyle}
+            className="px-5"
+            pointerEvents={isExpanded ? "none" : "auto"}
           >
-            <Pressable
-              onPress={onBack}
-              accessibilityRole="button"
-              accessibilityLabel={scribbleActive ? "Back to create form" : "Back to create form"}
-              hitSlop={8}
-            >
-              <View style={styles.backIconFlip}>
-                <Icon name="arrow-right" size={24} color={CONTROL_ICON_COLOR} />
-              </View>
-            </Pressable>
-            <View
-              style={StyleSheet.absoluteFill}
-              className="items-center justify-center"
-              pointerEvents="none"
-            >
-              <Text className="font-mono text-sm text-secondary">
-                {scribbleActive ? "Scribble" : counterLabel}
-              </Text>
+            <View className="mb-3 flex-row items-center gap-2">
+              <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
+              <Text className="font-mono text-xs tracking-widest text-secondary">{typeLabel}</Text>
             </View>
-            {scribbleActive ? (
+            <View>
+              <TextInput
+                ref={titleInputRef}
+                value={title}
+                onChangeText={onChangeTitle}
+                onFocus={handleTitleFocus}
+                onBlur={handleTitleBlur}
+                editable={!saving}
+                placeholder="Title of entry"
+                placeholderTextColor="#79716B"
+                multiline
+                scrollEnabled={false}
+                style={[
+                  styles.titleInput,
+                  !isTitleFocused ? styles.titleInputIdle : null,
+                  {
+                    color: isTitleFocused
+                      ? "#FFFFFF"
+                      : title.length > 0
+                        ? "transparent"
+                        : "#79716B",
+                  },
+                ]}
+              />
+              {!isTitleFocused && title.length > 0 ? (
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  pointerEvents="none"
+                  style={styles.titleIdleOverlay}
+                >
+                  {title}
+                </Text>
+              ) : null}
+            </View>
+          </Animated.View>
+
+          <Animated.View
+            style={[styles.expandedHeader, expandedHeaderStyle, { top: topPad }]}
+            pointerEvents={isExpanded && !saving ? "auto" : "none"}
+          >
+            <View
+              className="flex-1 flex-row items-center justify-between"
+              style={{ paddingHorizontal: 10 }}
+            >
               <Pressable
-                onPress={onScribbleSave}
+                onPress={onBack}
                 accessibilityRole="button"
-                accessibilityLabel="Save ink"
+                accessibilityLabel={scribbleActive ? "Back to create form" : "Back to create form"}
                 hitSlop={8}
               >
-                <Text className="font-sans-medium text-base text-primary">Save</Text>
+                <View style={styles.backIconFlip}>
+                  <Icon name="arrow-right" size={24} color={CONTROL_ICON_COLOR} />
+                </View>
               </Pressable>
-            ) : (
-              <View className="flex-row items-center" style={{ gap: 24 }}>
-                <Pressable
-                  onPress={onPrevArtefact}
-                  disabled={!canPrev}
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous artefact"
-                  accessibilityState={{ disabled: !canPrev }}
-                  hitSlop={8}
-                >
-                  <Text
-                    className={`font-sans-medium text-base ${canPrev ? "text-secondary" : "text-controls-border"}`}
-                  >
-                    Prev
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={onNextArtefact}
-                  disabled={!canNext}
-                  accessibilityRole="button"
-                  accessibilityLabel="Next artefact"
-                  accessibilityState={{ disabled: !canNext }}
-                  hitSlop={8}
-                >
-                  <Text
-                    className={`font-sans-medium text-base ${canNext ? "text-primary" : "text-controls-border"}`}
-                  >
-                    Next
-                  </Text>
-                </Pressable>
+              <View
+                style={StyleSheet.absoluteFill}
+                className="items-center justify-center"
+                pointerEvents="none"
+              >
+                <Text className="font-mono text-sm text-secondary">
+                  {scribbleActive ? "Scribble" : counterLabel}
+                </Text>
               </View>
-            )}
-          </View>
+              {scribbleActive ? (
+                <Pressable
+                  onPress={onScribbleSave}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save ink"
+                  hitSlop={8}
+                >
+                  <Text className="font-sans-medium text-base text-primary">Save</Text>
+                </Pressable>
+              ) : (
+                <View className="flex-row items-center" style={{ gap: 24 }}>
+                  <Pressable
+                    onPress={onPrevArtefact}
+                    disabled={!canPrev}
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous artefact"
+                    accessibilityState={{ disabled: !canPrev }}
+                    hitSlop={8}
+                  >
+                    <Text
+                      className={`font-sans-medium text-base ${canPrev ? "text-secondary" : "text-controls-border"}`}
+                    >
+                      Prev
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={onNextArtefact}
+                    disabled={!canNext}
+                    accessibilityRole="button"
+                    accessibilityLabel="Next artefact"
+                    accessibilityState={{ disabled: !canNext }}
+                    hitSlop={8}
+                  >
+                    <Text
+                      className={`font-sans-medium text-base ${canNext ? "text-primary" : "text-controls-border"}`}
+                    >
+                      Next
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
 
-      {/* Rendered after every chrome layer so a keyboard-following accessory
+        {/* Rendered after every chrome layer so a keyboard-following accessory
           remains visible above the Paper and headers. Paper mounts this node
           only in Type; it no longer needs an opacity-hidden lifetime workaround
           because Create itself is not a native Portal. */}
-      {floatingAccessory}
-    </Animated.View>
+        {floatingAccessory}
+      </EntryChromeMotion>
+    </View>
   );
 };
 

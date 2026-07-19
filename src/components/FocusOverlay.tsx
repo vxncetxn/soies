@@ -8,6 +8,7 @@
 import { BlurView } from "expo-blur";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import { EaseView } from "react-native-ease";
 import Animated, {
   type AnimatedRef,
   interpolate,
@@ -15,14 +16,14 @@ import Animated, {
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
   withSpring,
-  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
+import { EASE_DEFAULT_TIMING } from "../constants/animation";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { useAndroidBlurTargetProps } from "./BlurTargetViewContext";
 import { Icon } from "./Icon";
 
@@ -63,29 +64,32 @@ type FocusMenuItemRowProps = {
   icon: FocusMenuIcon;
   index: number;
   open: boolean;
+  reduceMotionEnabled: boolean;
   onPress: () => void;
 };
 
-const FocusMenuItemRow = ({ label, icon, index, open, onPress }: FocusMenuItemRowProps) => {
-  const itemProgress = useSharedValue(0);
-
-  useEffect(() => {
-    const delay = MENU_BASE_DELAY_MS + index * MENU_STAGGER_MS;
-
-    if (open) {
-      itemProgress.set(withDelay(delay, withTiming(1, { duration: MENU_ITEM_DURATION_MS })));
-    } else {
-      itemProgress.set(withTiming(0, { duration: MENU_CLOSE_DURATION_MS }));
-    }
-  }, [index, itemProgress, open]);
-
-  const itemStyle = useAnimatedStyle(() => ({
-    opacity: itemProgress.get(),
-    transform: [{ translateY: interpolate(itemProgress.get(), [0, 1], [MENU_TRANSLATE_Y, 0]) }],
-  }));
-
+const FocusMenuItemRow = ({
+  label,
+  icon,
+  index,
+  open,
+  reduceMotionEnabled,
+  onPress,
+}: FocusMenuItemRowProps) => {
   return (
-    <Animated.View style={itemStyle}>
+    <EaseView
+      initialAnimate={{ opacity: 0, translateY: MENU_TRANSLATE_Y }}
+      animate={{ opacity: open ? 1 : 0, translateY: open ? 0 : MENU_TRANSLATE_Y }}
+      transition={
+        reduceMotionEnabled
+          ? { type: "none" }
+          : {
+              ...EASE_DEFAULT_TIMING,
+              duration: open ? MENU_ITEM_DURATION_MS : MENU_CLOSE_DURATION_MS,
+              delay: open ? MENU_BASE_DELAY_MS + index * MENU_STAGGER_MS : 0,
+            }
+      }
+    >
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
@@ -95,7 +99,7 @@ const FocusMenuItemRow = ({ label, icon, index, open, onPress }: FocusMenuItemRo
         <Text className="font-sans-medium text-base text-white">{label}</Text>
         <Icon name={icon} size={22} color="#FFFFFF" />
       </Pressable>
-    </Animated.View>
+    </EaseView>
   );
 };
 
@@ -161,6 +165,7 @@ const FocusOverlay = ({
   accessibilityDismissLabel = "Dismiss options",
 }: FocusOverlayProps) => {
   const insets = useSafeAreaInsets();
+  const reduceMotionEnabled = useReducedMotionPreference();
   const androidBlurProps = useAndroidBlurTargetProps();
   const progress = useSharedValue(0);
   const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
@@ -278,6 +283,7 @@ const FocusOverlay = ({
               icon={item.icon}
               index={index}
               open={open}
+              reduceMotionEnabled={reduceMotionEnabled}
               onPress={item.onPress}
             />
           ))}

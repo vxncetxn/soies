@@ -54,7 +54,7 @@ test("Paper dismissal prepares native responders before starting overlay close",
   assert.ok(handleClose, "the shared Create dismissal hook must own a two-phase close handler");
   assert.match(handleClose[0], /prepareForDismiss\(\)/);
   assert.match(handleClose[0], /requestAnimationFrame/);
-  assert.match(handleClose[0], /onClose\(\)/);
+  assert.match(handleClose[0], /onClose\(reason\)/);
 });
 
 test("StrictMode effect rehearsal cannot leave Paper authoring permanently dismissing", () => {

@@ -10,15 +10,12 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { EaseView, type Transition } from "react-native-ease";
 import { AnimatedEdgeFadeView } from "react-native-edge-fade";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import { Easing, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { EASE_CALENDAR_CURVE } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import { formatMonthlyHeading, type CalendarHeading } from "../data/calendarBrowse";
 import {
@@ -26,6 +23,7 @@ import {
   warmCalendarBrowseData,
 } from "../data/calendarBrowseCache";
 import { getUserCreationDay } from "../db/repositories/users";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { todayISO } from "../utils/date";
 import CalendarMonthlyTab from "./CalendarMonthlyTab";
 import CalendarRecentTab from "./CalendarRecentTab";
@@ -86,6 +84,7 @@ export default function CalendarSheet({
 }: CalendarSheetProps) {
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const reduceMotionEnabled = useReducedMotionPreference();
   const sheetHeight = Math.max(320, window.height - Math.max(insets.top, 12));
   const [activeTab, setActiveTab] = useState<CalendarTab>("recent");
   const [contentMounted, setContentMounted] = useState(false);
@@ -105,12 +104,7 @@ export default function CalendarSheet({
     recent: false,
     monthly: false,
   });
-  const recentOpacity = useSharedValue(1);
-  const monthlyOpacity = useSharedValue(0);
   const bottomFade = useSharedValue(0);
-
-  const recentStyle = useAnimatedStyle(() => ({ opacity: recentOpacity.get() }));
-  const monthlyStyle = useAnimatedStyle(() => ({ opacity: monthlyOpacity.get() }));
 
   const loadCreationDay = () => {
     if (creationDayRequestRef.current) {
@@ -168,8 +162,6 @@ export default function CalendarSheet({
       const today = todayISO();
       setMonthlyFocusedMonth(today.slice(0, 7));
       setPresentationSelectedDay(selectedDay);
-      recentOpacity.set(activeTab === "recent" ? 1 : 0);
-      monthlyOpacity.set(activeTab === "monthly" ? 1 : 0);
       const hasMoreBelow = hasMoreBelowByTabRef.current[activeTab];
       bottomFadeVisibleRef.current = hasMoreBelow;
       bottomFade.set(hasMoreBelow ? BOTTOM_FADE_SIZE : 0);
@@ -181,7 +173,7 @@ export default function CalendarSheet({
     if (!open) {
       previousOpenRef.current = false;
     }
-  }, [activeTab, bottomFade, monthlyOpacity, open, openRequestedAt, recentOpacity, selectedDay]);
+  }, [activeTab, bottomFade, open, openRequestedAt, selectedDay]);
 
   useEffect(() => {
     if (!open) {
@@ -218,9 +210,6 @@ export default function CalendarSheet({
     setActiveTab(nextTab);
     bottomFadeVisibleRef.current = false;
     bottomFade.set(0);
-    const transition = { duration: TAB_FADE_MS, easing: Easing.out(Easing.quad) };
-    recentOpacity.set(withTiming(nextTab === "recent" ? 1 : 0, transition));
-    monthlyOpacity.set(withTiming(nextTab === "monthly" ? 1 : 0, transition));
     setHasMoreBelow(hasMoreBelowByTabRef.current[nextTab]);
   };
 
@@ -298,6 +287,9 @@ export default function CalendarSheet({
     activeTab === "monthly"
       ? CALENDAR_SHEET.MONTHLY_HEADER_HEIGHT
       : CALENDAR_SHEET.RECENT_HEADER_HEIGHT;
+  const tabTransition: Transition = reduceMotionEnabled
+    ? { type: "none" }
+    : { type: "timing", duration: TAB_FADE_MS, easing: EASE_CALENDAR_CURVE };
 
   return (
     <ModalBottomSheet
@@ -341,8 +333,6 @@ export default function CalendarSheet({
           // Reset retained lists while they are hidden so their first visible
           // frame in the next presentation is already at newest/current.
           setBrowseResetVersion((current) => current + 1);
-          recentOpacity.set(activeTab === "recent" ? 1 : 0);
-          monthlyOpacity.set(activeTab === "monthly" ? 1 : 0);
           bottomFadeVisibleRef.current = false;
           bottomFade.set(0);
         }
@@ -376,8 +366,11 @@ export default function CalendarSheet({
                     // The native sheet finds scrollables geometrically, even
                     // behind overlays. This real top boundary keeps header
                     // pulls draggable while list pulls remain with the list.
-                    <Animated.View
+                    <EaseView
                       key={tab}
+                      initialAnimate={{ opacity: isActive ? 1 : 0 }}
+                      animate={{ opacity: isActive ? 1 : 0 }}
+                      transition={tabTransition}
                       pointerEvents={isActive ? "auto" : "none"}
                       accessibilityElementsHidden={!isActive}
                       importantForAccessibility={isActive ? "auto" : "no-hide-descendants"}
@@ -389,12 +382,11 @@ export default function CalendarSheet({
                               ? CALENDAR_SHEET.RECENT_HEADER_HEIGHT
                               : CALENDAR_SHEET.MONTHLY_HEADER_HEIGHT,
                         },
-                        tab === "recent" ? recentStyle : monthlyStyle,
                         isActive ? styles.activeTabBody : styles.outgoingTabBody,
                       ]}
                     >
                       {renderTab(tab)}
-                    </Animated.View>
+                    </EaseView>
                   );
                 })}
               </View>

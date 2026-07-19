@@ -12,7 +12,7 @@
 | Compiler | [React Compiler](https://docs.expo.dev/guides/react-compiler) (`experiments.reactCompiler` in `app.json`; `babel.config.js` with `panicThreshold: 'all_errors'` — diagnostics are **hard build failures**). Validation: `pnpm lint` (Oxlint including native `react/react-compiler`), `pnpm lint:rc`, `pnpm healthcheck:rc`, `pnpm check`. Do not reintroduce manual `useMemo` / `useCallback` / `memo` as a render optimization without a measured re-render problem (`memo(CalendarMonthWithDots)` is the intentional exception for uncompiled flash-calendar). `useCallback` is also permitted when stable identity is an explicit correctness contract with native or third-party APIs; document that contract at the call site. |
 | Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based root Stack) |
 | Styling | [Uniwind](https://docs.uniwind.dev/) + Tailwind CSS v4 (`className` on native views) |
-| Animation | Reanimated 4 + Worklets (UI-thread springs, scroll handlers, morphs). Shared values use `.get()` / `.set()` for React Compiler compatibility. |
+| Animation | `react-native-ease` for discrete state transitions; Reanimated 4 + Worklets for gesture-, scroll-, keyboard-, layout-, and measurement-driven motion. Shared values use `.get()` / `.set()` for React Compiler compatibility. See [ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md). |
 | Overlays | `react-native-teleport` (portal hosts at the root) + `@swmansion/react-native-bottom-sheet` |
 | Lists / paging | `ScrollView` + Reanimated (day/artefact pagers); FlashList 2 (calendar browse lists) |
 | Calendar UI | `@marceloterreiro/flash-calendar` + `react-native-edge-fade` |
@@ -27,7 +27,13 @@ Persistence: `@op-engineering/op-sqlite` — see ADRs in `docs/adr/`.
 
 React Compiler callback caching is **not** a correctness guarantee for Worklets, gesture handlers, native subscriptions, or third-party list APIs. Across active code, a UI-runtime callback may call `scheduleOnRN` with a **stable React dispatcher** as the function and **serializable primitives** as arguments. Do **not** pass render-local callbacks, React setters, or other function values as `scheduleOnRN` arguments.
 
-Known-good pattern: `scheduleOnRN(setCreate, null)` / `scheduleOnRN(setOutgoing, null)` / `scheduleOnRN(setCloseSequence, n)`. External callbacks (e.g. BloomPanel `onClose`) stay on RN via a ref + completion sequence effect.
+Known-good pattern: `scheduleOnRN(setOutgoing, null)` / `scheduleOnRN(setCloseSequence, n)`. External callbacks (e.g. BloomPanel `onClose`) stay on RN via a ref + completion sequence effect.
+
+Ease owns only fixed state changes. If one visual surface also needs a
+Reanimated property, the engines receive separate nested native views; they
+never animate the same property on the same view. Shared Entry transitions use
+the root `EntryTransitionProvider`, and Reduce Motion preserves completion
+callbacks with an immediate Ease transition.
 
 **Exception:** [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) still uses an unsafe `scheduleOnRN(finishClose, onClose)` bridge but has **no callsite** under `src/`. Do not wire it without applying the BloomPanel pattern first. Physical-device stress matrix: [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md).
 
@@ -74,8 +80,8 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, bottom-sheet and portal providers, and one headerless Stack route. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (Create's Bloom menu). Create is a root-owned absolute sibling so its own menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. Exports a retryable route error boundary. |
-| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, strictly resolves the date and one-shot widget commands from the URL, loads one complete Day through the bounded cache, and renders `HomeHeader`, vertical `DayPager`, and the persistent lightweight `CalendarSheet` shell. It starts Calendar Day preparation during native dismissal, waits for the sheet to settle before moving the old body one viewport downward, then brings up a display-only visual containing the first real Artefact plus white count silhouettes. Only after that entrance settles does the canonical tree mount behind its opaque cover; Paper hand-off waits for document-scoped native TextKit readiness before removing the cover. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route. Exports a Home-specific retry boundary. |
+| [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, bottom-sheet and portal providers, the shared `EntryTransitionProvider`, and one headerless Stack route. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (Create's Bloom menu). Create is a root-owned absolute sibling so its own menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. Exports a retryable route error boundary. |
+| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, strictly resolves the date and one-shot widget commands from the URL, loads one complete Day through the bounded cache, and renders `HomeHeader`, vertical `DayPager`, and the persistent lightweight `CalendarSheet` shell. It adapts Calendar selection and post-Save reloads to the shared Entry transition: prepare a lightweight `PreparedHomeEntry`, wait for native-sheet dismissal when required, retire the old body, enter the cover after its first Artefact is ready, then adopt canonical Home behind that cover. Paper hand-off waits for document-scoped native TextKit readiness before the cover retires. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route. Exports a Home-specific retry boundary. |
 
 Create, Share, and the iOS Featured Widgets sheet each have a retry/dismiss
 feature boundary inside the provider that owns their session. Create keeps its
@@ -104,7 +110,8 @@ diagnostics contain structural component context, never journal content.
 
 | File | Role |
 |------|------|
-| [`CalendarSheet.tsx`](../src/components/CalendarSheet.tsx) | Persistent zero-detent native shell. Prepares and retains bounded virtualized Recent/Monthly trees after first paint, owns the opaque header/fades/dismissal/fixed-opacity crossfade, and resets/trims retained browse state after close settles. |
+| [`CalendarSheet.tsx`](../src/components/CalendarSheet.tsx) | Persistent zero-detent native shell. Prepares and retains bounded virtualized Recent/Monthly trees after first paint, owns the opaque header/fades/dismissal/Ease crossfade, and resets/trims retained browse state after close settles. |
+| [`PreparedHomeEntry.tsx`](../src/components/PreparedHomeEntry.tsx) | Non-interactive transition cover shared by Calendar and Create Save. It renders the target Entry's first real Artefact plus white count silhouettes and reports native Paper/Print readiness. |
 | [`CalendarRecentTab.tsx`](../src/components/CalendarRecentTab.tsx) / [`CalendarEntryPreview.tsx`](../src/components/CalendarEntryPreview.tsx) | Keyset-paged FlashList rows with inline Day labels, visible canonical first-Artefact previews, count silhouettes, and exact Entry selection. |
 | [`CalendarMonthlyTab.tsx`](../src/components/CalendarMonthlyTab.tsx) | Chronological virtualized month grids from User Creation Day through today, Day-1-aligned month indicators, Focused Month background, Selected Day underline, disabled bounds, type-presence markers, and a viewport-derived final scroll bound. |
 | [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** still used by Create's compact menu. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
@@ -117,9 +124,9 @@ diagnostics contain structural component context, never journal content.
 
 | File | Role |
 |------|------|
-| [`ScrollIndicator.tsx`](../src/components/ScrollIndicator.tsx) | Reusable page rail (vertical or horizontal). Raw RN View responders avoid RNGH's StrictMode `findNodeHandle` path; scrub moves invoke the latest host jump callback directly on RN/JS. Reanimated keeps the rail and host scroll visuals on the UI thread. Exports `EntryPreview` / `ArtefactPreview` for scrubber tiles. |
+| [`ScrollIndicator.tsx`](../src/components/ScrollIndicator.tsx) | Reusable page rail (vertical or horizontal). Raw RN View responders avoid RNGH's StrictMode `findNodeHandle` path; scrub moves invoke the latest host jump callback directly on RN/JS. Reanimated keeps continuous rail/host scroll visuals on the UI thread, while Ease owns the retained expanded-shell fade/scale. Exports `EntryPreview` / `ArtefactPreview` for scrubber tiles. |
 | [`ExpandContext.tsx`](../src/components/ExpandContext.tsx) | Shared `chromeProgress` value (0 = chrome visible, 1 = hidden) while a stack is expanded. Used by header, day pager, and stack. |
-| [`CreateContext.tsx`](../src/components/CreateContext.tsx) | Create-entry overlay state; close spring uses `scheduleOnRN(setCreate, null)`. |
+| [`CreateContext.tsx`](../src/components/CreateContext.tsx) | Owns the Create authoring session and adapts open, Cancel, and Save to the shared request-scoped Entry transition. It retains the source tree until Home has entered. |
 | [`BlurTargetViewContext.tsx`](../src/components/BlurTargetViewContext.tsx) | Ref to the root `BlurTargetView` so bloom/focus overlays can blur the correct subtree. |
 | [`Button.tsx`](../src/components/Button.tsx) | Styled pressable (rounded controls background/border). Supports `forwardRef` for morph measurement. |
 | [`Icon.tsx`](../src/components/Icon.tsx) | Nano icon set generated from `assets/icons/` via build-time glyph map. |
@@ -131,7 +138,7 @@ diagnostics contain structural component context, never journal content.
 |------|------|
 | [`FeaturedArtefactsButton.ios.tsx`](../src/components/FeaturedArtefactsButton.ios.tsx) | Round bottom-left launcher for Featured Artefacts. Its platform fallback renders nothing on Android/web. |
 | [`FeaturedWidgetsContext.ios.tsx`](../src/widgets/FeaturedWidgetsContext.ios.tsx) | iOS controller for sheet sessions, transactional assignment, publication warnings, and coalesced first-paint/foreground reconciliation. The platform fallback exposes no feature affordances. |
-| [`FeaturedWidgetsSheet.tsx`](../src/widgets/FeaturedWidgetsSheet.tsx) | One fixed-height native bottom sheet. Raw picker and five-slot framed management phases remain mounted in the same body and cross-fade over 200 ms. |
+| [`FeaturedWidgetsSheet.tsx`](../src/widgets/FeaturedWidgetsSheet.tsx) | One fixed-height native bottom sheet. Raw picker and five-slot framed management phases remain mounted in the same body and Ease-crossfade over 200 ms. |
 | [`WidgetFrameCaptureHost.tsx`](../src/widgets/WidgetFrameCaptureHost.tsx) / [`widgetFrameGeometry.ts`](../src/widgets/widgetFrameGeometry.ts) | Lazily mounts one off-screen `ArtefactFrame`, waits for layout/Print/Ink readiness, and serializes a high-resolution transparent PNG inside the shared asymmetric shadow crop with a ten-second timeout. |
 | [`widgetFrameCache.ts`](../src/widgets/widgetFrameCache.ts) | Stores revisioned, renderer-versioned captures in `widgetsDirectory`; paths are derived cache state and stale files are removed only after a later successful publication. |
 | [`widgetSnapshot.ts`](../src/widgets/widgetSnapshot.ts) | Builds one atomic five-key snapshot containing empty, featured, or unavailable state plus frame URIs, deep links, and localized accessibility labels. |
@@ -147,7 +154,7 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 | [`entries.ts`](../src/data/entries.ts) | **Domain types** (`PaperArtefact`, `PrintArtefact`, `Entry`, `DayEntries`) and helpers. Entry view models expose stable `id` and `date` for widget targeting. Persistence is in `src/db/`. |
 | [`calendarBrowse.ts`](../src/data/calendarBrowse.ts) / [`calendarBrowseCache.ts`](../src/data/calendarBrowseCache.ts) | Pure calendar grouping/focus/range helpers plus bounded first-page/month-marker summary caches. |
 | [`entriesCache.ts`](../src/data/entriesCache.ts) | Eight-Day complete-entry LRU with in-flight load de-duplication and invalidation. |
-| [`calendarNavigationTransition.ts`](../src/data/calendarNavigationTransition.ts) | Pure identity-safe coordinator that releases a Calendar-selected Day only after its complete query, native-sheet dismissal, and old-body exit have all settled. |
+| [`preparedHomeHandoff.ts`](../src/data/preparedHomeHandoff.ts) | Type-only hand-off model for the lightweight Calendar/Save transition cover. The shared request-scoped reducer lives in `src/entry-transition/`. |
 | [`paperContentReadiness.ts`](../src/data/paperContentReadiness.ts) | Per-Paper document readiness latch that safely replays TextKit's edge-triggered layout signal to a later Calendar hand-off request. |
 | [`mock-image.png`](../src/data/mock-image.png) | Sample image for print entries in seed/dev data. |
 
@@ -170,7 +177,7 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 
 | File | Role |
 |------|------|
-| [`animation.ts`](../src/constants/animation.ts) | Spring config for stack expand (`SPRING_CONFIG`), chrome fade threshold (`CHROME_FADE_END`), title scroll travel (`TITLE_TRAVEL`), bloom/create springs, shadow tokens. |
+| [`animation.ts`](../src/constants/animation.ts) | Entry duration and Ease curves, preserved discrete-transition tokens, stack/bloom springs, chrome thresholds, title travel, and shadow tokens. |
 | [`layout.ts`](../src/constants/layout.ts) | Stack spacing: `STACK_OFFSET` (collapsed gap), `EXPANDED_STACK_GAP` (peek width in expanded pager). |
 | [`interaction.ts`](../src/constants/interaction.ts) | Long-press timings and distance thresholds for pressables and scroll-indicator scrub. |
 
@@ -203,8 +210,9 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 | [`docs/01-stack-expand-collapse.md`](./01-stack-expand-collapse.md) | Stack expand/collapse, horizontal paging, portal overlay. |
 | [`docs/02-calendar-morph-overlay.md`](./02-calendar-morph-overlay.md) | Active native Calendar sheet lifecycle, tabs, bounded data, and selection behavior. |
 | [`docs/03-scroll-indicator.md`](./03-scroll-indicator.md) | Scroll indicator (vertical day rail + horizontal artefact rail). |
+| [`docs/react-native-ease-migration-plan.md`](./react-native-ease-migration-plan.md) | Live inventory, shared Entry contract, preserved timings, and automated/physical acceptance status for the partial Ease migration. |
 | [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md) | Physical-device stress matrix for RC / Worklets closure. |
-| [`docs/adr/`](./adr/) | Architecture decision records: persistence, portal overlays, media/share seams, and stable raster-backed Widget Slots. |
+| [`docs/adr/`](./adr/) | Architecture decision records, including the Ease/Reanimated ownership boundary in ADR 0014. |
 
 ---
 

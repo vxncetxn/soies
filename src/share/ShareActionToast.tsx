@@ -6,14 +6,12 @@
  * within it. Mounting a transient node directly in the ModalBottomSheet
  * `content` subtree previously retargeted the detent while Copy was visible.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  runOnJS,
-} from "react-native-reanimated";
+import { EaseView } from "react-native-ease";
+
+import { EASE_DEFAULT_TIMING } from "../constants/animation";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 
 const SHOW_MS = 1600;
 const FADE_MS = 220;
@@ -25,46 +23,46 @@ type ShareActionToastProps = {
 };
 
 export function ShareActionToast({ message, onDone }: ShareActionToastProps) {
-  const progress = useSharedValue(0);
+  const reduceMotionEnabled = useReducedMotionPreference();
+  const [cycle, setCycle] = useState({ message, visible: Boolean(message) });
+
+  if (cycle.message !== message) {
+    setCycle({ message, visible: Boolean(message) });
+  }
 
   useEffect(() => {
     if (!message) {
-      progress.set(0);
       return;
     }
-
-    progress.set(0);
-    progress.set(withTiming(1, { duration: FADE_MS }));
-
-    const hide = () => {
-      progress.set(
-        withTiming(0, { duration: FADE_MS }, (finished) => {
-          if (finished) {
-            runOnJS(onDone)();
-          }
-        }),
-      );
-    };
-
-    const timer = setTimeout(hide, SHOW_MS);
+    const timer = setTimeout(() => {
+      setCycle((current) => ({ ...current, visible: false }));
+    }, SHOW_MS);
     return () => clearTimeout(timer);
-  }, [message, onDone, progress]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: progress.get(),
-    transform: [{ translateY: (1 - progress.get()) * RISE_Y }],
-  }));
+  }, [message]);
 
   if (!message) {
     return null;
   }
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.toast, style]}>
+    <EaseView
+      pointerEvents="none"
+      style={styles.toast}
+      initialAnimate={{ opacity: 0, translateY: RISE_Y }}
+      animate={{ opacity: cycle.visible ? 1 : 0, translateY: cycle.visible ? 0 : RISE_Y }}
+      transition={
+        reduceMotionEnabled ? { type: "none" } : { ...EASE_DEFAULT_TIMING, duration: FADE_MS }
+      }
+      onTransitionEnd={(event) => {
+        if (event.finished && !cycle.visible) {
+          onDone();
+        }
+      }}
+    >
       <Text style={styles.text} numberOfLines={1}>
         {message}
       </Text>
-    </Animated.View>
+    </EaseView>
   );
 }
 

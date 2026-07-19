@@ -14,6 +14,9 @@ import { Pressable, Text, View } from "react-native";
 import Animated, { SharedValue, useAnimatedStyle } from "react-native-reanimated";
 
 import { TITLE_TRAVEL } from "../constants/animation";
+import { entryChromeVisible } from "../entry-transition/entryTransition";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
+import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { formatDisplayDate } from "../utils/date";
 import { Icon } from "./Icon";
@@ -102,36 +105,41 @@ type HomeHeaderProps = {
 };
 
 const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderProps) => {
-  // Header chrome fade: fades the whole header out as an entry expands
-  // (`chromeProgress` 0 → 1 over the first `CHROME_FADE_END` slice) or when
-  // the create overlay opens (`createProgress` 0 → 0.5). Calendar presentation
-  // is handled by the native sheet, so this trigger needs no extra morph state.
+  // Reanimated owns Stack-expansion opacity on the inner native view. The Ease
+  // wrapper separately owns Entry-navigation opacity, so neither engine writes
+  // the same property on the same native view.
   const chromeFadeStyle = useHomeChromeFade();
+  const { state: entryTransitionState } = useEntryTransition();
+  const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
   return (
     // Floating header pinned to the top. `z-50` keeps it above the pager; the
     // modal sheet itself lives in the bottom-sheet provider above this subtree.
     <View className="absolute z-50 w-full px-5 py-2">
       {/* Chrome-fade wrapper: fades the header out during entry expand. */}
-      <Animated.View style={chromeFadeStyle}>
-        <Pressable
-          onPress={onCalendarPress}
-          accessibilityRole="button"
-          accessibilityLabel="Open calendar"
-          className="w-full rounded-4xl border border-controls-border bg-controls-background"
-        >
-          {/* Trigger content: the animated title carousel above the formatted
+      <EntryChromeMotion visible={entryChromeIsVisible} pointerEvents="box-none">
+        <Animated.View style={chromeFadeStyle}>
+          <Pressable
+            onPress={onCalendarPress}
+            accessibilityRole="button"
+            accessibilityLabel="Open calendar"
+            className="w-full rounded-4xl border border-controls-border bg-controls-background"
+          >
+            {/* Trigger content: the animated title carousel above the formatted
               date + chevron. `w-full` makes this fill the pill (left-aligned
               with `px-6` padding), matching the pre-refactor layout. */}
-          <View className="flex w-full gap-1 px-6 py-2">
-            <AnimatedTitle titles={titles} currentPage={currentPage} />
-            <View className="flex flex-row items-center gap-2">
-              <Text className="font-mono text-base text-secondary">{formatDisplayDate(date)}</Text>
-              <Icon name="chevron-down" size={20} color="#79716B" />
+            <View className="flex w-full gap-1 px-6 py-2">
+              <AnimatedTitle titles={titles} currentPage={currentPage} />
+              <View className="flex flex-row items-center gap-2">
+                <Text className="font-mono text-base text-secondary">
+                  {formatDisplayDate(date)}
+                </Text>
+                <Icon name="chevron-down" size={20} color="#79716B" />
+              </View>
             </View>
-          </View>
-        </Pressable>
-      </Animated.View>
+          </Pressable>
+        </Animated.View>
+      </EntryChromeMotion>
     </View>
   );
 };

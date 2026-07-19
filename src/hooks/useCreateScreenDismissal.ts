@@ -9,11 +9,13 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { CreateDismissalReason } from "../components/CreateContext";
+
 type CreateScreenDismissal = {
   /** True from the first close request until the owning Create tree unmounts. */
   closing: boolean;
   /** Idempotent JS-thread entry point shared by Cancel and successful Save. */
-  handleClose: () => void;
+  handleClose: (reason?: CreateDismissalReason) => void;
 };
 
 /**
@@ -23,7 +25,7 @@ type CreateScreenDismissal = {
  * native focus events cannot race child removal.
  */
 export function useCreateScreenDismissal(
-  onClose: () => void,
+  onClose: (reason?: CreateDismissalReason) => void,
   prepareForDismiss: () => void,
 ): CreateScreenDismissal {
   /** Makes Cancel/save dismissal idempotent across rapid or stale callbacks. */
@@ -45,20 +47,23 @@ export function useCreateScreenDismissal(
 
   /**
    * Runs on the JS thread: freeze/blur now, then cross one committed frame before
-   * the root Create owner begins its close spring and eventual native teardown.
+   * the root Create owner begins its Entry exit and eventual native teardown.
    */
-  const handleClose = useCallback(() => {
-    if (closeRequestedRef.current) {
-      return;
-    }
-    closeRequestedRef.current = true;
-    setClosing(true);
-    prepareForDismiss();
-    closeFrameRef.current = requestAnimationFrame(() => {
-      closeFrameRef.current = null;
-      onClose();
-    });
-  }, [onClose, prepareForDismiss]);
+  const handleClose = useCallback(
+    (reason: CreateDismissalReason = "cancel") => {
+      if (closeRequestedRef.current) {
+        return;
+      }
+      closeRequestedRef.current = true;
+      setClosing(true);
+      prepareForDismiss();
+      closeFrameRef.current = requestAnimationFrame(() => {
+        closeFrameRef.current = null;
+        onClose(reason);
+      });
+    },
+    [onClose, prepareForDismiss],
+  );
 
   return { closing, handleClose };
 }

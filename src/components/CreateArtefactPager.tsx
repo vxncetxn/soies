@@ -22,17 +22,17 @@ import {
   type RefObject,
 } from "react";
 import { ScrollView, View, useWindowDimensions } from "react-native";
+import { EaseView } from "react-native-ease";
 import Animated, {
-  Easing,
   runOnJS,
   useAnimatedRef,
   useAnimatedScrollHandler,
-  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
-  withTiming,
 } from "react-native-reanimated";
 
+import { EASE_APPENDED_ARTEFACT_CURVE } from "../constants/animation";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { ScrollIndicator } from "./ScrollIndicator";
 
 /** Mount active page ± this many neighbors (keeps Print image decode bounded). */
@@ -68,33 +68,31 @@ type EnteringWrapProps = {
 };
 
 const EnteringWrap = ({ entering, onEnteringComplete, children }: EnteringWrapProps) => {
-  const enterProgress = useSharedValue(entering ? 0 : 1);
+  const reduceMotionEnabled = useReducedMotionPreference();
 
-  useEffect(() => {
-    if (!entering) {
-      enterProgress.set(1);
-      return;
-    }
-    enterProgress.set(0);
-    enterProgress.set(
-      withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) }, (finished) => {
-        if (finished && onEnteringComplete) {
-          runOnJS(onEnteringComplete)();
+  return (
+    <EaseView
+      style={{ flex: 1 }}
+      initialAnimate={entering ? { opacity: 0, translateY: 28 } : { opacity: 1, translateY: 0 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={
+        reduceMotionEnabled
+          ? { type: "none" }
+          : {
+              type: "timing",
+              duration: 320,
+              easing: EASE_APPENDED_ARTEFACT_CURVE,
+            }
+      }
+      onTransitionEnd={(event) => {
+        if (event.finished && entering) {
+          onEnteringComplete?.();
         }
-      }),
-    );
-  }, [entering, enterProgress, onEnteringComplete]);
-
-  const style = useAnimatedStyle(() => {
-    const enter = enterProgress.get();
-    return {
-      opacity: enter,
-      transform: [{ translateY: (1 - enter) * 28 }],
-      flex: 1,
-    };
-  });
-
-  return <Animated.View style={style}>{children}</Animated.View>;
+      }}
+    >
+      {children}
+    </EaseView>
+  );
 };
 
 const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefactPagerProps>(

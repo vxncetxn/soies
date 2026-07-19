@@ -12,37 +12,85 @@
  *
  * `CreateContext` keeps this shell mounted with pointer events disabled between
  * sessions. The selected Paper/Print screen remains conditional so every new
- * session receives fresh draft state after the close spring completes.
+ * session receives fresh draft state after the return Entry transition completes.
  */
+import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
 import { useCreateContext } from "./CreateContext";
 import CreatePaperScreen from "./CreatePaperScreen";
 import CreatePrintScreen from "./CreatePrintScreen";
 
 const CreateOverlay = () => {
-  const { createProgress, createMode, createDate, createImageUri, createSessionBusy, closeCreate } =
+  const { createMode, createDate, createImageUri, createSessionBusy, closeCreate } =
     useCreateContext();
+  const entryTransition = useEntryTransition();
+  const targetRequestId =
+    entryTransition.state.target === "create" ? entryTransition.state.requestId : null;
+  const createIsInteractive =
+    createMode !== null &&
+    entryTransition.state.phase === "idle" &&
+    entryTransition.state.canonicalParticipant === "create";
 
   // Hardware-back dismisses the create overlay while a mode is open — but not
   // mid-save (would orphan an in-flight persist / race a new session).
-  useHardwareBackDismiss(createMode !== null && !createSessionBusy, closeCreate);
+  useHardwareBackDismiss(createIsInteractive && !createSessionBusy, () => closeCreate("cancel"));
+
+  useEffect(() => {
+    if (
+      targetRequestId === null ||
+      !entryTransition.state.targetMounted ||
+      entryTransition.state.targetReady
+    ) {
+      return;
+    }
+    const watchdog = setTimeout(() => {
+      entryTransition.targetReady(targetRequestId);
+    }, 1000);
+    return () => clearTimeout(watchdog);
+  }, [entryTransition, targetRequestId]);
 
   const showPrint = createMode === "print" && createImageUri.length > 0;
+  const signalFirstArtefactReady = () => {
+    if (targetRequestId !== null) {
+      entryTransition.targetReady(targetRequestId);
+    }
+  };
 
   return (
-    <View style={styles.root} pointerEvents={createMode ? "auto" : "none"}>
-      {createMode === "paper" ? (
-        <CreatePaperScreen progress={createProgress} date={createDate} onClose={closeCreate} />
-      ) : null}
-      {showPrint ? (
-        <CreatePrintScreen
-          progress={createProgress}
-          date={createDate}
-          imageUri={createImageUri}
-          onClose={closeCreate}
-        />
+    <View
+      style={styles.root}
+      pointerEvents={createIsInteractive ? "auto" : "none"}
+      accessibilityElementsHidden={!createIsInteractive}
+      importantForAccessibility={createIsInteractive ? "yes" : "no-hide-descendants"}
+    >
+      {createMode ? (
+        <View
+          style={styles.screen}
+          onLayout={() => {
+            if (targetRequestId !== null) {
+              entryTransition.targetMounted(targetRequestId);
+            }
+          }}
+        >
+          {createMode === "paper" ? (
+            <CreatePaperScreen
+              date={createDate}
+              onClose={closeCreate}
+              onFirstArtefactReady={signalFirstArtefactReady}
+            />
+          ) : null}
+          {showPrint ? (
+            <CreatePrintScreen
+              date={createDate}
+              imageUri={createImageUri}
+              onClose={closeCreate}
+              onFirstArtefactReady={signalFirstArtefactReady}
+            />
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -54,6 +102,7 @@ const styles = StyleSheet.create({
     // the previous edge-to-edge Create geometry without native reparenting.
     ...StyleSheet.absoluteFill,
   },
+  screen: { flex: 1 },
 });
 
 export default CreateOverlay;

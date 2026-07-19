@@ -20,8 +20,6 @@ import { useLayoutEffect } from "react";
 import { ScrollView, View } from "react-native";
 import Animated, {
   useAnimatedRef,
-  useAnimatedStyle,
-  interpolate,
   useAnimatedScrollHandler,
   type SharedValue,
 } from "react-native-reanimated";
@@ -29,10 +27,11 @@ import Animated, {
 import type { Entry } from "../data/entries";
 import type { WidgetDeepLinkTarget } from "../widgets/widgetDeepLink";
 
-import { CREATE_HOME_EXIT_END, CREATE_SLIDE_DISTANCE } from "../constants/animation";
+import { entryChromeVisible } from "../entry-transition/entryTransition";
+import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
+import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
 import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { shouldCollapseStackForWidgetTarget } from "../widgets/widgetDeepLink";
-import { useCreateContext } from "./CreateContext";
 import { EntryPreview, ScrollIndicator } from "./ScrollIndicator";
 import Stack from "./Stack";
 
@@ -61,7 +60,7 @@ type DayPagerProps = {
   // selects only the vertical entry page; it does not expand an artefact.
   entryTargetId: string | null;
   onEntryTargetConsumed: () => void;
-  /** Calendar request targeting one canonical Paper Entry. */
+  /** Entry-transition request targeting one canonical Entry's first Artefact. */
   entryContentReadinessRequest?: { requestId: number; entryId: string } | null;
   /** Reports readiness for the exact request and Entry that received it. */
   onEntryContentReady?: (requestId: number, entryId: string) => void;
@@ -85,26 +84,11 @@ const DayPager = ({
   // Animated ref to the ScrollView so we can imperatively `scrollTo` when the
   // user jumps to an entry via the side indicator.
   const scrollRef = useAnimatedRef<ScrollView>();
-  const { createProgress } = useCreateContext();
-  // Side indicator fades on both chrome expand and create open (combined fade).
+  // Stack expansion remains Reanimated; Entry navigation owns an outer Ease fade.
   const indicatorFadeStyle = useHomeChromeFade();
+  const { state: entryTransitionState } = useEntryTransition();
+  const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
-  // Pager body exit: slides down + fades ONLY on create open. The original
-  // never faded the pager body on chrome expand (the expanded card overlay
-  // covers it), so we keep chrome out of this and only react to createProgress.
-  const pagerExitStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(createProgress.get(), [0, CREATE_HOME_EXIT_END], [1, 0], "clamp"),
-    transform: [
-      {
-        translateY: interpolate(
-          createProgress.get(),
-          [0, CREATE_HOME_EXIT_END],
-          [0, CREATE_SLIDE_DISTANCE],
-          "clamp",
-        ),
-      },
-    ],
-  }));
   // When the entries change (date navigation that updates us in place — index.tsx
   // intentionally does NOT key us by date, so a date change re-renders rather
   // than remounts), reset the vertical scroll to the top entry. With the old
@@ -179,47 +163,45 @@ const DayPager = ({
         }}
       >
         {pagerHeight > 0 && (
-          <Animated.View style={pagerExitStyle}>
-            <Animated.ScrollView
-              ref={scrollRef}
-              pagingEnabled
-              showsVerticalScrollIndicator={false}
-              scrollEventThrottle={16}
-              removeClippedSubviews
-              onScroll={onScroll}
-              style={{ height: pagerHeight }}
-            >
-              {entries.map((entry) => (
-                <View
-                  key={entry.id}
-                  style={{ height: pagerHeight }}
-                  className="items-center justify-center px-5"
-                >
-                  <Stack
-                    entry={entry}
-                    widgetArtefactId={
-                      widgetTarget?.entryId === entry.id ? widgetTarget.artefactId : null
-                    }
-                    collapseForWidgetTarget={shouldCollapseStackForWidgetTarget(
-                      entry.id,
-                      widgetTarget,
-                    )}
-                    onWidgetTargetConsumed={onWidgetTargetConsumed}
-                    firstArtefactReadinessRequestId={
-                      entryContentReadinessRequest?.entryId === entry.id
-                        ? entryContentReadinessRequest.requestId
-                        : null
-                    }
-                    onFirstArtefactReady={
-                      entry.type === "paper" && onEntryContentReady
-                        ? (requestId) => onEntryContentReady(requestId, entry.id)
-                        : undefined
-                    }
-                  />
-                </View>
-              ))}
-            </Animated.ScrollView>
-          </Animated.View>
+          <Animated.ScrollView
+            ref={scrollRef}
+            pagingEnabled
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            removeClippedSubviews
+            onScroll={onScroll}
+            style={{ height: pagerHeight }}
+          >
+            {entries.map((entry) => (
+              <View
+                key={entry.id}
+                style={{ height: pagerHeight }}
+                className="items-center justify-center px-5"
+              >
+                <Stack
+                  entry={entry}
+                  widgetArtefactId={
+                    widgetTarget?.entryId === entry.id ? widgetTarget.artefactId : null
+                  }
+                  collapseForWidgetTarget={shouldCollapseStackForWidgetTarget(
+                    entry.id,
+                    widgetTarget,
+                  )}
+                  onWidgetTargetConsumed={onWidgetTargetConsumed}
+                  firstArtefactReadinessRequestId={
+                    entryContentReadinessRequest?.entryId === entry.id
+                      ? entryContentReadinessRequest.requestId
+                      : null
+                  }
+                  onFirstArtefactReady={
+                    onEntryContentReady
+                      ? (requestId) => onEntryContentReady(requestId, entry.id)
+                      : undefined
+                  }
+                />
+              </View>
+            ))}
+          </Animated.ScrollView>
         )}
       </View>
 
@@ -229,20 +211,22 @@ const DayPager = ({
           while the indicator's own interactive elements still receive taps.
           It's faded out while an entry is expanded (see indicatorFadeStyle). */}
       {pagerHeight > 0 && (
-        <Animated.View
-          style={indicatorFadeStyle}
+        <EntryChromeMotion
+          visible={entryChromeIsVisible}
           pointerEvents="box-none"
           className="absolute top-1/2 right-3 z-40 -translate-y-1/2"
         >
-          <ScrollIndicator
-            orientation="vertical"
-            count={entries.length}
-            currentPage={currentPage}
-            maxVisible={5}
-            onJumpToIndex={jumpToEntry}
-            renderPreview={(index) => <EntryPreview entry={entries[index]} />}
-          />
-        </Animated.View>
+          <Animated.View style={indicatorFadeStyle} pointerEvents="box-none">
+            <ScrollIndicator
+              orientation="vertical"
+              count={entries.length}
+              currentPage={currentPage}
+              maxVisible={5}
+              onJumpToIndex={jumpToEntry}
+              renderPreview={(index) => <EntryPreview entry={entries[index]} />}
+            />
+          </Animated.View>
+        </EntryChromeMotion>
       )}
     </View>
   );

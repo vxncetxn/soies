@@ -54,9 +54,9 @@ type UseWrappedArtefactsParams = {
   // The index of the card that's "on top" in the collapsed stack (the one
   // the user is currently on). Drives the collapsed horizontal offsets.
   activeIndex: SharedValue<number>;
-  /** Calendar request targeting this Entry's first Paper Artefact. */
+  /** Entry-transition request targeting this Entry's first Artefact. */
   firstArtefactReadinessRequestId?: number | null;
-  /** Canonical first-Paper readiness used by the Calendar route handoff. */
+  /** Canonical first-Artefact readiness used by Calendar and Save handoffs. */
   onFirstArtefactReady?: (requestId: number) => void;
 };
 
@@ -98,6 +98,10 @@ export const useWrappedArtefacts = ({
           ? {
               paperContentReadinessRequestId: firstArtefactReadinessRequestId,
               onPaperContentReady: onFirstArtefactReady,
+              onPrintContentReady:
+                firstArtefactReadinessRequestId != null && onFirstArtefactReady
+                  ? () => onFirstArtefactReady(firstArtefactReadinessRequestId)
+                  : undefined,
             }
           : undefined,
       )}

@@ -14,6 +14,7 @@ import Print from "./Print";
 type RenderArtefactContentOptions = {
   paperContentReadinessRequestId?: number | null;
   onPaperContentReady?: (requestId: number) => void;
+  onPrintContentReady?: () => void;
 };
 
 export function renderArtefactContent(
@@ -23,7 +24,13 @@ export function renderArtefactContent(
 ): ReactNode {
   if (isPrintArtefact(artefact)) {
     return (
-      <Print key={key} imagePath={artefact.imagePath} inkOverlayPath={artefact.inkOverlayPath}>
+      <Print
+        key={key}
+        imagePath={artefact.imagePath}
+        inkOverlayPath={artefact.inkOverlayPath}
+        onImageDisplay={options?.onPrintContentReady}
+        onImageError={options?.onPrintContentReady}
+      >
         {artefact.text}
       </Print>
     );

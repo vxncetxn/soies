@@ -81,6 +81,8 @@ type EditablePrintProps = {
   scribbleActive?: boolean;
   /** Per-page persistent native Ink canvas in the same expanded coordinates. */
   scribbleCanvas?: ReactNode;
+  /** Image display or terminal error gate for the root Entry transition. */
+  onImageReady?: () => void;
 };
 
 /** Create-only interaction shell around the output-identical canonical Print canvas. */
@@ -96,6 +98,7 @@ const EditablePrint = ({
   inkOverlayUri = null,
   scribbleActive = false,
   scribbleCanvas = null,
+  onImageReady,
 }: EditablePrintProps) => {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -256,6 +259,8 @@ const EditablePrint = ({
           imagePath={imageUri}
           presentationScale={presentationScale}
           inkOverlayPath={scribbleActive ? undefined : (inkOverlayUri ?? undefined)}
+          onImageDisplay={onImageReady}
+          onImageError={onImageReady}
           captionSurface={
             <PrintCaptionSurface
               ref={(node) => {

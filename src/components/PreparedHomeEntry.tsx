@@ -1,30 +1,40 @@
 /**
- * Display-only Entry used during Calendar-to-Home navigation.
+ * Display-only Entry used while a complete canonical Home Day is prepared.
  *
- * The transition needs the selected Entry's visible face, not another
- * interactive Home pager. Rendering only the first Artefact keeps the native
- * commit small; plain white silhouettes retain the one-to-five Stack shape
- * until the canonical interactive Entry is ready behind this cover.
+ * Calendar selection and successful Create Save share this cover. Rendering
+ * only the first Artefact keeps the native commit small; white silhouettes
+ * retain the one-to-five Stack shape until the canonical interactive Day is
+ * ready behind the opaque cover.
  */
+import { useEffect } from "react";
 import { View } from "react-native";
 import Animated, { useSharedValue } from "react-native-reanimated";
 
 import type { Entry } from "../data/entries";
 
+import { isUnknownArtefact } from "../data/entries";
 import ArtefactWrapper from "./ArtefactWrapper";
 import { deckClassName } from "./CollapsedDeck";
 import { Icon } from "./Icon";
 import { renderArtefactContent } from "./renderArtefactContent";
 
-type CalendarPreparedEntryProps = {
+type PreparedHomeEntryProps = {
   entry: Entry;
+  requestId: number;
+  onContentReady: (requestId: number) => void;
 };
 
-const CalendarPreparedEntry = ({ entry }: CalendarPreparedEntryProps) => {
+const PreparedHomeEntry = ({ entry, requestId, onContentReady }: PreparedHomeEntryProps) => {
   const progress = useSharedValue(0);
   const currentPage = useSharedValue(0);
   const activeIndex = useSharedValue(0);
   const firstArtefact = entry.artefacts[0];
+
+  useEffect(() => {
+    if (!firstArtefact || isUnknownArtefact(firstArtefact)) {
+      onContentReady(requestId);
+    }
+  }, [firstArtefact, onContentReady, requestId]);
 
   return (
     <View className="relative">
@@ -54,7 +64,11 @@ const CalendarPreparedEntry = ({ entry }: CalendarPreparedEntryProps) => {
             currentPage={currentPage}
             activeIndex={activeIndex}
           >
-            {renderArtefactContent(firstArtefact, firstArtefact.id)}
+            {renderArtefactContent(firstArtefact, firstArtefact.id, {
+              paperContentReadinessRequestId: requestId,
+              onPaperContentReady: onContentReady,
+              onPrintContentReady: () => onContentReady(requestId),
+            })}
           </ArtefactWrapper>
         ) : null}
       </Animated.View>
@@ -66,4 +80,4 @@ const CalendarPreparedEntry = ({ entry }: CalendarPreparedEntryProps) => {
   );
 };
 
-export default CalendarPreparedEntry;
+export default PreparedHomeEntry;

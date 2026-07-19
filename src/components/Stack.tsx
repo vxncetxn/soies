@@ -58,9 +58,9 @@ type StackProps = {
   collapseForWidgetTarget?: boolean;
   /** Clears the one-shot command after the expanded pager owns the target. */
   onWidgetTargetConsumed?: () => void;
-  /** Calendar request targeting the collapsed first Paper Artefact. */
+  /** Entry-transition request targeting the collapsed first Artefact. */
   firstArtefactReadinessRequestId?: number | null;
-  /** Reports when the collapsed first Paper has completed native text layout. */
+  /** Reports when the first Paper lays out or first Print displays/errors. */
   onFirstArtefactReady?: (requestId: number) => void;
 };
 

@@ -1,3 +1,23 @@
+import type { CubicBezier, SpringTransition, TimingTransition } from "react-native-ease";
+
+/** Shared Entry navigation contract for both outgoing and incoming surfaces. */
+export const ENTRY_TRANSITION_DURATION_MS = 350;
+
+/** Legacy Reanimated timing defaults preserved by the Ease migrations. */
+export const EASE_DEFAULT_TIMING: TimingTransition = {
+  type: "timing",
+  duration: 300,
+  easing: [0.455, 0.03, 0.515, 0.955],
+};
+export const EASE_CALENDAR_CURVE: CubicBezier = [0.25, 0.46, 0.45, 0.94];
+export const EASE_APPENDED_ARTEFACT_CURVE: CubicBezier = [0.215, 0.61, 0.355, 1];
+export const EASE_LEGACY_SPRING: SpringTransition = {
+  type: "spring",
+  damping: 120,
+  stiffness: 900,
+  mass: 4,
+};
+
 export const SPRING_CONFIG = {
   stiffness: 900,
   damping: 110,
@@ -42,10 +62,3 @@ export const BLOOM_RESIZE_SPRING = {
   damping: 28,
   mass: 0.9,
 };
-
-/** Create overlay: Home exit finishes at this progress slice. */
-export const CREATE_HOME_EXIT_END = 0.5;
-/** Create overlay: entries slide down this many px during Home exit. */
-export const CREATE_SLIDE_DISTANCE = 120;
-/** Create overlay open/close spring (reuses bloom feel). */
-export const CREATE_SPRING = BLOOM_SPRING;

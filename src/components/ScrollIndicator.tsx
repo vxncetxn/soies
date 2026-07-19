@@ -1,3 +1,5 @@
+import type { Transition } from "react-native-ease";
+
 /**
  * ScrollIndicator — long-press rail that expands into a scrubber with previews.
  *
@@ -21,25 +23,25 @@
 import { Image } from "expo-image";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { GestureResponderEvent, Text, View } from "react-native";
+import { EaseView } from "react-native-ease/uniwind";
 import Animated, {
   interpolate,
   SharedValue,
   useAnimatedReaction,
   useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { withUniwind } from "uniwind";
 
 import type { Entry } from "../data/entries";
 
+import { EASE_DEFAULT_TIMING, EASE_LEGACY_SPRING } from "../constants/animation";
 import {
   LONG_PRESS_MAX_DISTANCE_PX,
   SCROLL_INDICATOR_LONG_PRESS_MIN_DURATION_MS,
 } from "../constants/interaction";
 import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { triggerLongPressHaptic } from "../utils/haptics";
 
 const StyledImage = withUniwind(Image);
@@ -171,7 +173,8 @@ export const ScrollIndicator = ({
 }: ScrollIndicatorProps) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const expandedProgress = useSharedValue(0);
+  const [scrubberMounted, setScrubberMounted] = useState(false);
+  const reduceMotionEnabled = useReducedMotionPreference();
   const sessionRef = useRef<ScrubSession>({
     orientation,
     expanded: false,
@@ -226,7 +229,6 @@ export const ScrollIndicator = ({
     clearLongPressTimer();
     session.expanded = false;
     session.lastJumpIndex = -1;
-    expandedProgress.set(withTiming(0));
     setExpanded(false);
   };
 
@@ -237,7 +239,7 @@ export const ScrollIndicator = ({
     session.expanded = true;
     session.panStartIndex = Math.max(0, Math.min(session.count - 1, Math.round(currentPage.get())));
     session.lastJumpIndex = session.panStartIndex;
-    expandedProgress.set(withSpring(1));
+    setScrubberMounted(true);
     setExpanded(true);
   };
 
@@ -296,10 +298,11 @@ export const ScrollIndicator = ({
     }
   };
 
-  const expandedStyle = useAnimatedStyle(() => ({
-    opacity: expandedProgress.get(),
-    transform: [{ scale: interpolate(expandedProgress.get(), [0, 1], [0.96, 1]) }],
-  }));
+  const scrubberTransition: Transition = reduceMotionEnabled
+    ? { type: "none" }
+    : expanded
+      ? EASE_LEGACY_SPRING
+      : EASE_DEFAULT_TIMING;
 
   if (count <= 1) {
     return null;
@@ -351,9 +354,17 @@ export const ScrollIndicator = ({
       accessibilityLabel="Scroll indicator"
       accessibilityHint="Long press and drag to scrub pages"
     >
-      {expanded ? (
-        <Animated.View
-          style={expandedStyle}
+      {scrubberMounted ? (
+        <EaseView
+          initialAnimate={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: expanded ? 1 : 0, scale: expanded ? 1 : 0.96 }}
+          transition={scrubberTransition}
+          onTransitionEnd={(event) => {
+            if (event.finished && !expanded) {
+              setScrubberMounted(false);
+            }
+          }}
+          pointerEvents={expanded ? "auto" : "none"}
           className={
             orientation === "vertical"
               ? "flex-row items-center gap-3 rounded-4xl border border-controls-border bg-controls-background p-3"
@@ -362,7 +373,7 @@ export const ScrollIndicator = ({
         >
           {previews}
           {rail}
-        </Animated.View>
+        </EaseView>
       ) : (
         <View className="rounded-4xl border border-controls-border bg-controls-background">
           {rail}

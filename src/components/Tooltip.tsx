@@ -5,14 +5,12 @@
  * Position with `anchor` (measureInWindow) or absolute `style` from the parent.
  * First consumer: max-artefacts hint on create document-plus.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import { EaseView } from "react-native-ease";
+
+import { EASE_DEFAULT_TIMING } from "../constants/animation";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 
 const FADE_MS = 150;
 const DEFAULT_DURATION_MS = 2000;
@@ -33,49 +31,61 @@ const Tooltip = ({
   durationMs = DEFAULT_DURATION_MS,
   style,
 }: TooltipProps) => {
-  const opacity = useSharedValue(0);
+  const reduceMotionEnabled = useReducedMotionPreference();
+  const [display, setDisplay] = useState({ requested: visible, mounted: visible, shown: visible });
+
+  if (display.requested !== visible) {
+    setDisplay({
+      requested: visible,
+      mounted: visible || display.mounted,
+      shown: visible,
+    });
+  }
 
   useEffect(() => {
     if (!visible) {
-      opacity.set(withTiming(0, { duration: FADE_MS }));
       return;
     }
-
-    opacity.set(withTiming(1, { duration: FADE_MS }));
     const timer = setTimeout(() => {
-      opacity.set(
-        withTiming(0, { duration: FADE_MS }, (finished) => {
-          if (finished) {
-            runOnJS(onDismiss)();
-          }
-        }),
-      );
+      setDisplay((current) => ({ ...current, shown: false }));
     }, durationMs);
 
     return () => clearTimeout(timer);
-  }, [visible, durationMs, onDismiss, opacity]);
+  }, [visible, durationMs]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.get(),
-  }));
-
-  if (!visible) {
+  if (!display.mounted) {
     return null;
   }
 
   return (
-    <Animated.View
+    <EaseView
       pointerEvents="box-none"
-      style={[styles.wrap, style, animatedStyle]}
+      style={[styles.wrap, style]}
+      initialAnimate={{ opacity: 0 }}
+      animate={{ opacity: display.shown ? 1 : 0 }}
+      transition={
+        reduceMotionEnabled ? { type: "none" } : { ...EASE_DEFAULT_TIMING, duration: FADE_MS }
+      }
+      onTransitionEnd={(event) => {
+        if (!event.finished || display.shown) {
+          return;
+        }
+        setDisplay((current) => ({ ...current, mounted: false }));
+        onDismiss();
+      }}
       accessibilityRole="text"
       accessibilityLabel={message}
     >
-      <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss tip">
+      <Pressable
+        onPress={() => setDisplay((current) => ({ ...current, shown: false }))}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss tip"
+      >
         <View style={styles.bubble}>
           <Text style={styles.text}>{message}</Text>
         </View>
       </Pressable>
-    </Animated.View>
+    </EaseView>
   );
 };
 

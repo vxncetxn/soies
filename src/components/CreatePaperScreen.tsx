@@ -14,7 +14,7 @@
  *
  * Closing is deliberately two-phase. Native responders are resigned and
  * focus-driven React updates are frozen while the root-owned tree is mounted;
- * the Create close spring starts on the following frame. The complete Create
+ * the shared Entry transition starts on the following frame. The complete Create
  * screen stays in one root Fabric hierarchy; only its small Bloom menu portals,
  * preventing nested native reparenting during teardown.
  *
@@ -27,7 +27,7 @@ import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import Animated, { type SharedValue, useAnimatedProps } from "react-native-reanimated";
+import Animated, { useAnimatedProps } from "react-native-reanimated";
 
 import type { DraftInk } from "../data/ink";
 import type { PaperDocument, PaperParagraphPreset } from "../data/paperDocument";
@@ -42,7 +42,7 @@ import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
 import { useScribbleSession } from "../hooks/useScribbleSession";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
-import { useCreateContext, useEntriesVersion } from "./CreateContext";
+import { useCreateContext } from "./CreateContext";
 import CreateScreenChrome from "./CreateScreenChrome";
 import EditablePaper from "./EditablePaper";
 import FeatureErrorBoundary from "./feature-error-boundary";
@@ -78,13 +78,12 @@ function selectionStatesEqual(left: PaperSelectionState, right: PaperSelectionSt
 }
 
 type CreatePaperScreenProps = {
-  progress: SharedValue<number>;
   date: string;
-  onClose: () => void;
+  onClose: (reason?: "cancel" | "save") => void;
+  onFirstArtefactReady: () => void;
 };
 
-const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) => {
-  const { bumpEntriesVersion } = useEntriesVersion();
+const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperScreenProps) => {
   const { setCreateSessionBusy } = useCreateContext();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
   const { width: windowWidth } = useWindowDimensions();
@@ -192,8 +191,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
         artefacts: artefacts.map((a) => ({ document: a.document, ink: a.ink })),
       }),
     onSuccess: () => {
-      bumpEntriesVersion();
-      handleClose();
+      handleClose("save");
     },
   });
 
@@ -238,7 +236,6 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
       title="Couldn’t continue editing this Paper draft."
     >
       <CreateScreenChrome
-        progress={progress}
         expandProgress={expandProgress}
         typeLabel="PAPER"
         title={title}
@@ -336,6 +333,7 @@ const CreatePaperScreen = ({ progress, date, onClose }: CreatePaperScreenProps) 
                         locked={scribbleSaving}
                       />
                     }
+                    onContentReady={index === 0 ? onFirstArtefactReady : undefined}
                   />
                 </View>
               </Animated.ScrollView>
