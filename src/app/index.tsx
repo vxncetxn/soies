@@ -16,7 +16,7 @@
  *
  * The screen intentionally keeps all scroll state in Reanimated shared values
  * (not React state) so scrolling never triggers React re-renders — the UI
- * thread reads the values directly inside `useAnimatedStyle`/`useDerivedValue`.
+ * thread reads the values directly inside worklets and `useDerivedValue`.
  *
  * Calendar-origin navigation starts the selected Day query during native
  * dismissal and mounts its result below the viewport. Only after dismissal
@@ -26,18 +26,18 @@
  */
 import { type ErrorBoundaryProps, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View, useWindowDimensions } from "react-native";
-import Animated, {
-  Easing,
-  ReduceMotion,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useDerivedValue,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { EaseView, type Transition, type TransitionEndEvent } from "react-native-ease/uniwind";
+import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import AppErrorFallback from "../components/app-error-fallback";
 import CalendarPreparedEntry from "../components/CalendarPreparedEntry";
@@ -90,6 +90,35 @@ type CalendarTransitionState = {
   sheetDismissed: boolean;
 };
 
+type CalendarBodyAnimation =
+  | { phase: "visible"; requestId: null }
+  | { phase: "exiting"; requestId: number }
+  | { phase: "resetting"; requestId: number }
+  | { phase: "recovering"; requestId: number | null };
+
+function useReducedMotionPreference() {
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const subscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      setReduceMotionEnabled,
+    );
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active) {
+        setReduceMotionEnabled(enabled);
+      }
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  return reduceMotionEnabled;
+}
+
 function HomeScreen() {
   const searchParams = useLocalSearchParams<WidgetSearchParams>();
   const router = useRouter();
@@ -97,6 +126,7 @@ function HomeScreen() {
   const { entriesVersion } = useEntriesVersion();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
+  const reduceMotionEnabled = useReducedMotionPreference();
 
   const routeDate = Array.isArray(searchParams.date) ? searchParams.date[0] : searchParams.date;
   const effectiveDate = validISODateOr(routeDate, todayISO());
@@ -131,6 +161,10 @@ function HomeScreen() {
   const [calendarCanonicalEntryReadyRequestId, setCalendarCanonicalEntryReadyRequestId] = useState<
     number | null
   >(null);
+  const [calendarBodyAnimation, setCalendarBodyAnimation] = useState<CalendarBodyAnimation>({
+    phase: "visible",
+    requestId: null,
+  });
   const [calendarBodyTransitionActive, setCalendarBodyTransitionActive] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarOpenRequestedAt, setCalendarOpenRequestedAt] = useState<number | null>(null);
@@ -140,25 +174,6 @@ function HomeScreen() {
   const calendarEntranceStartedRequestIdRef = useRef<number | null>(null);
   const calendarTransitionStateRef = useRef<CalendarTransitionState | null>(null);
   const pendingCalendarFailureRequestRef = useRef<number | null>(null);
-  const calendarRevealProgress = useSharedValue(1);
-  const calendarEntranceProgress = useSharedValue(0);
-  const calendarPreparedCommitRequestId = useSharedValue(0);
-  const calendarExitCompletedRequestId = useSharedValue(0);
-  const calendarEntranceStartedRequestId = useSharedValue(0);
-  const calendarRevealStyle = useAnimatedStyle(() => {
-    const progress = calendarRevealProgress.get();
-    return {
-      opacity: progress,
-      transform: [{ translateY: (1 - progress) * window.height }],
-    };
-  });
-  const calendarEntranceStyle = useAnimatedStyle(() => {
-    const progress = calendarEntranceProgress.get();
-    return {
-      opacity: progress,
-      transform: [{ translateY: (1 - progress) * window.height }],
-    };
-  });
 
   // Never let an impossible external route value reach repository queries.
   // Canonicalising the URL also keeps subsequent navigation and widget actions
@@ -368,10 +383,6 @@ function HomeScreen() {
 
   const clearPreparedCalendarTransition = () => {
     calendarEntranceStartedRequestIdRef.current = null;
-    calendarEntranceProgress.set(0);
-    calendarPreparedCommitRequestId.set(0);
-    calendarExitCompletedRequestId.set(0);
-    calendarEntranceStartedRequestId.set(0);
     setCalendarPreparedHandoff(null);
     setCalendarEntranceHandoff(null);
     setCalendarExitFinishedRequestId(null);
@@ -381,13 +392,7 @@ function HomeScreen() {
   };
 
   const restoreCalendarBodyAfterFailure = () => {
-    calendarRevealProgress.set(
-      withTiming(1, {
-        duration: CALENDAR_ENTRY_EXIT_MS,
-        easing: Easing.out(Easing.cubic),
-        reduceMotion: ReduceMotion.System,
-      }),
-    );
+    setCalendarBodyAnimation({ phase: "recovering", requestId: null });
   };
 
   const showCalendarNavigationFailure = () => {
@@ -413,13 +418,10 @@ function HomeScreen() {
   const navigateFromCalendar = (day: string, entryId: string | null): number => {
     setPendingWidgetTarget(null);
     clearPreparedCalendarTransition();
+    setCalendarBodyAnimation({ phase: "visible", requestId: null });
     setCalendarBodyTransitionActive(true);
     const requestId = calendarNavigationCoordinator.begin(day, entryId);
     calendarTransitionStateRef.current = { requestId, sheetDismissed: false };
-    calendarEntranceProgress.set(0);
-    calendarPreparedCommitRequestId.set(0);
-    calendarExitCompletedRequestId.set(0);
-    calendarEntranceStartedRequestId.set(0);
 
     void loadEntriesCached(day, () => getEntriesByDate(day))
       .then((nextEntries) => {
@@ -466,47 +468,53 @@ function HomeScreen() {
     // Native dismissal has completely settled at zero. Only now may the old
     // Home body start its visible exit; the Day query has already been running
     // throughout the sheet collapse and may have staged its replacement below.
-    calendarRevealProgress.set(
-      withTiming(
-        0,
-        {
-          duration: CALENDAR_ENTRY_EXIT_MS,
-          easing: Easing.in(Easing.cubic),
-          reduceMotion: ReduceMotion.System,
-        },
-        (finished) => {
-          if (finished) {
-            calendarExitCompletedRequestId.set(requestId);
-            scheduleOnRN(setCalendarExitFinishedRequestId, requestId);
-            if (
-              calendarPreparedCommitRequestId.get() === requestId &&
-              calendarEntranceStartedRequestId.get() !== requestId
-            ) {
-              calendarEntranceStartedRequestId.set(requestId);
-              calendarEntranceProgress.set(
-                withTiming(
-                  1,
-                  {
-                    duration: CALENDAR_ENTRY_REVEAL_MS,
-                    easing: Easing.out(Easing.cubic),
-                    reduceMotion: ReduceMotion.System,
-                  },
-                  (entranceFinished) => {
-                    if (entranceFinished) {
-                      // The prepared layer is fully opaque now. Return Home to
-                      // final geometry before React mounts the canonical Day
-                      // behind it, avoiding clipping churn and animated work.
-                      calendarRevealProgress.set(1);
-                      scheduleOnRN(setCalendarEntranceFinishedRequestId, requestId);
-                    }
-                  },
-                ),
-              );
-            }
-          }
-        },
-      ),
-    );
+    setCalendarBodyAnimation({ phase: "exiting", requestId });
+  };
+
+  const calendarBodyIsVisible = calendarBodyAnimation.phase !== "exiting";
+  const calendarEntranceIsVisible =
+    calendarPreparedHandoff != null &&
+    calendarEntranceHandoff?.requestId === calendarPreparedHandoff.requestId;
+  const calendarBodyTransition: Transition =
+    reduceMotionEnabled ||
+    calendarBodyAnimation.phase === "visible" ||
+    calendarBodyAnimation.phase === "resetting"
+      ? { type: "none" }
+      : calendarBodyAnimation.phase === "exiting"
+        ? { type: "timing", duration: CALENDAR_ENTRY_EXIT_MS, easing: "easeIn" }
+        : { type: "timing", duration: CALENDAR_ENTRY_EXIT_MS, easing: "easeOut" };
+  const calendarEntranceTransition: Transition = reduceMotionEnabled
+    ? { type: "none" }
+    : { type: "timing", duration: CALENDAR_ENTRY_REVEAL_MS, easing: "easeOut" };
+
+  const handleCalendarBodyTransitionEnd = (event: TransitionEndEvent) => {
+    if (
+      !event.finished ||
+      calendarBodyAnimation.phase !== "exiting" ||
+      calendarExitFinishedRequestId === calendarBodyAnimation.requestId
+    ) {
+      return;
+    }
+    const requestId = calendarBodyAnimation.requestId;
+    calendarNavigationCoordinator.exitFinished(requestId);
+    setCalendarExitFinishedRequestId(requestId);
+  };
+
+  const handleCalendarEntranceTransitionEnd = (event: TransitionEndEvent) => {
+    if (
+      !event.finished ||
+      !calendarPreparedHandoff ||
+      calendarEntranceHandoff?.requestId !== calendarPreparedHandoff.requestId ||
+      calendarEntranceFinishedRequestId === calendarPreparedHandoff.requestId
+    ) {
+      return;
+    }
+    const requestId = calendarPreparedHandoff.requestId;
+    // The prepared layer is now stationary and opaque. Reset canonical Home
+    // to final geometry without another animation before adopting the full Day
+    // behind that cover.
+    setCalendarBodyAnimation({ phase: "resetting", requestId });
+    setCalendarEntranceFinishedRequestId(requestId);
   };
 
   const widgetTargetForPager = widgetTargetForEntries(pendingWidgetTarget, effectiveDate, entries);
@@ -556,59 +564,6 @@ function HomeScreen() {
   }, [effectiveDate, scrollOffset]);
 
   useLayoutEffect(() => {
-    if (!calendarPreparedHandoff) {
-      calendarPreparedCommitRequestId.set(0);
-      return;
-    }
-    const requestId = calendarPreparedHandoff.requestId;
-    // This signal is written only after React has committed the off-screen
-    // prepared Day. If the exit already finished, start the late-data entrance
-    // here; otherwise its UI-thread completion callback starts it immediately.
-    // Keeping the readiness check and write on the UI runtime avoids a lost
-    // wake-up if React commits preparation in the same frame that exit settles.
-    scheduleOnUI(() => {
-      "worklet";
-      calendarPreparedCommitRequestId.set(requestId);
-      if (
-        calendarExitCompletedRequestId.get() === requestId &&
-        calendarEntranceStartedRequestId.get() !== requestId
-      ) {
-        calendarEntranceStartedRequestId.set(requestId);
-        calendarEntranceProgress.set(
-          withTiming(
-            1,
-            {
-              duration: CALENDAR_ENTRY_REVEAL_MS,
-              easing: Easing.out(Easing.cubic),
-              reduceMotion: ReduceMotion.System,
-            },
-            (finished) => {
-              if (finished) {
-                calendarRevealProgress.set(1);
-                scheduleOnRN(setCalendarEntranceFinishedRequestId, requestId);
-              }
-            },
-          ),
-        );
-      }
-    });
-  }, [
-    calendarEntranceProgress,
-    calendarEntranceStartedRequestId,
-    calendarExitCompletedRequestId,
-    calendarPreparedCommitRequestId,
-    calendarPreparedHandoff,
-    calendarRevealProgress,
-  ]);
-
-  useLayoutEffect(() => {
-    if (calendarExitFinishedRequestId == null) {
-      return;
-    }
-    calendarNavigationCoordinator.exitFinished(calendarExitFinishedRequestId);
-  }, [calendarExitFinishedRequestId, calendarNavigationCoordinator]);
-
-  useLayoutEffect(() => {
     if (
       !calendarPreparedHandoff ||
       !calendarEntranceHandoff ||
@@ -641,10 +596,7 @@ function HomeScreen() {
         return;
       }
       calendarEntranceStartedRequestIdRef.current = null;
-      calendarEntranceProgress.set(0);
-      calendarPreparedCommitRequestId.set(0);
-      calendarExitCompletedRequestId.set(0);
-      calendarEntranceStartedRequestId.set(0);
+      setCalendarBodyAnimation({ phase: "visible", requestId: null });
       setCalendarPreparedHandoff(null);
       setCalendarEntranceHandoff(null);
       setCalendarExitFinishedRequestId(null);
@@ -656,11 +608,7 @@ function HomeScreen() {
     return () => cancelAnimationFrame(retirePreparedFrame);
   }, [
     calendarEntranceFinishedRequestId,
-    calendarEntranceProgress,
-    calendarEntranceStartedRequestId,
     calendarCanonicalEntryReadyRequestId,
-    calendarExitCompletedRequestId,
-    calendarPreparedCommitRequestId,
     calendarPreparedHandoff,
     calendarPreparedEntry,
     effectiveDate,
@@ -713,9 +661,14 @@ function HomeScreen() {
       />
 
       <View className="relative flex-1">
-        <Animated.View
+        <EaseView
           className="absolute inset-0"
-          style={calendarRevealStyle}
+          animate={{
+            opacity: calendarBodyIsVisible ? 1 : 0,
+            translateY: calendarBodyIsVisible ? 0 : window.height,
+          }}
+          transition={calendarBodyTransition}
+          onTransitionEnd={handleCalendarBodyTransitionEnd}
           pointerEvents={calendarBodyTransitionActive ? "none" : "auto"}
           accessibilityElementsHidden={calendarBodyTransitionActive}
           importantForAccessibility={calendarBodyTransitionActive ? "no-hide-descendants" : "auto"}
@@ -766,12 +719,18 @@ function HomeScreen() {
               onEntryContentReady={handleEntryContentReady}
             />
           )}
-        </Animated.View>
+        </EaseView>
 
         {calendarPreparedHandoff ? (
-          <Animated.View
+          <EaseView
             className="absolute inset-0 bg-background"
-            style={calendarEntranceStyle}
+            initialAnimate={{ opacity: 0, translateY: window.height }}
+            animate={{
+              opacity: calendarEntranceIsVisible ? 1 : 0,
+              translateY: calendarEntranceIsVisible ? 0 : window.height,
+            }}
+            transition={calendarEntranceTransition}
+            onTransitionEnd={handleCalendarEntranceTransitionEnd}
             pointerEvents="none"
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
@@ -785,7 +744,7 @@ function HomeScreen() {
                 <CalendarPreparedEntry entry={calendarPreparedEntry} />
               </View>
             )}
-          </Animated.View>
+          </EaseView>
         ) : null}
       </View>
       <CalendarSheet

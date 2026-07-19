@@ -146,16 +146,23 @@ test("Calendar selection replaces Home through a full-viewport exit and entrance
   assert.match(home, /CALENDAR_ENTRY_EXIT_MS = 350/);
   assert.match(home, /CALENDAR_ENTRY_REVEAL_MS = 350/);
   assert.doesNotMatch(home, /CALENDAR_ENTRY_REVEAL_OFFSET/);
-  assert.match(home, /\(1 - progress\) \* window\.height/);
-  assert.doesNotMatch(selectionHandler, /calendarRevealProgress\.set\(/);
+  assert.match(home, /from "react-native-ease\/uniwind"/);
+  assert.match(home, /translateY: calendarBodyIsVisible \? 0 : window\.height/);
+  assert.match(home, /translateY: calendarEntranceIsVisible \? 0 : window\.height/);
+  assert.doesNotMatch(home, /calendarRevealProgress|calendarEntranceProgress/);
+  assert.doesNotMatch(home, /scheduleOnRN|scheduleOnUI/);
+  assert.doesNotMatch(selectionHandler, /phase: "exiting"/);
   assert.match(selectionHandler, /loadEntriesCached\(day/);
   assert.match(selectionHandler, /setCalendarPreparedHandoff/);
-  assert.match(dismissalHandler, /calendarRevealProgress\.set\(\s*withTiming\(\s*0,/);
-  assert.match(home, /scheduleOnRN\(setCalendarExitFinishedRequestId, requestId\)/);
+  assert.match(dismissalHandler, /setCalendarBodyAnimation\(\{ phase: "exiting", requestId \}\)/);
+  assert.match(home, /<EaseView/);
+  assert.match(home, /onTransitionEnd=\{handleCalendarBodyTransitionEnd\}/);
+  assert.match(home, /onTransitionEnd=\{handleCalendarEntranceTransitionEnd\}/);
+  assert.match(home, /event\.finished/);
+  assert.match(home, /type: "timing", duration: CALENDAR_ENTRY_EXIT_MS, easing: "easeIn"/);
+  assert.match(home, /type: "timing", duration: CALENDAR_ENTRY_REVEAL_MS, easing: "easeOut"/);
+  assert.match(home, /phase: "resetting"/);
   assert.match(home, /calendarPreparedHandoff/);
-  assert.match(home, /calendarPreparedCommitRequestId/);
-  assert.match(home, /scheduleOnUI\(\(\) => \{/);
-  assert.match(home, /calendarEntranceProgress/);
   assert.match(
     home,
     /calendarEntranceFinishedRequestId === calendarPreparedHandoff\.requestId[\s\S]{0,500}adoptCalendarHandoff\(calendarPreparedHandoff\)/,
@@ -166,7 +173,10 @@ test("Calendar selection replaces Home through a full-viewport exit and entrance
   );
   assert.match(home, /calendarPreparedEntry/);
   assert.match(home, /<CalendarPreparedEntry entry=\{calendarPreparedEntry\} \/>/);
-  assert.match(home, /className="absolute inset-0 bg-background"/);
+  assert.match(
+    home,
+    /className="(?=[^"]*\babsolute\b)(?=[^"]*\binset-0\b)(?=[^"]*\bbg-background\b)[^"]*"/,
+  );
   assert.doesNotMatch(home, /entries=\{\[calendarPreparedEntry\]\}/);
   assert.doesNotMatch(home, /entries=\{calendarPreparedHandoff\.entries\}/);
   assert.match(preparedEntry, /entry\.artefacts\[0\]/);
