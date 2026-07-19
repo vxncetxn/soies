@@ -19,11 +19,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  formatMonthlyHeading,
-  formatRecentHeading,
-  type CalendarHeading,
-} from "../data/calendarBrowse";
+import { LAYOUT } from "../constants/layout";
+import { formatMonthlyHeading, type CalendarHeading } from "../data/calendarBrowse";
 import {
   invalidateCalendarBrowseCaches,
   warmCalendarBrowseData,
@@ -42,9 +39,7 @@ const SHEET_SURFACE = "#FFFFFF";
 const SHEET_RADIUS = 24;
 const TAB_FADE_MS = 160;
 const BOTTOM_FADE_SIZE = 90;
-const RECENT_HEADER_OPAQUE_HEIGHT = 146;
-const MONTHLY_HEADER_OPAQUE_HEIGHT = 194;
-const HEADER_FADE_SIZE = 36;
+const { CALENDAR_SHEET } = LAYOUT;
 
 type CalendarSheetProps = {
   dataVersion: number;
@@ -93,7 +88,6 @@ export default function CalendarSheet({
   const [activeTab, setActiveTab] = useState<CalendarTab>("recent");
   const [contentMounted, setContentMounted] = useState(false);
   const [browseResetVersion, setBrowseResetVersion] = useState(0);
-  const [recentFocusedDay, setRecentFocusedDay] = useState(() => todayISO());
   const [monthlyFocusedMonth, setMonthlyFocusedMonth] = useState(() => todayISO().slice(0, 7));
   const [presentationSelectedDay, setPresentationSelectedDay] = useState(selectedDay);
   const [creationDay, setCreationDay] = useState<string | null>(null);
@@ -168,7 +162,6 @@ export default function CalendarSheet({
       openStartedAtRef.current = openRequestedAt ?? performance.now();
       openingMeasuredRef.current = false;
       const today = todayISO();
-      setRecentFocusedDay(today);
       setMonthlyFocusedMonth(today.slice(0, 7));
       setPresentationSelectedDay(selectedDay);
       recentOpacity.set(activeTab === "recent" ? 1 : 0);
@@ -233,7 +226,7 @@ export default function CalendarSheet({
         <CalendarRecentTab
           key={`recent:${dataVersion}`}
           resetVersion={browseResetVersion}
-          onFocusedDayChange={setRecentFocusedDay}
+          scrollEnabled={activeTab === "recent"}
           onHasMoreBelowChange={(hasMoreBelow) => {
             hasMoreBelowByTabRef.current.recent = hasMoreBelow;
             if (activeTab === "recent") {
@@ -278,6 +271,7 @@ export default function CalendarSheet({
       <CalendarMonthlyTab
         key={`monthly:${dataVersion}`}
         resetVersion={browseResetVersion}
+        scrollEnabled={activeTab === "monthly"}
         minDay={rangeStartDay}
         maxDay={currentDay}
         selectedDay={presentationSelectedDay}
@@ -296,18 +290,17 @@ export default function CalendarSheet({
     );
   };
 
-  const heading =
-    activeTab === "recent"
-      ? formatRecentHeading(recentFocusedDay)
-      : formatMonthlyHeading(monthlyFocusedMonth);
   const headerOpaqueHeight =
-    activeTab === "monthly" ? MONTHLY_HEADER_OPAQUE_HEIGHT : RECENT_HEADER_OPAQUE_HEIGHT;
+    activeTab === "monthly"
+      ? CALENDAR_SHEET.MONTHLY_HEADER_HEIGHT
+      : CALENDAR_SHEET.RECENT_HEADER_HEIGHT;
 
   return (
     <ModalBottomSheet
       index={open ? 1 : 0}
       detents={[0, sheetHeight]}
       animateIn={false}
+      disableScrollableNegotiation
       extendUnderStatusBar
       scrimColor="rgba(0,0,0,0.35)"
       surface={<View style={[StyleSheet.absoluteFill, styles.surface]} />}
@@ -368,13 +361,22 @@ export default function CalendarSheet({
                 {(["recent", "monthly"] as const).map((tab) => {
                   const isActive = tab === activeTab;
                   return (
+                    // The native sheet finds scrollables geometrically, even
+                    // behind overlays. This real top boundary keeps header
+                    // pulls draggable while list pulls remain with the list.
                     <Animated.View
                       key={tab}
                       pointerEvents={isActive ? "auto" : "none"}
                       accessibilityElementsHidden={!isActive}
                       importantForAccessibility={isActive ? "auto" : "no-hide-descendants"}
                       style={[
-                        StyleSheet.absoluteFill,
+                        styles.tabBody,
+                        {
+                          top:
+                            tab === "recent"
+                              ? CALENDAR_SHEET.RECENT_HEADER_HEIGHT
+                              : CALENDAR_SHEET.MONTHLY_HEADER_HEIGHT,
+                        },
                         tab === "recent" ? recentStyle : monthlyStyle,
                         isActive ? styles.activeTabBody : styles.outgoingTabBody,
                       ]}
@@ -395,9 +397,12 @@ export default function CalendarSheet({
           pointerEvents="none"
           mode="overlay"
           color={SHEET_SURFACE}
-          top={HEADER_FADE_SIZE}
+          top={CALENDAR_SHEET.HEADER_FADE_HEIGHT}
           bottom={0}
-          style={[styles.headerFade, { height: HEADER_FADE_SIZE, top: headerOpaqueHeight }]}
+          style={[
+            styles.headerFade,
+            { height: CALENDAR_SHEET.HEADER_FADE_HEIGHT, top: headerOpaqueHeight },
+          ]}
         >
           <View style={StyleSheet.absoluteFill} />
         </AnimatedEdgeFadeView>
@@ -423,15 +428,17 @@ export default function CalendarSheet({
               </Text>
             </Pressable>
           </View>
-          <Heading heading={heading} />
           {activeTab === "monthly" ? (
-            <View style={styles.weekdays}>
-              {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
-                <Text key={index} style={styles.weekday}>
-                  {label}
-                </Text>
-              ))}
-            </View>
+            <>
+              <Heading heading={formatMonthlyHeading(monthlyFocusedMonth)} />
+              <View style={styles.weekdays}>
+                {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
+                  <Text key={index} style={styles.weekday}>
+                    {label}
+                  </Text>
+                ))}
+              </View>
+            </>
           ) : null}
         </View>
 
@@ -489,6 +496,12 @@ const styles = StyleSheet.create({
   },
   activeTabBody: {
     zIndex: 2,
+  },
+  tabBody: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
   },
   outgoingTabBody: {
     zIndex: 1,

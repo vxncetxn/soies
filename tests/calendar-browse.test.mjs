@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   formatMonthlyHeading,
+  formatRecentDayLabel,
   formatRecentHeading,
   monthBounds,
   monthIdsBetween,
@@ -95,6 +96,10 @@ test("calendar headings use the fixed lowercase English mockup format", () => {
     text: "september",
     year: "2026",
   });
+});
+
+test("Recent Day labels use the compact uppercase English mockup format", () => {
+  assert.equal(formatRecentDayLabel("2026-09-30"), "30 SEP 2026");
 });
 
 test("Day cache evicts the least recently used Day at its bound", () => {

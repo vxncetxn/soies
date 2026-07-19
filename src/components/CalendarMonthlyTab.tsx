@@ -17,6 +17,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 
+import { LAYOUT } from "../constants/layout";
 import {
   formatRecentHeading,
   mondayFirstWeekCount,
@@ -28,7 +29,8 @@ import {
 } from "../data/calendarBrowse";
 import { loadMonthTypePresence } from "../data/calendarBrowseCache";
 
-export const MONTHLY_CONTENT_TOP = 214;
+const MONTHLY_CONTENT_INSET =
+  LAYOUT.CALENDAR_SHEET.MONTHLY_CONTENT_TOP - LAYOUT.CALENDAR_SHEET.MONTHLY_HEADER_HEIGHT;
 const CONTENT_GUTTER = 20;
 const CONTENT_MAX_WIDTH = 600;
 const DAY_HEIGHT = 44;
@@ -53,7 +55,7 @@ function monthHeight(monthId: string): number {
 }
 
 function buildMonthFrames(items: readonly MonthItem[]): PeriodFrame[] {
-  let offset = MONTHLY_CONTENT_TOP;
+  let offset = MONTHLY_CONTENT_INSET;
   return items.map((item) => {
     const frame = { id: item.id, start: offset, end: offset + item.height };
     offset = frame.end;
@@ -184,6 +186,7 @@ function MonthGrid({
 
 type CalendarMonthlyTabProps = {
   resetVersion: number;
+  scrollEnabled: boolean;
   maxDay: string;
   minDay: string;
   selectedDay: string;
@@ -194,6 +197,7 @@ type CalendarMonthlyTabProps = {
 
 export default function CalendarMonthlyTab({
   resetVersion,
+  scrollEnabled,
   maxDay,
   minDay,
   selectedDay,
@@ -212,7 +216,8 @@ export default function CalendarMonthlyTab({
   const firstMonth = minDay.slice(0, 7);
   // Leave enough trailing space for the final (current) month to sit directly
   // below the fixed header instead of being pushed down by the scroll bound.
-  const currentMonthTrailingSpace = window.height - MONTHLY_CONTENT_TOP - monthHeight(currentMonth);
+  const currentMonthTrailingSpace =
+    window.height - LAYOUT.CALENDAR_SHEET.MONTHLY_CONTENT_TOP - monthHeight(currentMonth);
   const bottomPadding =
     currentMonthTrailingSpace > MIN_BOTTOM_PADDING ? currentMonthTrailingSpace : MIN_BOTTOM_PADDING;
   const listRef = useRef<FlashListRef<MonthItem>>(null);
@@ -379,6 +384,7 @@ export default function CalendarMonthlyTab({
         key={`monthly-list:${resetVersion}`}
         ref={listRef}
         data={monthItems}
+        scrollEnabled={scrollEnabled}
         initialScrollIndex={monthItems.length - 1}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
@@ -395,7 +401,7 @@ export default function CalendarMonthlyTab({
             />
           </View>
         )}
-        contentContainerStyle={{ paddingTop: MONTHLY_CONTENT_TOP, paddingBottom: bottomPadding }}
+        contentContainerStyle={{ paddingTop: MONTHLY_CONTENT_INSET, paddingBottom: bottomPadding }}
         drawDistance={monthHeight(currentMonth)}
         maxItemsInRecyclePool={6}
         onLoad={() => {
@@ -482,7 +488,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     position: "absolute",
-    top: MONTHLY_CONTENT_TOP - 34,
+    top: MONTHLY_CONTENT_INSET - 34,
     zIndex: 5,
   },
   markerErrorText: {

@@ -14,60 +14,46 @@ import {
 
 import type { RecentEntryCursor, RecentEntryPreviewPage } from "../db/repositories/entries";
 
+import { LAYOUT } from "../constants/layout";
 import {
+  formatRecentDayLabel,
   packRecentEntryRows,
-  resolveFocusedPeriod,
   type CalendarEntryPreview,
-  type PeriodFrame,
   type RecentEntryRow,
 } from "../data/calendarBrowse";
 import { loadRecentPreviewPage } from "../data/calendarBrowseCache";
 import CalendarEntryPreviewCard from "./CalendarEntryPreview";
 
-export const RECENT_CONTENT_TOP = 170;
+const RECENT_CONTENT_INSET =
+  LAYOUT.CALENDAR_SHEET.RECENT_CONTENT_TOP - LAYOUT.CALENDAR_SHEET.RECENT_HEADER_HEIGHT;
 const CONTENT_GUTTER = 20;
 const CONTENT_MAX_WIDTH = 620;
 const CARD_GAP = 10;
-const FOCUS_HYSTERESIS = 12;
 const BOTTOM_PADDING = 96;
 const EAGER_PREVIEW_ROW_COUNT = 4;
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 };
 
 type CalendarRecentTabProps = {
   resetVersion: number;
-  onFocusedDayChange: (day: string) => void;
+  scrollEnabled: boolean;
   onHasMoreBelowChange: (hasMoreBelow: boolean) => void;
   onSelectEntry: (day: string, entryId: string) => void;
 };
 
-function periodFrames(rows: readonly RecentEntryRow[], rowHeight: number): PeriodFrame[] {
-  const frames: PeriodFrame[] = [];
-  rows.forEach((row, index) => {
-    const start = RECENT_CONTENT_TOP + index * (rowHeight + CARD_GAP);
-    const end = start + rowHeight;
-    const previous = frames.at(-1);
-    if (previous?.id === row.day) {
-      previous.end = end;
-    } else {
-      frames.push({ id: row.day, start, end });
-    }
-  });
-  return frames;
-}
-
-function LoadingRows({ width, height }: { width: number; height: number }) {
+function LoadingRow({ width, height }: { width: number; height: number }) {
   return (
-    <View style={{ paddingTop: RECENT_CONTENT_TOP, width, alignSelf: "center", gap: CARD_GAP }}>
-      {Array.from({ length: 3 }, (_, index) => (
-        <View key={index} style={{ height, borderRadius: 16, backgroundColor: "#F4F4F4" }} />
-      ))}
+    <View style={{ paddingTop: RECENT_CONTENT_INSET, width, alignSelf: "center" }}>
+      <View style={styles.loadingDay}>
+        <View style={styles.loadingDayLabel} />
+        <View style={{ height, borderRadius: 16, backgroundColor: "#F8F8F8" }} />
+      </View>
     </View>
   );
 }
 
 export default function CalendarRecentTab({
   resetVersion,
-  onFocusedDayChange,
+  scrollEnabled,
   onHasMoreBelowChange,
   onSelectEntry,
 }: CalendarRecentTabProps) {
@@ -87,7 +73,6 @@ export default function CalendarRecentTab({
   const [firstError, setFirstError] = useState<Error | null>(null);
   const [moreError, setMoreError] = useState<Error | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [focusedDay, setFocusedDay] = useState<string | null>(null);
   const [visibleEntryIds, setVisibleEntryIds] = useState<Set<string>>(new Set());
   const [firstPage, setFirstPage] = useState<RecentEntryPreviewPage | null>(null);
   const [observedResetVersion, setObservedResetVersion] = useState(resetVersion);
@@ -98,7 +83,6 @@ export default function CalendarRecentTab({
   const contentHeightRef = useRef(0);
   const scrollOffsetRef = useRef(0);
   const rows = packRecentEntryRows(previews);
-  const frames = periodFrames(rows, rowHeight);
 
   // Reset retained browse state during render so React commits one coherent
   // first-page frame. The native scroll position is synchronized below.
@@ -110,7 +94,6 @@ export default function CalendarRecentTab({
       setPreviews(firstPage.items);
       setCursor(firstPage.nextCursor);
       setHasMore(firstPage.hasMore);
-      setFocusedDay(firstPage.items[0]?.date ?? null);
     }
   }
 
@@ -134,11 +117,6 @@ export default function CalendarRecentTab({
         setHasMore(page.hasMore);
         setLoading(false);
         setFirstError(null);
-        const firstDay = page.items[0]?.date;
-        if (firstDay) {
-          setFocusedDay(firstDay);
-          onFocusedDayChange(firstDay);
-        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -149,7 +127,7 @@ export default function CalendarRecentTab({
     return () => {
       cancelled = true;
     };
-  }, [attempt, onFocusedDayChange]);
+  }, [attempt]);
 
   const updateBottomFade = (offset: number) => {
     const contentEnd = Math.max(0, contentHeightRef.current - BOTTOM_PADDING);
@@ -164,18 +142,6 @@ export default function CalendarRecentTab({
     viewportHeightRef.current = layoutMeasurement.height;
     contentHeightRef.current = contentSize.height;
     updateBottomFade(contentOffset.y);
-
-    const nextFocused = resolveFocusedPeriod(
-      frames,
-      contentOffset.y,
-      layoutMeasurement.height,
-      focusedDay,
-      FOCUS_HYSTERESIS,
-    );
-    if (nextFocused && nextFocused !== focusedDay) {
-      setFocusedDay(nextFocused);
-      onFocusedDayChange(nextFocused);
-    }
   };
 
   const loadMore = () => {
@@ -216,13 +182,9 @@ export default function CalendarRecentTab({
     scrollOffsetRef.current = 0;
     const frame = requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      const firstDay = firstPage?.items[0]?.date;
-      if (firstDay) {
-        onFocusedDayChange(firstDay);
-      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [firstPage, onFocusedDayChange, resetVersion]);
+  }, [resetVersion]);
 
   // React Compiler retains this callback while its captures are stable, so
   // FlashList receives stable observer identity without a manual useCallback.
@@ -241,7 +203,7 @@ export default function CalendarRecentTab({
   };
 
   if (loading) {
-    return <LoadingRows width={contentWidth} height={rowHeight} />;
+    return <LoadingRow width={contentWidth} height={rowHeight} />;
   }
 
   if (firstError) {
@@ -276,24 +238,34 @@ export default function CalendarRecentTab({
     <FlashList
       ref={listRef}
       data={rows}
+      scrollEnabled={scrollEnabled}
       keyExtractor={(row) => row.id}
-      renderItem={({ item, index }) => (
-        <View style={[styles.row, { height: rowHeight, width: contentWidth }]}>
-          {item.entries.map((entry) => (
-            <CalendarEntryPreviewCard
-              key={entry.id}
-              entry={entry}
-              focused={focusedDay === item.day}
-              height={rowHeight}
-              width={item.entries.length === 1 ? contentWidth : pairWidth}
-              renderContent={index < EAGER_PREVIEW_ROW_COUNT || visibleEntryIds.has(entry.id)}
-              onPress={() => onSelectEntry(entry.date, entry.id)}
-            />
-          ))}
-        </View>
-      )}
+      renderItem={({ item, index }) => {
+        const startsDay = index === 0 || rows[index - 1]?.day !== item.day;
+        return (
+          <View style={[styles.dayRow, { width: contentWidth }]}>
+            {startsDay ? (
+              <Text accessibilityRole="header" style={styles.dayLabel}>
+                {formatRecentDayLabel(item.day)}
+              </Text>
+            ) : null}
+            <View style={[styles.row, { height: rowHeight, width: contentWidth }]}>
+              {item.entries.map((entry) => (
+                <CalendarEntryPreviewCard
+                  key={entry.id}
+                  entry={entry}
+                  height={rowHeight}
+                  width={item.entries.length === 1 ? contentWidth : pairWidth}
+                  renderContent={index < EAGER_PREVIEW_ROW_COUNT || visibleEntryIds.has(entry.id)}
+                  onPress={() => onSelectEntry(entry.date, entry.id)}
+                />
+              ))}
+            </View>
+          </View>
+        );
+      }}
       contentContainerStyle={{
-        paddingTop: RECENT_CONTENT_TOP,
+        paddingTop: RECENT_CONTENT_INSET,
         paddingBottom: BOTTOM_PADDING,
         alignItems: "center",
       }}
@@ -316,7 +288,7 @@ export default function CalendarRecentTab({
       }}
       showsVerticalScrollIndicator={false}
       maintainVisibleContentPosition={{ disabled: true }}
-      extraData={`${focusedDay ?? ""}:${Array.from(visibleEntryIds).join(",")}`}
+      extraData={Array.from(visibleEntryIds).join(",")}
       ListFooterComponent={
         moreError ? (
           <View style={styles.footer}>
@@ -341,6 +313,23 @@ export default function CalendarRecentTab({
 }
 
 const styles = StyleSheet.create({
+  loadingDay: {
+    gap: 6,
+  },
+  loadingDayLabel: {
+    height: 18,
+  },
+  dayRow: {
+    alignSelf: "center",
+    gap: 6,
+  },
+  dayLabel: {
+    color: "#8A8581",
+    fontFamily: "GeistMono-Regular",
+    fontSize: 13,
+    letterSpacing: 0.3,
+    lineHeight: 18,
+  },
   row: {
     alignSelf: "center",
     flexDirection: "row",
@@ -352,7 +341,7 @@ const styles = StyleSheet.create({
     gap: 14,
     justifyContent: "center",
     paddingHorizontal: 24,
-    paddingTop: RECENT_CONTENT_TOP / 2,
+    paddingTop: RECENT_CONTENT_INSET / 2,
   },
   stateText: {
     color: "#252525",

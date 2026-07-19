@@ -36,10 +36,6 @@ _Avoid_: Account-created date, creation timestamp
 The Day whose Entries are currently displayed on Home.
 _Avoid_: Effective date, route date, active date
 
-**Focused Day**:
-The Day currently emphasized while browsing dated Entries.
-_Avoid_: Current date, currently-scrolled date, active date
-
 **Focused Month**:
 The calendar month currently emphasized while browsing Days by month.
 _Avoid_: Current month, currently-scrolled month, active month

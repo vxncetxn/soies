@@ -11,7 +11,7 @@
 | `src/app/index.tsx` | Owns sheet presentation, Selected Day, complete-Day loading, and the pending exact-Entry target |
 | `src/components/HomeHeader.tsx` | Plain accessible date trigger |
 | `src/components/CalendarSheet.tsx` | Persistent zero-detent shell, header, fades, tab lifecycle, dismissal, and containment |
-| `src/components/CalendarRecentTab.tsx` | Virtualized, keyset-paged Recent rows and Focused Day tracking |
+| `src/components/CalendarRecentTab.tsx` | Virtualized, keyset-paged Recent rows with inline Day labels |
 | `src/components/CalendarMonthlyTab.tsx` | Virtualized chronological month grids, range bounds, markers, and Focused Month tracking |
 | `src/components/CalendarEntryPreview.tsx` | Visible first-Artefact renderer and static count silhouettes |
 | `src/data/calendarBrowse.ts` | Pure grouping, heading, month-range, and focal-line helpers |
@@ -61,19 +61,27 @@ to the newest Entry and Monthly to the current month. Within one presentation,
 both retained trees preserve their native positions. A short opacity crossfade
 uses fixed per-tab opacity values, so an in-flight animation never remaps
 active/outgoing roles. The inactive tree remains painted but non-interactive.
+Its native list scrolling is disabled until it becomes active, so a retained
+shorter-header tab cannot steal drag recognition from the active header.
 
 ## Fixed header and fades
 
-The tabs, Focused Day/Month heading, close control, and Monthly weekday row are
-fixed above the lists. A solid white scrim makes the complete header opaque;
-a short `AnimatedEdgeFadeView` overlay begins only below its text. Content can
-pass underneath that lower fade without bleeding through the labels. The
-separate bottom fade animates in only while real list content remains below;
-trailing layout padding is excluded from that decision.
+The tabs and close control are always fixed above the lists; the Focused Month
+heading and weekday row appear only on Monthly. A solid white scrim makes the
+complete active header opaque, and a short `AnimatedEdgeFadeView` overlay
+begins below its text. Recent uses the shorter tabs-only scrim and fade so its
+first inline Day label starts directly below them. Content can pass underneath
+the lower fade without bleeding through the fixed labels. The separate bottom
+fade animates in only while real list content remains below; trailing layout
+padding is excluded from that decision.
+
+Pulls that begin inside either scrollable remain owned by that scrollable even
+at its top boundary. Sheet drag-to-close begins from the opaque header/handle
+region instead, while X, scrim press, and Android Back remain available.
 
 Headings deliberately match the English mockups for this release:
 
-- Recent: `30 september 2026`
+- Recent Day label: `30 SEP 2026`
 - Monthly: `september 2026`
 - weekdays: `M T W T F S S`
 
@@ -85,11 +93,11 @@ Artefact count, and only its first non-deleted Artefact. A partial active-entry
 index covers that ordering, and page lookahead prevents an odd boundary from
 later reshaping a one-card row into a pair.
 
-Rows contain at most two Entries and never mix Days. All rows belonging to the
-Day crossing the 40%-viewport reading line use the darker background; a small
-hysteresis band prevents boundary flicker. The first four prepared rows and
-subsequent viewable rows mount the canonical Paper/Print/Ink renderer. Up to
-four horizontally offset white silhouettes use Home's stack spacing to
+Rows contain at most two Entries and never mix Days. Each Day group has one
+compact gray label above its first row, and every preview card uses the same
+`#F8F8F8` surface regardless of scroll position. The first four prepared rows
+and subsequent viewable rows mount the canonical Paper/Print/Ink renderer. Up
+to four horizontally offset white silhouettes use Home's stack spacing to
 communicate the complete one-to-five Artefact count without hydrating hidden
 Artefacts.
 

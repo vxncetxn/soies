@@ -12,8 +12,7 @@ import { renderArtefactContent } from "./renderArtefactContent";
 const PAPER_MARKER = "#E4DF00";
 const PRINT_MARKER = "#F32DD5";
 const UNKNOWN_MARKER = "#99938E";
-const CARD_IDLE = "#F7F7F7";
-const CARD_FOCUSED = "#ECECEC";
+const CARD_BACKGROUND = "#F8F8F8";
 const STACK_LIMIT = 5;
 
 type PreviewBoundaryProps = {
@@ -115,7 +114,6 @@ function PreviewStack({ entry, cardHeight, cardWidth, renderContent }: PreviewSt
 
 type CalendarEntryPreviewProps = {
   entry: CalendarEntryPreviewModel;
-  focused: boolean;
   height: number;
   width: number;
   renderContent: boolean;
@@ -124,7 +122,6 @@ type CalendarEntryPreviewProps = {
 
 export default function CalendarEntryPreview({
   entry,
-  focused,
   height,
   width,
   renderContent,
@@ -145,7 +142,7 @@ export default function CalendarEntryPreview({
         {
           width,
           height,
-          backgroundColor: focused ? CARD_FOCUSED : CARD_IDLE,
+          backgroundColor: CARD_BACKGROUND,
           opacity: pressed ? 0.78 : 1,
         },
       ]}

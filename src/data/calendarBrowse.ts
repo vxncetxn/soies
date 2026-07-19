@@ -124,6 +124,12 @@ export function formatRecentHeading(dayId: string): CalendarHeading {
   };
 }
 
+export function formatRecentDayLabel(dayId: string): string {
+  const [year, month, day] = dayId.split("-");
+  const abbreviatedMonth = ENGLISH_MONTHS[Number(month) - 1].slice(0, 3).toUpperCase();
+  return `${Number(day)} ${abbreviatedMonth} ${year}`;
+}
+
 export function formatMonthlyHeading(monthId: string): CalendarHeading {
   const [year, month] = monthId.split("-");
   return {

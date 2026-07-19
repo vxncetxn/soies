@@ -36,26 +36,25 @@ No new runtime dependency is needed. Reuse the installed native bottom sheet, Fl
 
 - The existing date control becomes a plain trigger. It no longer blooms.
 - The trigger opens one white, near-full-height, full-width sheet with no intermediate detent.
-- The handle and X button match Featured Artefacts; X, downward drag, scrim press, Android Back, Entry selection, and Day selection all dismiss it.
-- The sheet's fixed header contains `Recent` and `Monthly`, the formatted Focused Day or Focused Month, and the X button.
+- The handle and X button match Featured Artefacts; X, header/handle downward drag, scrim press, Android Back, Entry selection, and Day selection all dismiss it. A pull that starts in either scrollable remains with that scrollable at its top boundary instead of dragging the sheet.
+- The sheet's fixed header always contains `Recent`, `Monthly`, and the X button. The formatted Focused Month and weekday row appear only on Monthly.
 - The scrolling content passes beneath a solid white header scrim and a short overlay fade that starts below the header text, so the labels stay fully legible.
 - A bottom fade is visible only while more content exists below. Both fades use `react-native-edge-fade` in white overlay mode; no live blur is introduced.
 - The first app-launch opening selects Recent. Later openings remember the last selected tab.
 - Every presentation resets Recent to its newest Entry and Monthly to the current month. Switching tabs within one presentation preserves each retained tab's position.
-- Tab changes are press-only and use a short opacity crossfade. Both bounded virtualized trees stay mounted; the inactive tab is transparent and non-interactive.
+- Tab changes are press-only and use a short opacity crossfade. Both bounded virtualized trees stay mounted; the inactive tab is transparent, non-interactive, and natively non-scrollable so it cannot reduce the active header's drag region.
 
 ### Recent
 
 - Entries are ordered by `date DESC, sort_order DESC`, with stable Entry ID as the final tie-breaker.
 - Rows never mix Days. A Day's Entries are packed sequentially into rows of two; an odd final Entry occupies a full-width row.
-- The fixed heading uses `30 september 2026`: lowercase English month, day-month-year order, and a muted monospaced year.
-- A focal line approximately 40% down the scroll viewport determines the Focused Day. A small hysteresis band prevents header/background flicker at row boundaries.
-- Every card belonging to the Focused Day uses the slightly darker background. The heading changes only when the Focused Day changes.
+- Each Day group has one compact gray label above its first row using `30 SEP 2026`: uppercase abbreviated English month and day-month-year order.
+- Every preview card uses the same `#F8F8F8` background; Recent has no scroll-position-driven heading, focus, or surface state.
 - Each card renders the complete first Artefact at thumbnail scale: all Paper text and paragraph styling, Print image and caption, and flattened Ink. Text is never truncated.
 - The first prepared viewport and later visible cards mount a real first-Artefact renderer. Remaining Artefacts are represented by horizontally offset white silhouettes using the existing Home stack spacing. The silhouette count is capped at five defensively, with no `5+` label.
 - One marker appears per card: Paper yellow, Print magenta, and an unsupported future Entry type neutral gray.
 - Selecting a card starts the target Day load and sheet close concurrently, navigates Home to that Day, and positions DayPager on the exact Entry once data is available. The Entry remains collapsed.
-- With no Entries, the heading shows today and the body says `No entries yet` without another call to action.
+- With no Entries, the body says `No entries yet` without another call to action.
 
 ### Monthly
 
@@ -98,7 +97,7 @@ flowchart TD
 - `src/app/index.tsx` owns the Selected Day, pending exact-Entry target, Day loading, and the `CalendarSheet` session. This keeps route changes and DayPager positioning in the component that already owns those states.
 - `src/components/HomeHeader.tsx` becomes presentational for calendar opening: replace the calendar `BloomButton` composition with the same date-pill content in a regular accessible press target.
 - Add `src/components/CalendarSheet.tsx` for the zero/open detents, session state, fixed header, crossfade, fades, dismissal, and error boundary.
-- Add `src/components/CalendarRecentTab.tsx`, `CalendarMonthlyTab.tsx`, and `CalendarEntryPreview.tsx`. Keep grouping/focus/formatting as pure helpers in one small `src/data/calendarBrowse.ts` module rather than distributing duplicate logic across components.
+- Add `src/components/CalendarRecentTab.tsx`, `CalendarMonthlyTab.tsx`, and `CalendarEntryPreview.tsx`. Keep grouping, Monthly focus, and formatting as pure helpers in one small `src/data/calendarBrowse.ts` module rather than distributing duplicate logic across components.
 - Extend `src/components/DayPager.tsx` with an Entry-ID target that is consumed once after the target Day loads. Do not route this through Widget-specific types.
 
 The existing `BloomButton`, `BloomPanel`, `CalendarOverlay`, and `MorphOverlay` files are not deleted or opportunistically refactored in this work.
@@ -153,8 +152,8 @@ This completes UX-11 rather than fixing only its hardcoded-month symptom.
 
 - Recent uses FlashList row items with stable row keys and a deliberately small draw distance. Monthly continues to use flash-calendar's month data but supplies the redesigned fixed weekday row, month-grid renderer, markers, and Monday-first configuration.
 - Keep both layouts centered and width-capped on wide windows. Recent never exceeds two columns; Monthly remains exactly seven columns. Derive one or two width tokens from the mockup during implementation rather than adding a breakpoint framework.
-- Measure list row/month frames and resolve the item intersecting the 40% focal line with a pure helper. Apply a small shared hysteresis token, pin the first/last period at list boundaries, and bridge to React only when the Focused Day/Month ID changes.
-- Header, tab, and background updates therefore occur at period boundaries, not on every scroll event.
+- Measure month frames and resolve the month intersecting the 40% focal line with a pure helper. Apply a small hysteresis token, pin the first/last month at list boundaries, and bridge to React only when the Focused Month ID changes.
+- Monthly header and background updates therefore occur at month boundaries, not on every scroll event. Recent scroll events update only bounded pagination, preview visibility, and bottom-fade state.
 - Clip the white viewport and edge-fade native view to the same sheet radius. Use a solid white header scrim followed by a short `AnimatedEdgeFadeView` in `mode="overlay"`; drive the separate bottom fade to zero on the UI thread when no content remains below.
 - Eagerly mount canonical Artefact renderers for the first prepared viewport, then only for visible Recent cards. Horizontally offset placeholders are plain Views and never mount hidden Paper, Print, Image, or Ink trees.
 
@@ -200,7 +199,7 @@ If a 100+-Entry Day exposes the separately audited non-virtualized DayPager as t
 
 ### 4. Implement Recent end to end
 
-- Add keyset pagination, stable Day-only row packing, empty/error/footer states, and focus tracking.
+- Add keyset pagination, stable Day-only row packing, one inline label per Day group, and empty/error/footer states.
 - Add the responsive one/two-card design, type marker, canonical first-Artefact renderer, static count silhouettes, and per-card preview boundary.
 - Prepare expensive preview children for the first viewport, then limit later children to the visible window.
 - Wire exact Entry selection and restore the saved offset when returning to Recent during the same presentation.
@@ -218,7 +217,7 @@ Gate: test same-month and multi-year journals, Jan 1 seed, creation mid-month, l
 
 ### 6. Finish polish and containment
 
-- Add top/bottom native fades, focused-period hysteresis, wide-layout caps, safe-area geometry, pressed/disabled states, and reduced-motion behavior.
+- Add top/bottom native fades, Monthly focused-period hysteresis, wide-layout caps, safe-area geometry, pressed/disabled states, and reduced-motion behavior.
 - Add accessibility roles/states for tabs, close, cards, and Days; card labels include date, Entry type, title when present, and Artefact count.
 - Add the sheet-level error boundary and verify every async branch has a visible or logged failure path.
 - Confirm both retained tabs use fixed opacity ownership, the inactive tab rejects pointer events, and rapid switching never exposes an unpainted frame.
@@ -239,7 +238,7 @@ Gate: all static, automated, device, performance, and failure-injection checks p
 
 - Sheet motion begins within the 50 ms p95 contract on warm and cold-data paths.
 - Closed state retains the native shell, both virtualized browse trees reset to their bounded prepared windows, and bounded lightweight caches.
-- Recent and Monthly exactly follow their agreed ordering, focus, formatting, marker, range, and selection rules.
+- Recent and Monthly exactly follow their agreed ordering, formatting, marker, range, selection, and Monthly-focus rules.
 - The top header fade and conditional bottom fade are native overlay fades, not blur effects.
 - No preview truncates its first Artefact or mounts hidden Artefact renderers.
 - Navigation never shows stale previous-Day content and lands on the intended Entry.

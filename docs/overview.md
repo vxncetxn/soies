@@ -105,7 +105,7 @@ diagnostics contain structural component context, never journal content.
 | File | Role |
 |------|------|
 | [`CalendarSheet.tsx`](../src/components/CalendarSheet.tsx) | Persistent zero-detent native shell. Prepares and retains bounded virtualized Recent/Monthly trees after first paint, owns the opaque header/fades/dismissal/fixed-opacity crossfade, and resets/trims retained browse state after close settles. |
-| [`CalendarRecentTab.tsx`](../src/components/CalendarRecentTab.tsx) / [`CalendarEntryPreview.tsx`](../src/components/CalendarEntryPreview.tsx) | Keyset-paged FlashList rows, Focused Day behavior, visible canonical first-Artefact previews, count silhouettes, and exact Entry selection. |
+| [`CalendarRecentTab.tsx`](../src/components/CalendarRecentTab.tsx) / [`CalendarEntryPreview.tsx`](../src/components/CalendarEntryPreview.tsx) | Keyset-paged FlashList rows with inline Day labels, visible canonical first-Artefact previews, count silhouettes, and exact Entry selection. |
 | [`CalendarMonthlyTab.tsx`](../src/components/CalendarMonthlyTab.tsx) | Chronological virtualized month grids from User Creation Day through today, Focused Month background, Selected Day underline, disabled bounds, and type-presence markers. |
 | [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** still used by Create's compact menu. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
 | [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Dormant former fullscreen calendar with no callsite. Deletion is deferred with the broader legacy overlay cleanup. |

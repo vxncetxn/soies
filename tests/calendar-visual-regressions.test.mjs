@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { LAYOUT } from "../src/constants/layout.ts";
 import { runMigrations } from "../src/db/migrations.ts";
 
 const readSource = (relativePath) =>
@@ -125,6 +126,44 @@ test("Calendar keeps prepared tab trees mounted and eagerly renders the first sc
   );
 });
 
+test("Recent labels each Day group and uses one fixed card surface without scroll focus", async () => {
+  const [sheet, recent, preview] = await Promise.all([
+    readSource("src/components/CalendarSheet.tsx"),
+    readSource("src/components/CalendarRecentTab.tsx"),
+    readSource("src/components/CalendarEntryPreview.tsx"),
+  ]);
+
+  assert.doesNotMatch(sheet, /recentFocusedDay/);
+  assert.match(sheet, /activeTab === "monthly"[\s\S]{0,160}<Heading/);
+  assert.match(recent, /rows\[index - 1\]\?\.day !== item\.day/);
+  assert.match(recent, /formatRecentDayLabel\(item\.day\)/);
+  assert.doesNotMatch(recent, /resolveFocusedPeriod|FOCUS_HYSTERESIS|focusedDay/);
+  assert.doesNotMatch(preview, /\bfocused\b/);
+  assert.match(preview, /#F8F8F8/);
+  assert.match(recent, /styles\.loadingDayLabel/);
+  assert.match(recent, /#F8F8F8/);
+  assert.doesNotMatch(recent, /Array\.from\(\{ length: \d+ \}/);
+});
+
+test("Calendar scrollables keep boundary pulls instead of handing them to the sheet", async () => {
+  const [sheet, recent, monthly] = await Promise.all([
+    readSource("src/components/CalendarSheet.tsx"),
+    readSource("src/components/CalendarRecentTab.tsx"),
+    readSource("src/components/CalendarMonthlyTab.tsx"),
+  ]);
+
+  assert.match(sheet, /disableScrollableNegotiation/);
+  assert.match(sheet, /scrollEnabled=\{activeTab === "recent"\}/);
+  assert.match(sheet, /scrollEnabled=\{activeTab === "monthly"\}/);
+  assert.match(recent, /scrollEnabled=\{scrollEnabled\}/);
+  assert.match(monthly, /scrollEnabled=\{scrollEnabled\}/);
+  assert.match(sheet, /styles\.tabBody/);
+  assert.match(
+    sheet,
+    /styles\.tabBody,[\s\S]{0,180}tab === "recent"[\s\S]{0,100}CALENDAR_SHEET\.RECENT_HEADER_HEIGHT[\s\S]{0,100}CALENDAR_SHEET\.MONTHLY_HEADER_HEIGHT/,
+  );
+});
+
 test("Calendar sheet clips its white content to the shared top radius", async () => {
   const sheet = await readSource("src/components/CalendarSheet.tsx");
   const surface = styleBlock(sheet, "surface");
@@ -140,10 +179,21 @@ test("Calendar sheet clips its white content to the shared top radius", async ()
 });
 
 test("Calendar header uses an opaque scrim before a short fade below its text", async () => {
-  const sheet = await readSource("src/components/CalendarSheet.tsx");
+  const [sheet, recent] = await Promise.all([
+    readSource("src/components/CalendarSheet.tsx"),
+    readSource("src/components/CalendarRecentTab.tsx"),
+  ]);
 
-  assert.match(sheet, /RECENT_HEADER_OPAQUE_HEIGHT/);
-  assert.match(sheet, /MONTHLY_HEADER_OPAQUE_HEIGHT/);
+  assert.equal(LAYOUT.CALENDAR_SHEET.RECENT_HEADER_HEIGHT, 94);
+  assert.equal(LAYOUT.CALENDAR_SHEET.RECENT_CONTENT_TOP, 130);
+  assert.equal(LAYOUT.CALENDAR_SHEET.HEADER_FADE_HEIGHT, 36);
+  assert.equal(
+    LAYOUT.CALENDAR_SHEET.RECENT_CONTENT_TOP - LAYOUT.CALENDAR_SHEET.RECENT_HEADER_HEIGHT,
+    LAYOUT.CALENDAR_SHEET.HEADER_FADE_HEIGHT,
+  );
+  assert.equal(LAYOUT.CALENDAR_SHEET.MONTHLY_CONTENT_TOP, 214);
+  assert.match(recent, /RECENT_CONTENT_INSET/);
+  assert.match(sheet, /CALENDAR_SHEET\.MONTHLY_HEADER_HEIGHT/);
   assert.match(sheet, /styles\.headerScrim/);
   assert.match(sheet, /styles\.headerFade/);
   assert.match(sheet, /top=\{0\}/);
