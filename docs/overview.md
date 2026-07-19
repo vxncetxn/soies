@@ -75,7 +75,7 @@ flowchart TD
 | File | Role |
 |------|------|
 | [`src/app/_layout.tsx`](../src/app/_layout.tsx) | **Root layout.** `GestureHandlerRootView` outermost, then **`StrictMode`**, fonts, keyboard, safe area, bottom-sheet and portal providers, and one headerless Stack route. Mounts portal hosts: **`overlay`** (inside safe area — expanded stacks), **`morph`** (focus overlay), and **`bloom`** (Create's Bloom menu). Create is a root-owned absolute sibling so its own menu never becomes a natively reparented Portal inside another Portal. Provides `BlurTargetView` for blur sampling. Database init is single-flight under StrictMode. Exports a retryable route error boundary. |
-| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, strictly resolves the date and one-shot widget commands from the URL, loads one complete Day through the bounded cache, and renders `HomeHeader`, vertical `DayPager`, and the persistent lightweight `CalendarSheet` shell. It owns calendar selection and exact Recent-entry positioning. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route. Exports a Home-specific retry boundary. |
+| [`src/app/index.tsx`](../src/app/index.tsx) | **Home screen.** Wraps Home in `ExpandProvider`, strictly resolves the date and one-shot widget commands from the URL, loads one complete Day through the bounded cache, and renders `HomeHeader`, vertical `DayPager`, and the persistent lightweight `CalendarSheet` shell. It starts Calendar Day preparation during native dismissal, waits for the sheet to settle before moving the old body one viewport downward, then brings up a display-only visual containing the first real Artefact plus white count silhouettes. Only after that entrance settles does the canonical tree mount behind its opaque cover; Paper hand-off waits for document-scoped native TextKit readiness before removing the cover. The iOS-only Featured Artefacts launcher and cross-platform Create launcher float directly over this route. Exports a Home-specific retry boundary. |
 
 Create, Share, and the iOS Featured Widgets sheet each have a retry/dismiss
 feature boundary inside the provider that owns their session. Create keeps its
@@ -147,6 +147,8 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 | [`entries.ts`](../src/data/entries.ts) | **Domain types** (`PaperArtefact`, `PrintArtefact`, `Entry`, `DayEntries`) and helpers. Entry view models expose stable `id` and `date` for widget targeting. Persistence is in `src/db/`. |
 | [`calendarBrowse.ts`](../src/data/calendarBrowse.ts) / [`calendarBrowseCache.ts`](../src/data/calendarBrowseCache.ts) | Pure calendar grouping/focus/range helpers plus bounded first-page/month-marker summary caches. |
 | [`entriesCache.ts`](../src/data/entriesCache.ts) | Eight-Day complete-entry LRU with in-flight load de-duplication and invalidation. |
+| [`calendarNavigationTransition.ts`](../src/data/calendarNavigationTransition.ts) | Pure identity-safe coordinator that releases a Calendar-selected Day only after its complete query, native-sheet dismissal, and old-body exit have all settled. |
+| [`paperContentReadiness.ts`](../src/data/paperContentReadiness.ts) | Per-Paper document readiness latch that safely replays TextKit's edge-triggered layout signal to a later Calendar hand-off request. |
 | [`mock-image.png`](../src/data/mock-image.png) | Sample image for print entries in seed/dev data. |
 
 ### Widget persistence

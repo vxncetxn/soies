@@ -53,8 +53,7 @@ type DayPagerProps = {
   onScroll: ReturnType<typeof useAnimatedScrollHandler>;
   // Callback to report the measured pager height back to the parent.
   onPagerHeightChange: (height: number) => void;
-  // Stable entry/artefact command from a consumed widget URL. The existing
-  // index-keyed Stack lifecycle remains unchanged.
+  // Stable entry/artefact command from a consumed widget URL.
   widgetTarget: Extract<WidgetDeepLinkTarget, { kind: "artefact" }> | null;
   // Stack calls this only after it has selected and expanded the exact child.
   onWidgetTargetConsumed: () => void;
@@ -62,6 +61,10 @@ type DayPagerProps = {
   // selects only the vertical entry page; it does not expand an artefact.
   entryTargetId: string | null;
   onEntryTargetConsumed: () => void;
+  /** Calendar request targeting one canonical Paper Entry. */
+  entryContentReadinessRequest?: { requestId: number; entryId: string } | null;
+  /** Reports readiness for the exact request and Entry that received it. */
+  onEntryContentReady?: (requestId: number, entryId: string) => void;
 };
 
 const DayPager = ({
@@ -76,6 +79,8 @@ const DayPager = ({
   onWidgetTargetConsumed,
   entryTargetId,
   onEntryTargetConsumed,
+  entryContentReadinessRequest,
+  onEntryContentReady,
 }: DayPagerProps) => {
   // Animated ref to the ScrollView so we can imperatively `scrollTo` when the
   // user jumps to an entry via the side indicator.
@@ -184,9 +189,9 @@ const DayPager = ({
               onScroll={onScroll}
               style={{ height: pagerHeight }}
             >
-              {entries.map((entry, index) => (
+              {entries.map((entry) => (
                 <View
-                  key={index}
+                  key={entry.id}
                   style={{ height: pagerHeight }}
                   className="items-center justify-center px-5"
                 >
@@ -200,6 +205,16 @@ const DayPager = ({
                       widgetTarget,
                     )}
                     onWidgetTargetConsumed={onWidgetTargetConsumed}
+                    firstArtefactReadinessRequestId={
+                      entryContentReadinessRequest?.entryId === entry.id
+                        ? entryContentReadinessRequest.requestId
+                        : null
+                    }
+                    onFirstArtefactReady={
+                      entry.type === "paper" && onEntryContentReady
+                        ? (requestId) => onEntryContentReady(requestId, entry.id)
+                        : undefined
+                    }
                   />
                 </View>
               ))}

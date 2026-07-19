@@ -75,6 +75,7 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   let onPaperSelectionStateChange = EventDispatcher()
   let onPaperInputFocus = EventDispatcher()
   let onPaperInputBlur = EventDispatcher()
+  let onPaperContentReady = EventDispatcher()
 
   /** Sole TextKit renderer/responder; read and edit modes never swap view classes. */
   private let textView = UITextView()
@@ -89,6 +90,10 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
   private var pendingEditDocument: NativeTextDocument?
   /** Attribute/programmatic updates must not be mistaken for user mutations. */
   private var applyingProgrammaticDocument = false
+  /** Monotonic native-layout boundary for each React-installed document. */
+  private var contentRevision = 0
+  private var reportedContentRevision = -1
+  private var hasReceivedDocument = false
 
   /** Stable style tokens corresponding one-for-one with newline-delimited paragraphs. */
   private var paragraphPresets: [ParagraphPreset] = [.defaultPreset]
@@ -223,6 +228,22 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
       width: placeholderBounds.width,
       height: min(placeholderBounds.height, ceil(placeholderSize.height))
     )
+    reportContentReadyIfNeeded()
+  }
+
+  /** Report only after TextKit has laid out the installed document in non-zero bounds. */
+  private func reportContentReadyIfNeeded() {
+    guard
+      hasReceivedDocument,
+      bounds.width > 0,
+      bounds.height > 0,
+      reportedContentRevision != contentRevision
+    else {
+      return
+    }
+    textView.layoutManager.ensureLayout(for: textView.textContainer)
+    reportedContentRevision = contentRevision
+    onPaperContentReady()
   }
 
   /** Apply one atomic React-controlled payload on UIKit's main thread. */
@@ -230,6 +251,9 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
     guard let incoming = decodeDocument(documentJson) else {
       return
     }
+    hasReceivedDocument = true
+    contentRevision += 1
+    setNeedsLayout()
     let current = currentDocument()
 
     if let acknowledgedIndex = pendingNativeDocuments.lastIndex(of: incoming) {

@@ -56,6 +56,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
       onSelectionStateChange,
       onFocus,
       onBlur,
+      onContentReady,
       editable = false,
       presentationScale = 1,
       placeholder = "",
@@ -120,6 +121,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
         }
         onPaperInputFocus={onFocus}
         onPaperInputBlur={onBlur}
+        onPaperContentReady={onContentReady}
       />
     );
   },

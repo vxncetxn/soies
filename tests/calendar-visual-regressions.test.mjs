@@ -126,6 +126,72 @@ test("Calendar keeps prepared tab trees mounted and eagerly renders the first sc
   );
 });
 
+test("Calendar selection replaces Home through a full-viewport exit and entrance", async () => {
+  const [home, sheet, pager, preparedEntry] = await Promise.all([
+    readSource("src/app/index.tsx"),
+    readSource("src/components/CalendarSheet.tsx"),
+    readSource("src/components/DayPager.tsx"),
+    readSource("src/components/CalendarPreparedEntry.tsx"),
+  ]);
+  const selectionHandler = home.slice(
+    home.indexOf("const navigateFromCalendar"),
+    home.indexOf("const handleCalendarDismissSettled"),
+  );
+  const dismissalHandler = home.slice(
+    home.indexOf("const handleCalendarDismissSettled"),
+    home.indexOf("const widgetTargetForPager"),
+  );
+
+  assert.match(home, /new CalendarNavigationCoordinator\(\)/);
+  assert.match(home, /CALENDAR_ENTRY_EXIT_MS = 350/);
+  assert.match(home, /CALENDAR_ENTRY_REVEAL_MS = 350/);
+  assert.doesNotMatch(home, /CALENDAR_ENTRY_REVEAL_OFFSET/);
+  assert.match(home, /\(1 - progress\) \* window\.height/);
+  assert.doesNotMatch(selectionHandler, /calendarRevealProgress\.set\(/);
+  assert.match(selectionHandler, /loadEntriesCached\(day/);
+  assert.match(selectionHandler, /setCalendarPreparedHandoff/);
+  assert.match(dismissalHandler, /calendarRevealProgress\.set\(\s*withTiming\(\s*0,/);
+  assert.match(home, /scheduleOnRN\(setCalendarExitFinishedRequestId, requestId\)/);
+  assert.match(home, /calendarPreparedHandoff/);
+  assert.match(home, /calendarPreparedCommitRequestId/);
+  assert.match(home, /scheduleOnUI\(\(\) => \{/);
+  assert.match(home, /calendarEntranceProgress/);
+  assert.match(
+    home,
+    /calendarEntranceFinishedRequestId === calendarPreparedHandoff\.requestId[\s\S]{0,500}adoptCalendarHandoff\(calendarPreparedHandoff\)/,
+  );
+  assert.doesNotMatch(
+    home,
+    /calendarExitFinishedRequestId === calendarPreparedHandoff\.requestId[\s\S]{0,300}adoptCalendarHandoff\(calendarPreparedHandoff\)/,
+  );
+  assert.match(home, /calendarPreparedEntry/);
+  assert.match(home, /<CalendarPreparedEntry entry=\{calendarPreparedEntry\} \/>/);
+  assert.match(home, /className="absolute inset-0 bg-background"/);
+  assert.doesNotMatch(home, /entries=\{\[calendarPreparedEntry\]\}/);
+  assert.doesNotMatch(home, /entries=\{calendarPreparedHandoff\.entries\}/);
+  assert.match(preparedEntry, /entry\.artefacts\[0\]/);
+  assert.match(preparedEntry, /entry\.artefacts\.slice\(1\)/);
+  assert.match(preparedEntry, /renderArtefactContent/);
+  assert.doesNotMatch(preparedEntry, /from "\.\/Stack"|<Stack|DayPager|ScrollView/);
+  assert.match(home, /setCalendarEntranceFinishedRequestId/);
+  assert.match(home, /calendarCanonicalEntryReadyRequestId/);
+  assert.match(home, /calendarPreparedEntry\?\.type === "paper"/);
+  assert.match(home, /onEntryContentReady=/);
+  assert.match(home, /calendarPreparedHandoff\.day !== effectiveDate/);
+  assert.match(home, /requestAnimationFrame\(\(\) =>/);
+  assert.match(home, /restoreCalendarBodyAfterFailure/);
+  assert.match(home, /pointerEvents=\{calendarBodyTransitionActive \? "none" : "auto"\}/);
+  assert.match(home, /accessibilityElementsHidden=\{calendarBodyTransitionActive\}/);
+  assert.match(home, /importantForAccessibility=/);
+  assert.doesNotMatch(home, /removeClippedSubviews=/);
+  assert.match(pager, /\n\s+removeClippedSubviews\n/);
+  assert.match(home, /onDismissSettled=\{handleCalendarDismissSettled\}/);
+  assert.match(home, /sheetDismissed\(requestId\)/);
+  assert.match(home, /text: "Open calendar"/);
+  assert.match(sheet, /selectionDismissRequestIdRef\.current = onSelect/);
+  assert.match(sheet, /onDismissSettled\(requestId\)/);
+});
+
 test("Recent labels each Day group and uses one fixed card surface without scroll focus", async () => {
   const [sheet, recent, preview] = await Promise.all([
     readSource("src/components/CalendarSheet.tsx"),

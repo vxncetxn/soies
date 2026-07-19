@@ -47,8 +47,9 @@ type CalendarSheetProps = {
   openRequestedAt: number | null;
   selectedDay: string;
   onOpenChange: (open: boolean) => void;
-  onSelectDay: (day: string) => void;
-  onSelectEntry: (day: string, entryId: string) => void;
+  onDismissSettled: (requestId: number | null) => void;
+  onSelectDay: (day: string) => number;
+  onSelectEntry: (day: string, entryId: string) => number;
 };
 
 function Heading({ heading }: { heading: CalendarHeading }) {
@@ -79,6 +80,7 @@ export default function CalendarSheet({
   openRequestedAt,
   selectedDay,
   onOpenChange,
+  onDismissSettled,
   onSelectDay,
   onSelectEntry,
 }: CalendarSheetProps) {
@@ -97,6 +99,7 @@ export default function CalendarSheet({
   const mountedRef = useRef(true);
   const openStartedAtRef = useRef<number | null>(null);
   const openingMeasuredRef = useRef(false);
+  const selectionDismissRequestIdRef = useRef<number | null>(null);
   const bottomFadeVisibleRef = useRef(false);
   const hasMoreBelowByTabRef = useRef<Record<CalendarTab, boolean>>({
     recent: false,
@@ -159,6 +162,7 @@ export default function CalendarSheet({
 
   useEffect(() => {
     if (open && !previousOpenRef.current) {
+      selectionDismissRequestIdRef.current = null;
       openStartedAtRef.current = openRequestedAt ?? performance.now();
       openingMeasuredRef.current = false;
       const today = todayISO();
@@ -234,7 +238,7 @@ export default function CalendarSheet({
             }
           }}
           onSelectEntry={(day, entryId) => {
-            onSelectEntry(day, entryId);
+            selectionDismissRequestIdRef.current = onSelectEntry(day, entryId);
             requestClose();
           }}
         />
@@ -283,7 +287,7 @@ export default function CalendarSheet({
           }
         }}
         onSelectDay={(day) => {
-          onSelectDay(day);
+          selectionDismissRequestIdRef.current = onSelectDay(day);
           requestClose();
         }}
       />
@@ -325,6 +329,14 @@ export default function CalendarSheet({
         }
       }}
       onSettle={(index) => {
+        if (index === 0) {
+          // Selection hand-off depends on the native surface actually reaching
+          // zero. Report that independently of React's close-state commit: the
+          // native settle callback can win that ordering race on a fast close.
+          const requestId = selectionDismissRequestIdRef.current;
+          selectionDismissRequestIdRef.current = null;
+          onDismissSettled(requestId);
+        }
         if (index === 0 && !open) {
           // Reset retained lists while they are hidden so their first visible
           // frame in the next presentation is already at newest/current.

@@ -77,6 +77,8 @@ export type PaperTextInputViewProps = {
   onPaperInputFocus?: () => void;
   /** Namespaced direct event avoids React Native's inherited bubbling topBlur. */
   onPaperInputBlur?: () => void;
+  /** Fires after the installed document has completed native TextKit layout. */
+  onPaperContentReady?: () => void;
   /** React Native positions the host; native owns all internal TextKit geometry. */
   style?: StyleProp<ViewStyle>;
 };

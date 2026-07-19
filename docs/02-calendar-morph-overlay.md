@@ -8,7 +8,7 @@
 
 | File | Responsibility |
 | --- | --- |
-| `src/app/index.tsx` | Owns sheet presentation, Selected Day, complete-Day loading, and the pending exact-Entry target |
+| `src/app/index.tsx` | Owns sheet presentation, Selected Day, coordinated complete-Day hand-off, body exit/entrance, and the pending exact-Entry target |
 | `src/components/HomeHeader.tsx` | Plain accessible date trigger |
 | `src/components/CalendarSheet.tsx` | Persistent zero-detent shell, header, fades, tab lifecycle, dismissal, and containment |
 | `src/components/CalendarRecentTab.tsx` | Virtualized, keyset-paged Recent rows with inline Day labels |
@@ -17,6 +17,8 @@
 | `src/data/calendarBrowse.ts` | Pure grouping, heading, month-range, and focal-line helpers |
 | `src/data/calendarBrowseCache.ts` | First Recent page and four-month lightweight marker cache |
 | `src/data/entriesCache.ts` | Eight-Day complete-entry LRU with in-flight de-duplication |
+| `src/data/calendarNavigationTransition.ts` | Pure coordinator that joins Day readiness to native-sheet dismissal |
+| `src/data/paperContentReadiness.ts` | Document-scoped latch that bridges native Paper readiness to a later hand-off request |
 
 The architecture decision and full interaction contract live in
 [ADR-0013](./adr/0013-native-calendar-sheet-with-lazy-content.md) and the
@@ -101,8 +103,14 @@ to four horizontally offset white silhouettes use Home's stack spacing to
 communicate the complete one-to-five Artefact count without hydrating hidden
 Artefacts.
 
-Selecting a card begins the complete-Day query while the native sheet closes,
-updates the Home route, and asks `DayPager` to position the exact Entry without
+Selecting a card begins the complete-Day query while the native sheet closes.
+When that query resolves, Home mounts a lightweight, display-only copy of the
+selected Entry below the viewport: its first real Artefact plus horizontally
+offset white silhouettes for the remaining count. It deliberately omits
+`DayPager`, `Stack`, portals, hidden Artefacts, and interaction state so its
+native commit does not compete with the old body's exit. The old body does not
+begin its 350 ms exit until the native sheet has completely settled at zero.
+After that exit finishes, the prepared Entry immediately returns upward without
 expanding it.
 
 ## Monthly
@@ -127,15 +135,42 @@ making markers rehydrate in front of the user on the next presentation.
 
 The month crossing the shared focal line receives the darker background. The
 underline follows Home's Selected Day, not the current Day. Selecting any
-enabled Day starts its complete-Day query during dismissal and lands Home on
-the first Entry or the existing empty-Day state.
+enabled Day uses the same coordinated dismissal/query hand-off and lands Home
+on the first Entry or the existing empty-Day state.
 
 ## Data and failure boundaries
 
-Home no longer preloads the journal. Complete Days live in an eight-item LRU;
-concurrent readers share one Promise, and rejected or invalidated loads cannot
-populate the cache. Recent's resolved first page and at most four month marker
-Promises are the only process-level calendar summaries.
+Home no longer preloads the journal. Complete Days use a bounded eight-Day LRU
+whose concurrent readers share one Promise and whose rejected or invalidated
+loads cannot populate the cache. Recent's resolved first page and at most four
+month marker Promises are the only process-level calendar summaries.
+
+Calendar-origin misses do not change Home to a loading route. Selection starts
+the query and native close together while leaving the prior valid Day still.
+A resolved Day mounts only a lightweight visual of its selected Entry in a
+non-interactive, accessibility-hidden layer one window height below Home. The
+visual renders the first real Artefact and plain white silhouettes for the
+remaining count; it does not mount `DayPager`, an interactive `Stack`, portals,
+or hidden Artefact content. Native settle at zero then starts the old body's
+350 ms downward exit. Only after that exit completes may the prepared layer
+fade and translate upward over 350 ms. If preparation completed within the
+combined sheet-close and exit window, entrance follows exit with no blank
+frame; otherwise the body stays empty until preparation really finishes.
+
+The prepared Entry completes its entrance before Home adopts the canonical
+complete-Day route body. At that point the prepared layer is stationary and
+opaque, so the full Day can mount in final on-screen geometry behind it without
+contending with animation frames or changing ScrollView clipping. For a
+non-empty Paper Entry, the native surface reports readiness only after TextKit
+has laid out the current document at non-zero bounds. A document-scoped latch
+retains that edge-triggered readiness when layout happened before Calendar made
+its request, then reports it exactly once for the matching hand-off. Home does
+not retire the prepared cover before that signal. Other Entry types retire the
+cover on the frame after canonical adoption. This briefly duplicates only one
+real Artefact plus silhouettes rather than two complete Day trees, and retains
+no transition copy outside that bounded window. Both bodies reject pointer
+input and hide descendants from iOS and Android accessibility until the
+handoff completes or recovery restores the old body.
 
 Failures remain local:
 
@@ -143,9 +178,12 @@ Failures remain local:
 - Monthly marker failure keeps grids and Day selection available.
 - One canonical preview failure replaces only that preview.
 - The sheet error boundary leaves the external X dismissal available.
-- Home clears the previous Day on an uncached route change and presents a
-  stable loading/error state, so stale entries are never labelled as the new
-  Day.
+- Ordinary uncached route changes clear the previous Day and present a stable
+  loading/error state, so stale entries are never labelled as the new Day.
+- Calendar-origin selection moves the previous Day below the viewport but
+  leaves its state intact until the prepared hand-off is ready. Failure returns
+  that unchanged body from below and presents a generic recovery alert with an
+  Open Calendar action instead of exposing repository details.
 
 ## Date invariants
 

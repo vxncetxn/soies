@@ -58,6 +58,10 @@ type StackProps = {
   collapseForWidgetTarget?: boolean;
   /** Clears the one-shot command after the expanded pager owns the target. */
   onWidgetTargetConsumed?: () => void;
+  /** Calendar request targeting the collapsed first Paper Artefact. */
+  firstArtefactReadinessRequestId?: number | null;
+  /** Reports when the collapsed first Paper has completed native text layout. */
+  onFirstArtefactReady?: (requestId: number) => void;
 };
 
 const Stack = ({
@@ -65,6 +69,8 @@ const Stack = ({
   widgetArtefactId = null,
   collapseForWidgetTarget = false,
   onWidgetTargetConsumed,
+  firstArtefactReadinessRequestId,
+  onFirstArtefactReady,
 }: StackProps) => {
   // `chromeProgress` is a screen-level shared value (via ExpandContext) that
   // drives header/chrome fade-out while *any* entry is expanded. We bump it
@@ -95,10 +101,10 @@ const Stack = ({
   // Reset to null after consumption so a later tap on the same installed
   // widget is treated as a new one-shot command.
   const [handledWidgetArtefactId, setHandledWidgetArtefactId] = useState<string | null>(null);
-  // Tracks which entry `activePage` / `scrollOffset` currently reflect so we
-  // can reset them during render when the DayPager reuses this Stack across
-  // dates (see adjust-state block below).
-  const [prevEntry, setPrevEntry] = useState(entry);
+  // A durable Entry key remounts this Stack when identity changes. Keep a local
+  // reference check for an in-place revision of that same Entry so a shortened
+  // Artefact list cannot inherit an out-of-range active page.
+  const [previousEntry, setPreviousEntry] = useState(entry);
   // Share / Feature-in-Widget are deferred until FocusOverlay reports its close
   // spring has settled. Store the exact session requested by the tap so a
   // list/date update during the animation cannot switch the artefact underneath.
@@ -118,28 +124,8 @@ const Stack = ({
   // by both render branches' ArtefactWrappers.
   const progress = useSharedValue(0);
 
-  // Reset the persisted artefact page when the entry changes. index.tsx updates
-  // the DayPager in place on date navigation (no remount), so this Stack
-  // instance is reused across entries; without this, `activePage` from a
-  // previous entry could be out of range for the new one and land the expanded
-  // pager beyond the last artefact. `entry` is a stable reference per date
-  // (served from the entry cache), so this only fires on an actual entry change
-  // — not on every expand/collapse within the same entry.
-  //
-  // `scrollOffset` must be reset too: it's a shared value that retains its last
-  // value across re-renders (unlike `useState`, it isn't recreated on remount).
-  // Before the in-place-update change, `key={effectiveDate}` on DayPager forced
-  // a remount, which recreated `scrollOffset` at 0. Now the Stack is reused, so
-  // a leaked `scrollOffset = 2*PAGE_WIDTH` (from collapsing on artefact 2) would
-  // persist into the new date's collapsed deck — `activeIndex = round(scrollOffset/PAGE_WIDTH)`
-  // would be 2, showing artefact 2 on top of the new date's stack. Resetting it
-  // here keeps the collapsed deck on artefact 0 for the new entry.
-  //
-  // React state adjusts during render (RC-safe). The SharedValue reset runs in
-  // useLayoutEffect — writing `.set()` during render trips Reanimated's
-  // "Writing to value during component render" warning under StrictMode.
-  if (prevEntry !== entry) {
-    setPrevEntry(entry);
+  if (previousEntry !== entry) {
+    setPreviousEntry(entry);
     setActivePage(0);
   }
 
@@ -389,6 +375,8 @@ const Stack = ({
               progress={progress}
               currentPage={currentPage}
               activeIndex={activeIndex}
+              firstArtefactReadinessRequestId={firstArtefactReadinessRequestId}
+              onFirstArtefactReady={onFirstArtefactReady}
             />
           </LongPressable>
           {/* A small "ellipsis" button floating above the deck as an

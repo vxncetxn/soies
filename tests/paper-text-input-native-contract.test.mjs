@@ -22,6 +22,14 @@ const artefactWrapperSource = readFileSync(
   new URL("../src/components/ArtefactWrapper.tsx", import.meta.url),
   "utf8",
 );
+const nativeModuleSource = readFileSync(
+  new URL("../modules/paper-text-input/ios/PaperTextInputModule.swift", import.meta.url),
+  "utf8",
+);
+const boundedTextSurfaceSource = readFileSync(
+  new URL("../src/components/BoundedTextSurface.ios.tsx", import.meta.url),
+  "utf8",
+);
 
 test("focused Paper authoring reaches screen space through one identity scale", () => {
   const scaleTransforms = editablePaperSource.match(/transform:\s*\[\s*\{\s*scale:/g) ?? [];
@@ -100,4 +108,20 @@ test("Paper placeholder is laid out at the canonical text origin, not centered i
   );
   assert.match(nativeViewSource, /placeholderLabel\.sizeThatFits/);
   assert.match(nativeViewSource, /placeholderBounds\.minY/);
+});
+
+test("read-only Paper reports readiness only after TextKit lays out its installed document", () => {
+  const readiness = nativeViewSource.match(
+    /private func reportContentReadyIfNeeded\(\)[\s\S]*?^  }/m,
+  );
+
+  assert.ok(readiness, "PaperTextInputView must expose a post-layout readiness boundary");
+  assert.match(readiness[0], /layoutManager\.ensureLayout/);
+  assert.match(readiness[0], /onPaperContentReady\(\)/);
+  assert.match(
+    nativeViewSource,
+    /override func layoutSubviews\(\)[\s\S]*reportContentReadyIfNeeded\(\)/,
+  );
+  assert.match(nativeModuleSource, /"onPaperContentReady"/);
+  assert.match(boundedTextSurfaceSource, /onPaperContentReady=\{onContentReady\}/);
 });

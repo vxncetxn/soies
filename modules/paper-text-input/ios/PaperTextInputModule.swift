@@ -81,7 +81,8 @@ public class PaperTextInputModule: Module {
         "onPaperDocumentChange",
         "onPaperSelectionStateChange",
         "onPaperInputFocus",
-        "onPaperInputBlur"
+        "onPaperInputBlur",
+        "onPaperContentReady"
       )
 
       AsyncFunction("focus") { (view: PaperTextInputView) in

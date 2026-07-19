@@ -27,6 +27,8 @@ export type PaperTextSurfaceProps = {
   onFocus?: () => void;
   /** Read surfaces omit this; editable surfaces use it to leave Type mode. */
   onBlur?: () => void;
+  /** Fires after the controlled document has entered the platform text layout. */
+  onContentReady?: () => void;
   /** False uses the same TextKit renderer without responder/selection behavior. */
   editable?: boolean;
   /** Authoring uses a high-resolution proportional surface; output uses 1. */

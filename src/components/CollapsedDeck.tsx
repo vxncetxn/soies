@@ -20,7 +20,6 @@
  *     elements (also reused by `Stack` for the expanded pager, so both states
  *     render the same artefact components driven by the same shared values).
  */
-import { ReactNode } from "react";
 import Animated, { type AnimatedRef, type SharedValue } from "react-native-reanimated";
 
 import type { Entry } from "../data/entries";
@@ -55,6 +54,10 @@ type UseWrappedArtefactsParams = {
   // The index of the card that's "on top" in the collapsed stack (the one
   // the user is currently on). Drives the collapsed horizontal offsets.
   activeIndex: SharedValue<number>;
+  /** Calendar request targeting this Entry's first Paper Artefact. */
+  firstArtefactReadinessRequestId?: number | null;
+  /** Canonical first-Paper readiness used by the Calendar route handoff. */
+  onFirstArtefactReady?: (requestId: number) => void;
 };
 
 /**
@@ -71,28 +74,35 @@ export const useWrappedArtefacts = ({
   progress,
   currentPage,
   activeIndex,
+  firstArtefactReadinessRequestId,
+  onFirstArtefactReady,
 }: UseWrappedArtefactsParams) => {
-  // Curried helper: wrap one artefact's JSX in an ArtefactWrapper with the
-  // shared animation values and a stable key.
-  const wrapArtefact = (index: number, artefact: ReactNode) => (
+  // Pick the right content component per artefact (by the artefact's own shape,
+  // see renderArtefactContent), then wrap each one in an ArtefactWrapper with
+  // the shared animation values. Durable Artefact identity is essential here:
+  // Calendar navigation updates the DayPager in place, and reusing an index-keyed
+  // native TextKit view for another Paper can leave its old backing layer attached.
+  return entry.artefacts.map((artefact, index) => (
     <ArtefactWrapper
       type={entry.type}
-      key={index}
+      key={artefact.id}
       index={index}
       progress={progress}
       currentPage={currentPage}
       activeIndex={activeIndex}
     >
-      {artefact}
+      {renderArtefactContent(
+        artefact,
+        artefact.id,
+        index === 0
+          ? {
+              paperContentReadinessRequestId: firstArtefactReadinessRequestId,
+              onPaperContentReady: onFirstArtefactReady,
+            }
+          : undefined,
+      )}
     </ArtefactWrapper>
-  );
-
-  // Pick the right content component per artefact (by the artefact's own shape,
-  // see renderArtefactContent), then wrap each one in an ArtefactWrapper with
-  // the shared animation values and a stable key.
-  return entry.artefacts.map((artefact, index) =>
-    wrapArtefact(index, renderArtefactContent(artefact, index)),
-  );
+  ));
 };
 
 type CollapsedDeckProps = {
@@ -104,6 +114,8 @@ type CollapsedDeckProps = {
   // here so that `FocusOverlay` (the long-press menu) can measure the deck's
   // on-screen frame and animate the overlay from it.
   triggerRef?: AnimatedRef<Animated.View>;
+  firstArtefactReadinessRequestId?: number | null;
+  onFirstArtefactReady?: (requestId: number) => void;
 };
 
 /**
@@ -121,8 +133,17 @@ const CollapsedDeck = ({
   currentPage,
   activeIndex,
   triggerRef,
+  firstArtefactReadinessRequestId,
+  onFirstArtefactReady,
 }: CollapsedDeckProps) => {
-  const wrappedArtefacts = useWrappedArtefacts({ entry, progress, currentPage, activeIndex });
+  const wrappedArtefacts = useWrappedArtefacts({
+    entry,
+    progress,
+    currentPage,
+    activeIndex,
+    firstArtefactReadinessRequestId,
+    onFirstArtefactReady,
+  });
 
   return (
     <Animated.View ref={triggerRef} collapsable={false} className={deckClassName(entry.type)}>

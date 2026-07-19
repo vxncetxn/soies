@@ -12,11 +12,11 @@
  * which keeps read glyphs sharp without reflow. Frames, widgets, and Share keep
  * the default scale of 1 and continue scaling/capturing the complete canvas.
  */
-import { type PropsWithChildren } from "react";
+import { type PropsWithChildren, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
-import type { PaperDocument } from "../data/paperDocument";
-
+import { PaperContentReadinessLatch } from "../data/paperContentReadiness";
+import { serializePaperDocument, type PaperDocument } from "../data/paperDocument";
 import { useArtefactPresentationScale } from "./ArtefactPresentationScale";
 import InkOverlay from "./InkOverlay";
 import {
@@ -35,6 +35,10 @@ type PaperProps = {
   onInkDisplay?: () => void;
   /** Capture failure signal for a missing/unreadable Ink cache. */
   onInkError?: () => void;
+  /** Calendar request waiting for this exact Paper document to be ready. */
+  textReadinessRequestId?: number | null;
+  /** Signals that the requested document has completed native text layout. */
+  onTextDisplay?: (requestId: number) => void;
 };
 
 type PaperCanvasProps = PropsWithChildren<{
@@ -63,12 +67,46 @@ export function PaperCanvas({ children, presentationScale }: PaperCanvasProps) {
   );
 }
 
-const Paper = ({ document, inkOverlayPath, onInkDisplay, onInkError }: PaperProps) => {
+const Paper = ({
+  document,
+  inkOverlayPath,
+  onInkDisplay,
+  onInkError,
+  textReadinessRequestId = null,
+  onTextDisplay,
+}: PaperProps) => {
   const presentationScale = useArtefactPresentationScale();
+  const documentKey = serializePaperDocument(document);
+  const [contentReadiness] = useState(() => new PaperContentReadinessLatch());
+
+  const handleNativeTextReady = () => {
+    if (
+      contentReadiness.contentReady(documentKey, textReadinessRequestId) &&
+      textReadinessRequestId !== null
+    ) {
+      onTextDisplay?.(textReadinessRequestId);
+    }
+  };
+
+  // Native layout is an edge: an already-mounted Paper does not emit it again
+  // merely because Calendar targets that Paper later. Replay the retained
+  // document readiness once for each new handoff request.
+  useEffect(() => {
+    if (
+      textReadinessRequestId !== null &&
+      contentReadiness.request(documentKey, textReadinessRequestId)
+    ) {
+      onTextDisplay?.(textReadinessRequestId);
+    }
+  }, [contentReadiness, documentKey, onTextDisplay, textReadinessRequestId]);
 
   return (
     <PaperCanvas>
-      <PaperTextSurface document={document} presentationScale={presentationScale} />
+      <PaperTextSurface
+        document={document}
+        presentationScale={presentationScale}
+        onContentReady={handleNativeTextReady}
+      />
       {inkOverlayPath ? (
         <InkOverlay uri={inkOverlayPath} onDisplay={onInkDisplay} onError={onInkError} />
       ) : null}

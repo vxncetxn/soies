@@ -61,6 +61,8 @@ export type BoundedTextSurfaceProps = {
   onFocus?: () => void;
   /** Editable adapters use blur to leave Type; output surfaces omit it. */
   onBlur?: () => void;
+  /** Readiness boundary after the controlled document has entered native layout. */
+  onContentReady?: () => void;
   /** False retains the same renderer without responder/selection behavior. */
   editable?: boolean;
   /** Display-only multiplier; native capacity always measures canonical geometry. */

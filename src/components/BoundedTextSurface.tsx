@@ -26,6 +26,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
       onChangeDocument,
       onFocus,
       onBlur,
+      onContentReady,
       editable = false,
       presentationScale = 1,
       placeholder = "",
@@ -60,6 +61,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
           }
           onFocus={onFocus}
           onBlur={onBlur}
+          onLayout={onContentReady}
           editable
           multiline
           scrollEnabled={false}
@@ -86,6 +88,7 @@ const BoundedTextSurface = forwardRef<BoundedTextSurfaceHandle, BoundedTextSurfa
     const paragraphs = document.text.split("\n");
     return (
       <View
+        onLayout={onContentReady}
         style={[
           StyleSheet.absoluteFill,
           {

@@ -11,7 +11,16 @@ import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
 import Paper from "./Paper";
 import Print from "./Print";
 
-export function renderArtefactContent(artefact: Artefact, key?: string | number): ReactNode {
+type RenderArtefactContentOptions = {
+  paperContentReadinessRequestId?: number | null;
+  onPaperContentReady?: (requestId: number) => void;
+};
+
+export function renderArtefactContent(
+  artefact: Artefact,
+  key?: string | number,
+  options?: RenderArtefactContentOptions,
+): ReactNode {
   if (isPrintArtefact(artefact)) {
     return (
       <Print key={key} imagePath={artefact.imagePath} inkOverlayPath={artefact.inkOverlayPath}>
@@ -28,5 +37,13 @@ export function renderArtefactContent(artefact: Artefact, key?: string | number)
     );
   }
 
-  return <Paper key={key} document={artefact} inkOverlayPath={artefact.inkOverlayPath} />;
+  return (
+    <Paper
+      key={key}
+      document={artefact}
+      inkOverlayPath={artefact.inkOverlayPath}
+      textReadinessRequestId={options?.paperContentReadinessRequestId}
+      onTextDisplay={options?.onPaperContentReady}
+    />
+  );
 }
