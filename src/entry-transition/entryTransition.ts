@@ -142,7 +142,16 @@ export class EntryMotionCompletionQueue {
 
   finish(finished: boolean): EntryMotionCompletion | null {
     const completion = this.pending.shift() ?? null;
-    return finished ? completion : null;
+    if (finished || this.pending.length === 0) {
+      // Ease reports an active batch as interrupted when any native prop update
+      // arrives, including a rerender whose animated destination is unchanged.
+      // That no-op update starts no replacement batch, so waiting for a later
+      // successful event would deadlock the coordinator. When a real retarget
+      // exists its token remains queued, and the interrupted completion stays
+      // suppressed until that replacement finishes.
+      return completion;
+    }
+    return null;
   }
 }
 

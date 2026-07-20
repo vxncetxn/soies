@@ -57,6 +57,11 @@ test("Paper dismissal prepares native responders before starting overlay close",
   assert.match(handleClose[0], /onClose\(reason\)/);
 });
 
+test("Create Cancel does not pass its native press event as the dismissal reason", () => {
+  assert.match(createChromeSource, /onPress=\{\(\) => onClose\(\)\}/);
+  assert.doesNotMatch(createChromeSource, /onPress=\{onClose\}/);
+});
+
 test("StrictMode effect rehearsal cannot leave Paper authoring permanently dismissing", () => {
   assert.match(
     authoringSource,

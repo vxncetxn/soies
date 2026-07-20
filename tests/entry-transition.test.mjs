@@ -158,6 +158,19 @@ test("native completion events retain the request that started each visibility c
   assert.deepEqual(rotatingExit.finish(true), first);
 });
 
+test("a native no-op interruption completes the current logical motion", () => {
+  const queue = new EntryMotionCompletionQueue(true, 800);
+  const exit = { requestId: 23, kind: "source-exit" };
+
+  queue.transition(false, 800, exit);
+  // Ease starts a fresh native batch for any prop update. An unrelated React
+  // rerender therefore interrupts the active batch even though these animated
+  // values did not change, and Ease has no replacement animation to finish.
+  queue.transition(false, 800, exit);
+
+  assert.deepEqual(queue.finish(false), exit);
+});
+
 test("every request-scoped completion ignores a stale request id", () => {
   const state = entryTransitionReducer(createEntryTransitionState("home"), {
     type: "begin",

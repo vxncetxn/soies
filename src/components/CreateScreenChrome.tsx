@@ -288,7 +288,7 @@ const CreateScreenChrome = ({
             pointerEvents={isExpanded || saving ? "none" : "box-none"}
           >
             <Pressable
-              onPress={onClose}
+              onPress={() => onClose()}
               disabled={saving}
               accessibilityRole="button"
               accessibilityLabel="Cancel create entry"
