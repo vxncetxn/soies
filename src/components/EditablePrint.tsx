@@ -17,9 +17,9 @@ import type { ReactNode, Ref, RefObject } from "react";
 
 import { useEffect, useRef } from "react";
 import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { EaseView } from "react-native-ease";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, {
-  type SharedValue,
   interpolate,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -30,7 +30,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { PrintCaptionSurfaceHandle } from "./PrintCaptionSurface";
 
-import { SPRING_CONFIG } from "../constants/animation";
+import { EASE_CREATE_EXPANSION_SPRING, SPRING_CONFIG } from "../constants/animation";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { getCollapsedArtefactLayout } from "./artefactLayout";
 import { PrintCanvas } from "./Print";
 import PrintCaptionSurface from "./PrintCaptionSurface";
@@ -65,8 +66,10 @@ type EditablePrintProps = {
   value: string;
   /** Mirrors only native-accepted mutations into the draft. */
   onChangeText: (text: string) => void;
-  /** UI-thread Default→Type/Scribble progress owned by the shared authoring hook. */
-  expandProgress: SharedValue<number>;
+  /** Discrete visual endpoint supplied by the Create authoring phase. */
+  expanded: boolean;
+  onRequestType: () => void;
+  onRequestDefault: () => void;
   /** Shared pager receives the native responder handle for Prev/Next and dismissal. */
   textInputRef: Ref<PrintCaptionSurfaceHandle | null>;
   /** Hold Type across intentional Prev/Next responder transfer. */
@@ -90,7 +93,9 @@ const EditablePrint = ({
   imageUri,
   value,
   onChangeText,
-  expandProgress,
+  expanded,
+  onRequestType,
+  onRequestDefault,
   textInputRef,
   keepExpandedOnBlurRef,
   suppressArtefactFocusRef,
@@ -100,6 +105,7 @@ const EditablePrint = ({
   scribbleCanvas = null,
   onImageReady,
 }: EditablePrintProps) => {
+  const reduceMotionEnabled = useReducedMotionPreference();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
@@ -116,6 +122,9 @@ const EditablePrint = ({
   // Pin state lives on the UI thread so the card follows interactive keyboard
   // motion without round-tripping through React renders.
   const scribbleModeSV = useSharedValue(scribbleActive ? 1 : 0);
+  // This private companion is used only to reconcile the interactive keyboard
+  // with Ease's opaque native scale/body motion. It never leaves this adapter.
+  const geometryProgress = useSharedValue(expanded ? 1 : 0);
   const pinY = useSharedValue(0);
   /** 1 while keyboard dismissal owns pinY and springs it safely back to zero. */
   const isCollapsingSV = useSharedValue(0);
@@ -140,7 +149,7 @@ const EditablePrint = ({
       return;
     }
     isCollapsingSV.set(0);
-    expandProgress.set(withSpring(1, SPRING_CONFIG));
+    onRequestType();
   };
 
   /** JS/native blur bridge: keep intentional page transfers expanded, collapse all others. */
@@ -151,7 +160,7 @@ const EditablePrint = ({
     // UIKit blur can arrive after the keyboard shared value has already reset.
     isCollapsingSV.set(1);
     pinY.set(withSpring(0, SPRING_CONFIG));
-    expandProgress.set(withSpring(0, SPRING_CONFIG));
+    onRequestDefault();
   };
 
   /** Routes taps on non-caption card space to the sole native caption responder. */
@@ -170,12 +179,18 @@ const EditablePrint = ({
     }
   }, [scribbleActive, scribbleModeSV, isCollapsingSV, pinY]);
 
+  useEffect(() => {
+    geometryProgress.set(
+      reduceMotionEnabled ? (expanded ? 1 : 0) : withSpring(expanded ? 1 : 0, SPRING_CONFIG),
+    );
+  }, [expanded, geometryProgress, reduceMotionEnabled]);
+
   // Detect keyboard closure on the UI thread because it can precede JS blur.
   // The live pin is derived from the one high-resolution card and its current
   // bloom scale, so Default and Type share the same bottom-edge calculation.
   useAnimatedReaction(
     () => {
-      const p = expandProgress.get();
+      const p = geometryProgress.get();
       const keyboardOpen = Math.max(0, -keyboardHeight.get());
       const scribble = scribbleModeSV.get() === 1;
       const collapsing = isCollapsingSV.get() === 1;
@@ -228,24 +243,16 @@ const EditablePrint = ({
     transform: [{ translateY: scribbleModeSV.get() === 1 ? 0 : pinY.get() }],
   }));
 
-  // This is the caption's sole scale-bearing ancestor. Type/Scribble settle at
-  // identity, avoiding the blurry caret/text produced by enlarging a base raster.
-  const scaleStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        scale: interpolate(expandProgress.get(), [0, 1], [collapsedPresentationScale, 1]),
-      },
-    ],
-  }));
+  const scale = expanded ? 1 : collapsedPresentationScale;
 
   return (
     <Animated.View style={pinStyle}>
-      <Animated.View
-        style={[
-          styles.displayFrame,
-          { width: expandedWidth, height: expandedHeight, transformOrigin: "top" },
-          scaleStyle,
-        ]}
+      <EaseView
+        style={[styles.displayFrame, { width: expandedWidth, height: expandedHeight }]}
+        transformOrigin={{ x: 0.5, y: 0 }}
+        initialAnimate={{ scale }}
+        animate={{ scale }}
+        transition={reduceMotionEnabled ? { type: "none" } : EASE_CREATE_EXPANSION_SPRING}
       >
         {/* Blank/photo areas focus the caption; the native caption itself stays
             above this target so UIKit retains caret and selection ownership. */}
@@ -278,7 +285,7 @@ const EditablePrint = ({
           }
         />
         {scribbleCanvas}
-      </Animated.View>
+      </EaseView>
     </Animated.View>
   );
 };

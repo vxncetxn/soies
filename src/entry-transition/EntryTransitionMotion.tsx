@@ -3,9 +3,11 @@ import type { EaseViewProps } from "react-native-ease/uniwind";
 import { useLayoutEffect, useState } from "react";
 import { EaseView } from "react-native-ease/uniwind";
 
+import type { EntryMotionCompletion } from "./entryTransition";
+
 import { ENTRY_TRANSITION_DURATION_MS } from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
-import { EntryMotionCompletionQueue, type EntryMotionCompletion } from "./entryTransition";
+import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 
 type MotionViewProps = Omit<
   EaseViewProps,
@@ -31,14 +33,19 @@ export function EntrySurfaceMotion({
   ...props
 }: EntrySurfaceMotionProps) {
   const reduceMotionEnabled = useReducedMotionPreference();
-  const [completionQueue] = useState(() => new EntryMotionCompletionQueue(visible, viewportHeight));
+  const [completionQueue] = useState(
+    () =>
+      new EaseMotionCompletionQueue<EntryMotionCompletion>(
+        `${visible ? "visible" : "hidden"}:${viewportHeight}`,
+      ),
+  );
   const values = {
     opacity: visible ? 1 : 0,
     translateY: visible ? 0 : viewportHeight,
   };
 
   useLayoutEffect(() => {
-    completionQueue.transition(visible, viewportHeight, completion);
+    completionQueue.transition(`${visible ? "visible" : "hidden"}:${viewportHeight}`, completion);
   }, [completion, completionQueue, viewportHeight, visible]);
 
   return (

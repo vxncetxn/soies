@@ -7,8 +7,8 @@
  *
  * Relationship to other components:
  *   - Home owns `CalendarSheet` and passes `onCalendarPress` to this trigger.
- *   - `ExpandContext`'s `chromeProgress` fades the whole header out when an
- *     entry expands (the header would overlap the fullscreen expanded view).
+ *   - `StackChromeMotion` maps the global expansion phase to an Ease opacity
+ *     endpoint (the header would overlap the fullscreen expanded view).
  */
 import { Pressable, Text, View } from "react-native";
 import Animated, { SharedValue, useAnimatedStyle } from "react-native-reanimated";
@@ -17,9 +17,9 @@ import { TITLE_TRAVEL } from "../constants/animation";
 import { entryChromeVisible } from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
-import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { formatDisplayDate } from "../utils/date";
 import { Icon } from "./Icon";
+import { StackChromeMotion } from "./StackChromeMotion";
 
 type AnimatedTitleProps = {
   // One title string per day in the visible pager window.
@@ -105,10 +105,6 @@ type HomeHeaderProps = {
 };
 
 const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderProps) => {
-  // Reanimated owns Stack-expansion opacity on the inner native view. The Ease
-  // wrapper separately owns Entry-navigation opacity, so neither engine writes
-  // the same property on the same native view.
-  const chromeFadeStyle = useHomeChromeFade();
   const { state: entryTransitionState } = useEntryTransition();
   const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
@@ -116,9 +112,9 @@ const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderPr
     // Floating header pinned to the top. `z-50` keeps it above the pager; the
     // modal sheet itself lives in the bottom-sheet provider above this subtree.
     <View className="absolute z-50 w-full px-5 py-2">
-      {/* Chrome-fade wrapper: fades the header out during entry expand. */}
+      {/* Entry and Stack own independent opacity wrappers and never share a writer. */}
       <EntryChromeMotion visible={entryChromeIsVisible} pointerEvents="box-none">
-        <Animated.View style={chromeFadeStyle}>
+        <StackChromeMotion pointerEvents="box-none">
           <Pressable
             onPress={onCalendarPress}
             accessibilityRole="button"
@@ -138,7 +134,7 @@ const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderPr
               </View>
             </View>
           </Pressable>
-        </Animated.View>
+        </StackChromeMotion>
       </EntryChromeMotion>
     </View>
   );

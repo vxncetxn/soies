@@ -16,7 +16,7 @@
  * `children` inside the paper-slide region.
  */
 import { BlurTargetView, BlurView } from "expo-blur";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -27,17 +27,16 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { EaseView } from "react-native-ease";
-import Animated, {
-  interpolate,
-  type SharedValue,
-  useAnimatedReaction,
-  useAnimatedStyle,
-  runOnJS,
-} from "react-native-reanimated";
+import { EaseView } from "react-native-ease/uniwind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { EASE_DEFAULT_TIMING } from "../constants/animation";
+import type { CreateAuthoringState } from "../hooks/createAuthoringTransition";
+
+import {
+  EASE_CREATE_CHROME_TIMING,
+  EASE_CREATE_EXPANSION_SPRING,
+  EASE_DEFAULT_TIMING,
+} from "../constants/animation";
 import { MAX_ARTEFACTS_PER_ENTRY } from "../constants/artefact";
 import {
   entryChromeVisible,
@@ -47,6 +46,7 @@ import {
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion, EntrySurfaceMotion } from "../entry-transition/EntryTransitionMotion";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import BloomBar from "./BloomBar";
 import { Icon } from "./Icon";
 import Tooltip from "./Tooltip";
@@ -57,7 +57,7 @@ const TITLE_FOCUS_BLUR_INTENSITY = 30;
 const TITLE_FOCUS_FADE_MS = 180;
 const CREATE_HEADER_HEIGHT = 84;
 const EXPANDED_HEADER_HEIGHT = 44;
-const CHROME_CROSSFADE_END = 0.5;
+const AUTHORING_BODY_TRAVEL = CREATE_HEADER_HEIGHT - EXPANDED_HEADER_HEIGHT;
 const TITLE_FONT_SIZE = 30;
 const TITLE_LINE_HEIGHT = 36;
 
@@ -77,8 +77,10 @@ export type CreateAddConfig =
     };
 
 export type CreateScreenChromeProps = {
-  /** 0 = default, 1 = artefact Type/Scribble — drives header/controls cross-fade. */
-  expandProgress: SharedValue<number>;
+  authoringExpanded: boolean;
+  authoringPhase: CreateAuthoringState["phase"];
+  authoringMotionRequestId: number | null;
+  onAuthoringMotionEnd: (requestId: number) => void;
   typeLabel: "PAPER" | "PRINT";
   title: string;
   onChangeTitle: (title: string) => void;
@@ -106,7 +108,10 @@ export type CreateScreenChromeProps = {
 };
 
 const CreateScreenChrome = ({
-  expandProgress,
+  authoringExpanded,
+  authoringPhase,
+  authoringMotionRequestId,
+  onAuthoringMotionEnd,
   typeLabel,
   title,
   onChangeTitle,
@@ -138,7 +143,6 @@ const CreateScreenChrome = ({
   const barOpen = bloomConfig?.barOpen ?? barOpenInternal;
   const setBarOpen = bloomConfig?.onBarOpenChange ?? setBarOpenInternal;
   const [barScreen, setBarScreen] = useState<"menu" | "add">("menu");
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [maxTooltipVisible, setMaxTooltipVisible] = useState(false);
   const titleInputRef = useRef<TextInput>(null);
@@ -152,21 +156,15 @@ const CreateScreenChrome = ({
 
   const showAddBloomPanel =
     bloomConfig != null && (barScreen === "add" || Boolean(bloomConfig.forceAddPanel));
+  const defaultInteractive = authoringPhase === "settled" && !authoringExpanded;
+  const expandedInteractive = authoringPhase === "settled" && authoringExpanded;
+  const bodyValues = { translateY: authoringExpanded ? 0 : AUTHORING_BODY_TRAVEL };
+  const authoringTarget = authoringExpanded ? "expanded" : "default";
+  const [completionQueue] = useState(() => new EaseMotionCompletionQueue<number>(authoringTarget));
 
-  useAnimatedReaction(
-    () => expandProgress.get(),
-    (v, prev) => {
-      if (prev === null) {
-        return;
-      }
-      if (
-        (prev <= CHROME_CROSSFADE_END && v > CHROME_CROSSFADE_END) ||
-        (prev > CHROME_CROSSFADE_END && v <= CHROME_CROSSFADE_END)
-      ) {
-        runOnJS(setIsExpanded)(v > CHROME_CROSSFADE_END);
-      }
-    },
-  );
+  useLayoutEffect(() => {
+    completionQueue.transition(authoringTarget, authoringMotionRequestId);
+  }, [authoringMotionRequestId, authoringTarget, completionQueue]);
 
   const handleEntryBodyMotionEnd = (completion: EntryMotionCompletion) => {
     if (completion.kind === "source-exit") {
@@ -177,35 +175,14 @@ const CreateScreenChrome = ({
     entryTransition.complete(completion.requestId, "create");
   };
 
-  const headerTotalHeightStyle = useAnimatedStyle(() => ({
-    height:
-      topPad +
-      interpolate(
-        expandProgress.get(),
-        [0, 1],
-        [CREATE_HEADER_HEIGHT, EXPANDED_HEADER_HEIGHT],
-        "clamp",
-      ),
-  }));
-
-  const createHeaderStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.get(), [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
-  }));
-  const expandedHeaderStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.get(), [CHROME_CROSSFADE_END, 1], [0, 1], "clamp"),
-  }));
-  // Solid plate only in Type/expanded state — covers the artefact under the
-  // chrome. Default + title-focus stay transparent so the artefact/blur show
-  // through (no gray band over the title-focus frost).
-  const headerPlateStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.get(), [0, CHROME_CROSSFADE_END], [0, 1], "clamp"),
-  }));
-
-  // Collapsed controls fade out when the artefact is focused. They stay at a
-  // fixed bottom inset — the keyboard covers them on title-focus (do not lift).
-  const controlsFadeStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.get(), [0, CHROME_CROSSFADE_END], [1, 0], "clamp"),
-  }));
+  const authoringTransition =
+    reduceMotionEnabled || authoringPhase === "dismissing"
+      ? ({ type: "none" } as const)
+      : EASE_CREATE_EXPANSION_SPRING;
+  const chromeTransition =
+    reduceMotionEnabled || authoringPhase === "dismissing"
+      ? ({ type: "none" } as const)
+      : EASE_CREATE_CHROME_TIMING;
 
   const handleTitleFocus = () => {
     if (saving) {
@@ -257,15 +234,34 @@ const CreateScreenChrome = ({
       <BlurTargetView ref={createBlurTargetRef} style={styles.blurTarget}>
         <View className="flex-1" pointerEvents={saving ? "none" : "auto"}>
           <EntrySurfaceMotion
-            className="flex-1 bg-background"
+            className="flex-1 overflow-hidden bg-background"
             visible={createBodyMotion.visible}
             instant={createBodyMotion.instant}
             completion={createBodyMotion.completion}
             viewportHeight={viewportHeight}
             onMotionEnd={handleEntryBodyMotionEnd}
           >
-            <Animated.View style={headerTotalHeightStyle} />
-            {children}
+            <View style={{ height: topPad + EXPANDED_HEADER_HEIGHT }} />
+            {/* The body keeps expanded layout height so Ease can translate it.
+                Default reserves the former 40-point header delta at the bottom,
+                preserving pager/indicator geometry at both settled endpoints. */}
+            <EaseView
+              style={[
+                styles.authoringBody,
+                { paddingBottom: authoringExpanded ? 0 : AUTHORING_BODY_TRAVEL },
+              ]}
+              initialAnimate={bodyValues}
+              animate={bodyValues}
+              transition={authoringTransition}
+              onTransitionEnd={(event) => {
+                const requestId = completionQueue.finish(event.finished);
+                if (requestId !== null) {
+                  onAuthoringMotionEnd(requestId);
+                }
+              }}
+            >
+              {children}
+            </EaseView>
           </EntrySurfaceMotion>
         </View>
 
@@ -274,18 +270,14 @@ const CreateScreenChrome = ({
           pointerEvents="box-none"
           style={StyleSheet.absoluteFill}
         >
-          <Animated.View
-            style={[
-              controlsFadeStyle,
-              {
-                position: "absolute",
-                left: 20,
-                right: 20,
-                bottom: insets.bottom + 20,
-              },
-            ]}
-            className="flex-row items-center justify-between"
-            pointerEvents={isExpanded || saving ? "none" : "box-none"}
+          <EaseView
+            style={[styles.bottomControls, { bottom: insets.bottom + 20 }]}
+            initialAnimate={{ opacity: authoringExpanded ? 0 : 1 }}
+            animate={{ opacity: authoringExpanded ? 0 : 1 }}
+            transition={chromeTransition}
+            pointerEvents={defaultInteractive && !saving ? "box-none" : "none"}
+            accessibilityElementsHidden={!defaultInteractive}
+            importantForAccessibility={defaultInteractive ? "auto" : "no-hide-descendants"}
           >
             <Pressable
               onPress={() => onClose()}
@@ -372,7 +364,7 @@ const CreateScreenChrome = ({
                 <Icon name="arrow-right" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
               )}
             </Pressable>
-          </Animated.View>
+          </EaseView>
         </EntryChromeMotion>
       </BlurTargetView>
 
@@ -383,7 +375,7 @@ const CreateScreenChrome = ({
       >
         {scribbleActive && scribbleTools ? (
           <View
-            pointerEvents="box-none"
+            pointerEvents={expandedInteractive ? "box-none" : "none"}
             style={{
               position: "absolute",
               left: 0,
@@ -426,25 +418,33 @@ const CreateScreenChrome = ({
           </Pressable>
         </EaseView>
 
-        <Animated.View
+        <View
           style={[
             styles.headerOverlay,
             { paddingTop: topPad },
-            isTitleFocused ? undefined : headerTotalHeightStyle,
+            isTitleFocused
+              ? undefined
+              : { height: topPad + CREATE_HEADER_HEIGHT, overflow: "hidden" },
           ]}
-          className={isTitleFocused ? undefined : "overflow-hidden"}
           pointerEvents={saving ? "none" : "box-none"}
         >
           {/* Plate fades in only for Type/expanded — not default, not title-focus. */}
-          <Animated.View
+          <EaseView
             pointerEvents="none"
-            style={[StyleSheet.absoluteFill, headerPlateStyle]}
+            style={[styles.expandedHeaderPlate, { height: topPad + EXPANDED_HEADER_HEIGHT }]}
             className="bg-background"
+            initialAnimate={{ opacity: authoringExpanded ? 1 : 0 }}
+            animate={{ opacity: authoringExpanded ? 1 : 0 }}
+            transition={chromeTransition}
           />
-          <Animated.View
-            style={createHeaderStyle}
+          <EaseView
             className="px-5"
-            pointerEvents={isExpanded ? "none" : "auto"}
+            initialAnimate={{ opacity: authoringExpanded ? 0 : 1 }}
+            animate={{ opacity: authoringExpanded ? 0 : 1 }}
+            transition={chromeTransition}
+            pointerEvents={defaultInteractive ? "auto" : "none"}
+            accessibilityElementsHidden={!defaultInteractive}
+            importantForAccessibility={defaultInteractive ? "auto" : "no-hide-descendants"}
           >
             <View className="mb-3 flex-row items-center gap-2">
               <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
@@ -485,11 +485,16 @@ const CreateScreenChrome = ({
                 </Text>
               ) : null}
             </View>
-          </Animated.View>
+          </EaseView>
 
-          <Animated.View
-            style={[styles.expandedHeader, expandedHeaderStyle, { top: topPad }]}
-            pointerEvents={isExpanded && !saving ? "auto" : "none"}
+          <EaseView
+            style={[styles.expandedHeader, { top: topPad, height: EXPANDED_HEADER_HEIGHT }]}
+            initialAnimate={{ opacity: authoringExpanded ? 1 : 0 }}
+            animate={{ opacity: authoringExpanded ? 1 : 0 }}
+            transition={chromeTransition}
+            pointerEvents={expandedInteractive && !saving ? "auto" : "none"}
+            accessibilityElementsHidden={!expandedInteractive}
+            importantForAccessibility={expandedInteractive ? "auto" : "no-hide-descendants"}
           >
             <View
               className="flex-1 flex-row items-center justify-between"
@@ -556,14 +561,16 @@ const CreateScreenChrome = ({
                 </View>
               )}
             </View>
-          </Animated.View>
-        </Animated.View>
+          </EaseView>
+        </View>
 
         {/* Rendered after every chrome layer so a keyboard-following accessory
           remains visible above the Paper and headers. Paper mounts this node
           only in Type; it no longer needs an opacity-hidden lifetime workaround
           because Create itself is not a native Portal. */}
-        {floatingAccessory}
+        {floatingAccessory ? (
+          <View pointerEvents={expandedInteractive ? "box-none" : "none"}>{floatingAccessory}</View>
+        ) : null}
       </EntryChromeMotion>
     </View>
   );
@@ -584,7 +591,23 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 0,
+  },
+  expandedHeaderPlate: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  authoringBody: {
+    flex: 1,
+  },
+  bottomControls: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   maxTooltip: {
     bottom: "100%",

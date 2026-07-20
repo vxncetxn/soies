@@ -29,6 +29,12 @@ transition for `{ type: "none" }`, retaining the same completion-event order.
 Bloom and the dormant `MorphOverlay` remain in the inventory but are excluded
 from this migration. Reanimated therefore remains a production dependency.
 
+[ADR 0015](./0015-phase-synchronized-ease-expansion.md) refines this boundary:
+compound interactions may coordinate independent Ease endpoints with a
+request-scoped phase reducer instead of retaining one shared Reanimated
+progress value. Continuously driven subparts still remain with Reanimated on
+separate nested views.
+
 ## Considered options
 
 - **Migrate every animation to Ease** — rejected because Ease deliberately does

@@ -1,40 +1,49 @@
 /**
  * FocusOverlay — long-press / ellipsis actions overlay (measure-and-morph).
  *
- * A measured trigger, blurred backdrop, frozen subject clone, and staggered
- * menu share one progress clock. A Stack mounts this tree when Focus opens,
- * retains it through the closing spring, then releases its native views.
+ * Reanimated owns trigger measurement and the clone/menu geometry. Ease owns
+ * the discrete backdrop, frozen-clone, and row fades. A Stack mounts this tree
+ * before opening and retains it through the Ease close completion.
  */
 import { BlurView } from "expo-blur";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
 import { EaseView } from "react-native-ease";
 import Animated, {
   type AnimatedRef,
-  interpolate,
   measure,
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
-import { EASE_DEFAULT_TIMING } from "../constants/animation";
+import {
+  EASE_DEFAULT_TIMING,
+  EASE_FOCUS_BACKDROP_TIMING,
+  EASE_FOCUS_CLONE_TIMING,
+} from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import { useAndroidBlurTargetProps } from "./BlurTargetViewContext";
+import {
+  focusOverlayTargetVisible,
+  type FocusOverlayTransitionEvent,
+  focusOverlayTransitionReducer,
+  focusOverlayTransitionState,
+} from "./focusOverlayTransition";
 import { Icon } from "./Icon";
 
-const FOCUS_SPRING = { stiffness: 110, damping: 20, mass: 1, overshootClamping: true };
-const BACKDROP_FADE_END = 0.2;
-const CLONE_BLOOM_START = 0.15;
 const MENU_BASE_DELAY_MS = 120;
 const MENU_STAGGER_MS = 70;
 const MENU_ITEM_DURATION_MS = 220;
 const MENU_CLOSE_DURATION_MS = 150;
 const MENU_TRANSLATE_Y = 14;
+const BACKDROP_CLOSE_DELAY_MS = 100;
+const CLONE_OPEN_DELAY_MS = 30;
+const CLONE_CLOSE_DELAY_MS = 100;
 const BLUR_INTENSITY = 30;
 
 export type FocusMenuIcon = "pencil" | "photo" | "share" | "trash";
@@ -105,14 +114,16 @@ const FocusMenuItemRow = ({
 
 type OverlayOrigin = { x: number; y: number; width: number; height: number };
 
-const animateOpen = ({
+const measureOpenOrigin = ({
   triggerRef,
   origin,
-  progress,
+  requestId,
+  dispatchTransition,
 }: {
   triggerRef: AnimatedRef<Animated.View>;
   origin: SharedValue<OverlayOrigin>;
-  progress: SharedValue<number>;
+  requestId: number;
+  dispatchTransition: (event: FocusOverlayTransitionEvent) => void;
 }) => {
   scheduleOnUI(() => {
     "worklet";
@@ -126,32 +137,13 @@ const animateOpen = ({
         height: layout.height,
       });
     }
-
-    progress.set(withSpring(1, FOCUS_SPRING));
+    scheduleOnRN(dispatchTransition, { type: "request", target: "open", requestId });
   });
 };
 
-const animateClose = ({
-  progress,
-  closeSequence,
-  setCloseSequence,
-}: {
-  progress: SharedValue<number>;
-  closeSequence: SharedValue<number>;
-  setCloseSequence: (value: number) => void;
-}) => {
-  scheduleOnUI(() => {
-    "worklet";
-    progress.set(
-      withSpring(0, FOCUS_SPRING, (finished) => {
-        if (finished) {
-          const next = closeSequence.get() + 1;
-          closeSequence.set(next);
-          scheduleOnRN(setCloseSequence, next);
-        }
-      }),
-    );
-  });
+type FocusShellCompletion = {
+  requestId: number;
+  target: "open" | "closed";
 };
 
 const FocusOverlay = ({
@@ -167,15 +159,25 @@ const FocusOverlay = ({
   const insets = useSafeAreaInsets();
   const reduceMotionEnabled = useReducedMotionPreference();
   const androidBlurProps = useAndroidBlurTargetProps();
-  const progress = useSharedValue(0);
   const origin = useSharedValue({ x: 0, y: 0, width: 1, height: 1 });
-  // Start from closed even when a transient owner mounts for an already-open
-  // target; treating the first `open` as a transition preserves the morph.
+  const [transitionState, dispatchTransition] = useReducer(
+    focusOverlayTransitionReducer,
+    undefined,
+    focusOverlayTransitionState,
+  );
+  const targetVisible = focusOverlayTargetVisible(transitionState);
+  const targetName = targetVisible ? "open" : "closed";
+  const [completionQueue] = useState(
+    () => new EaseMotionCompletionQueue<FocusShellCompletion>("closed"),
+  );
+  // The parent first mounts Focus closed so the Portal can lay out, then flips
+  // `open`. Measuring before dispatching the opening phase avoids a one-frame
+  // clone flash at the fallback 1×1 origin.
   const previousOpenRef = useRef(false);
+  const nextRequestIdRef = useRef(0);
+  const latestRequestIdRef = useRef(0);
   const nativeReadySignalledRef = useRef(false);
   const onCloseCompleteRef = useRef(onCloseComplete);
-  const closeSequenceSV = useSharedValue(0);
-  const [closeSequence, setCloseSequence] = useState(0);
 
   // Synchronize before the animation layout effect below. Reduced-motion can
   // settle a close immediately, so a passive effect would leave that callback
@@ -184,29 +186,38 @@ const FocusOverlay = ({
     onCloseCompleteRef.current = onCloseComplete;
   }, [onCloseComplete]);
 
-  useEffect(() => {
-    if (closeSequence > 0) {
-      onCloseCompleteRef.current?.();
-    }
-  }, [closeSequence]);
-
   useLayoutEffect(() => {
     if (previousOpenRef.current === open) {
       return;
     }
 
     previousOpenRef.current = open;
+    nextRequestIdRef.current += 1;
+    const requestId = nextRequestIdRef.current;
+    latestRequestIdRef.current = requestId;
 
     if (open) {
-      animateOpen({ triggerRef, origin, progress });
+      measureOpenOrigin({ triggerRef, origin, requestId, dispatchTransition });
       return;
     }
 
-    animateClose({ progress, closeSequence: closeSequenceSV, setCloseSequence });
-  }, [closeSequenceSV, open, origin, progress, triggerRef]);
+    dispatchTransition({ type: "request", target: "closed", requestId });
+    if (transitionState.phase === "closed") {
+      onCloseCompleteRef.current?.();
+    }
+  }, [open, origin, transitionState.phase, triggerRef]);
+
+  useLayoutEffect(() => {
+    completionQueue.transition(
+      targetName,
+      transitionState.requestId === null
+        ? null
+        : { requestId: transitionState.requestId, target: targetName },
+    );
+  }, [completionQueue, targetName, transitionState.requestId]);
 
   useEffect(() => {
-    if (!open) {
+    if (!targetVisible) {
       return;
     }
 
@@ -216,14 +227,9 @@ const FocusOverlay = ({
     });
 
     return () => subscription.remove();
-  }, [onRequestClose, open]);
+  }, [onRequestClose, targetVisible]);
 
-  const backdropStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.get(), [0, BACKDROP_FADE_END], [0, 1]),
-  }));
-
-  const cloneStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.get(), [CLONE_BLOOM_START, CLONE_BLOOM_START + 0.15], [0, 1]),
+  const cloneGeometryStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: origin.get().x }, { translateY: origin.get().y }],
     width: origin.get().width,
     height: origin.get().height,
@@ -245,15 +251,40 @@ const FocusOverlay = ({
     onNativeReady();
   };
 
+  const handleShellMotionEnd = (finished: boolean) => {
+    const completion = completionQueue.finish(finished);
+    if (completion === null || completion.requestId !== latestRequestIdRef.current) {
+      return;
+    }
+
+    dispatchTransition({ type: "motionFinished", requestId: completion.requestId });
+    if (completion.target === "closed") {
+      onCloseCompleteRef.current?.();
+    }
+  };
+
+  const backdropTransition = reduceMotionEnabled
+    ? ({ type: "none" } as const)
+    : {
+        ...EASE_FOCUS_BACKDROP_TIMING,
+        delay: targetVisible ? 0 : BACKDROP_CLOSE_DELAY_MS,
+      };
+  const cloneTransition = reduceMotionEnabled
+    ? ({ type: "none" } as const)
+    : {
+        ...EASE_FOCUS_CLONE_TIMING,
+        delay: targetVisible ? CLONE_OPEN_DELAY_MS : CLONE_CLOSE_DELAY_MS,
+      };
+
   return (
     <Portal hostName="morph">
       <View
         style={styles.root}
         onLayout={signalNativeReady}
-        pointerEvents={open ? "auto" : "none"}
-        accessibilityElementsHidden={!open}
-        importantForAccessibility={open ? "yes" : "no-hide-descendants"}
-        accessibilityViewIsModal={open}
+        pointerEvents={targetVisible ? "auto" : "none"}
+        accessibilityElementsHidden={!targetVisible}
+        importantForAccessibility={targetVisible ? "yes" : "no-hide-descendants"}
+        accessibilityViewIsModal={targetVisible}
       >
         <Pressable
           style={StyleSheet.absoluteFill}
@@ -261,18 +292,31 @@ const FocusOverlay = ({
           accessibilityRole="button"
           accessibilityLabel={accessibilityDismissLabel}
         >
-          <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
+          <EaseView
+            style={StyleSheet.absoluteFill}
+            initialAnimate={{ opacity: 0 }}
+            animate={{ opacity: targetVisible ? 1 : 0 }}
+            transition={backdropTransition}
+          >
             <BlurView
               {...androidBlurProps}
               tint="dark"
               intensity={BLUR_INTENSITY}
               style={StyleSheet.absoluteFill}
             />
-          </Animated.View>
+          </EaseView>
         </Pressable>
 
-        <Animated.View style={[styles.clone, cloneStyle]} pointerEvents="none">
-          {subject}
+        <Animated.View style={[styles.clone, cloneGeometryStyle]} pointerEvents="none">
+          <EaseView
+            style={styles.cloneFade}
+            initialAnimate={{ opacity: 0 }}
+            animate={{ opacity: targetVisible ? 1 : 0 }}
+            transition={cloneTransition}
+            onTransitionEnd={(event) => handleShellMotionEnd(event.finished)}
+          >
+            {subject}
+          </EaseView>
         </Animated.View>
 
         <Animated.View style={[styles.menu, menuStyle, { top: menuTop }]} pointerEvents="box-none">
@@ -282,7 +326,7 @@ const FocusOverlay = ({
               label={item.label}
               icon={item.icon}
               index={index}
-              open={open}
+              open={targetVisible}
               reduceMotionEnabled={reduceMotionEnabled}
               onPress={item.onPress}
             />
@@ -302,6 +346,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     overflow: "visible",
+  },
+  cloneFade: {
+    flex: 1,
   },
   menu: {
     position: "absolute",

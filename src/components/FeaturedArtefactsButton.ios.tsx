@@ -6,18 +6,16 @@
  * launchers from the interaction layer together.
  */
 import { Pressable, View } from "react-native";
-import Animated from "react-native-reanimated";
 
 import { entryChromeVisible } from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
-import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import { Icon } from "./Icon";
+import { StackChromeMotion } from "./StackChromeMotion";
 
 const FeaturedArtefactsButton = () => {
   const { openFeatured } = useFeaturedWidgets();
-  const chromeFadeStyle = useHomeChromeFade();
   const { state: entryTransitionState } = useEntryTransition();
   const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
@@ -27,7 +25,7 @@ const FeaturedArtefactsButton = () => {
       pointerEvents="box-none"
       className="absolute bottom-5 left-5 z-50"
     >
-      <Animated.View style={chromeFadeStyle}>
+      <StackChromeMotion pointerEvents="box-none">
         <Pressable
           onPress={() => openFeatured()}
           accessibilityRole="button"
@@ -37,7 +35,7 @@ const FeaturedArtefactsButton = () => {
             <Icon name="photo" size={24} color="#79716B" />
           </View>
         </Pressable>
-      </Animated.View>
+      </StackChromeMotion>
     </EntryChromeMotion>
   );
 };

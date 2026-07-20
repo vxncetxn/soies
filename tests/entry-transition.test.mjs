@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   createEntryTransitionState,
   entryChromeVisible,
-  EntryMotionCompletionQueue,
   entrySurfaceMotion,
   entryTransitionReducer,
 } from "../src/entry-transition/entryTransition.ts";
@@ -132,43 +131,6 @@ test("surface and chrome selectors keep Home chrome fixed while prepared Home re
     instant: true,
     completion: null,
   });
-});
-
-test("native completion events retain the request that started each visibility change", () => {
-  const queue = new EntryMotionCompletionQueue(true);
-  const first = { requestId: 21, kind: "source-exit" };
-  const second = { requestId: 22, kind: "source-exit" };
-
-  queue.transition(false, 800, first);
-  queue.transition(true, 800, null); // Abort recovery.
-  queue.transition(false, 800, second); // A newer request starts before recovery settles.
-
-  assert.deepEqual(queue.finish(true), first);
-  assert.equal(queue.finish(false), null);
-  assert.deepEqual(queue.finish(true), second);
-
-  const rotatedHiddenSurface = new EntryMotionCompletionQueue(false, 800);
-  rotatedHiddenSurface.transition(false, 900, null);
-  assert.equal(rotatedHiddenSurface.finish(true), null);
-
-  const rotatingExit = new EntryMotionCompletionQueue(true, 800);
-  rotatingExit.transition(false, 800, first);
-  rotatingExit.transition(false, 900, first);
-  assert.equal(rotatingExit.finish(false), null);
-  assert.deepEqual(rotatingExit.finish(true), first);
-});
-
-test("a native no-op interruption completes the current logical motion", () => {
-  const queue = new EntryMotionCompletionQueue(true, 800);
-  const exit = { requestId: 23, kind: "source-exit" };
-
-  queue.transition(false, 800, exit);
-  // Ease starts a fresh native batch for any prop update. An unrelated React
-  // rerender therefore interrupts the active batch even though these animated
-  // values did not change, and Ease has no replacement animation to finish.
-  queue.transition(false, 800, exit);
-
-  assert.deepEqual(queue.finish(false), exit);
 });
 
 test("every request-scoped completion ignores a stale request id", () => {

@@ -25,7 +25,6 @@ type PreparedHomeEntryProps = {
 };
 
 const PreparedHomeEntry = ({ entry, requestId, onContentReady }: PreparedHomeEntryProps) => {
-  const progress = useSharedValue(0);
   const currentPage = useSharedValue(0);
   const activeIndex = useSharedValue(0);
   const firstArtefact = entry.artefacts[0];
@@ -46,7 +45,8 @@ const PreparedHomeEntry = ({ entry, requestId, onContentReady }: PreparedHomeEnt
               key={artefact.id}
               type={entry.type}
               index={index}
-              progress={progress}
+              expanded={false}
+              activePage={0}
               currentPage={currentPage}
               activeIndex={activeIndex}
             >
@@ -60,7 +60,8 @@ const PreparedHomeEntry = ({ entry, requestId, onContentReady }: PreparedHomeEnt
             key={firstArtefact.id}
             type={entry.type}
             index={0}
-            progress={progress}
+            expanded={false}
+            activePage={0}
             currentPage={currentPage}
             activeIndex={activeIndex}
           >

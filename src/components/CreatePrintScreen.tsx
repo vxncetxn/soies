@@ -82,13 +82,18 @@ const CreatePrintScreen = ({
     activeIndex,
     enteringIndex,
     setEnteringIndex,
+    authoringState,
+    authoringExpanded,
+    authoringMotionRequestId,
     typeState,
     scribbleActive,
-    expandProgress,
     pagerRef,
     keepExpandedOnBlurRef,
     suppressArtefactFocusRef,
     inputRefs,
+    requestType,
+    requestDefault,
+    handleAuthoringMotionEnd,
     handleActiveIndexChange,
     handlePrev,
     handleNext,
@@ -223,7 +228,10 @@ const CreatePrintScreen = ({
       title="Couldn’t continue editing this Print draft."
     >
       <CreateScreenChrome
-        expandProgress={expandProgress}
+        authoringExpanded={authoringExpanded}
+        authoringPhase={authoringState.phase}
+        authoringMotionRequestId={authoringMotionRequestId}
+        onAuthoringMotionEnd={handleAuthoringMotionEnd}
         typeLabel="PRINT"
         title={title}
         onChangeTitle={setTitle}
@@ -280,7 +288,8 @@ const CreatePrintScreen = ({
             if (!draft) {
               return null;
             }
-            const isActiveScribble = scribbleActive && index === activeIndex;
+            const isActiveScribble =
+              authoringState.phase === "settled" && scribbleActive && index === activeIndex;
             // Match CreatePaperScreen's top-aligned expanded slot so flex
             // centering and the Type pin cannot open a gap below Scribble chrome.
             return (
@@ -302,7 +311,9 @@ const CreatePrintScreen = ({
                     imageUri={draft.imageUri}
                     value={draft.text}
                     onChangeText={(text) => updateText(index, text)}
-                    expandProgress={expandProgress}
+                    expanded={authoringExpanded}
+                    onRequestType={requestType}
+                    onRequestDefault={requestDefault}
                     keepExpandedOnBlurRef={keepExpandedOnBlurRef}
                     suppressArtefactFocusRef={suppressArtefactFocusRef}
                     editable={!saving && !scribbleSaving && !closing}

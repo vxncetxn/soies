@@ -18,6 +18,48 @@ export const EASE_LEGACY_SPRING: SpringTransition = {
   mass: 4,
 };
 
+/** Phase-synchronized Stack bloom tuned against the former clamped spring. */
+export const EASE_STACK_EXPANSION_SPRING: SpringTransition = {
+  type: "spring",
+  damping: 120,
+  stiffness: 900,
+  mass: 4,
+};
+
+/** Fast companion fade used by Home chrome while the Stack bloom continues. */
+export const EASE_STACK_CHROME_TIMING: TimingTransition = {
+  type: "timing",
+  duration: 180,
+  easing: EASE_DEFAULT_TIMING.easing,
+};
+
+/** Create card/body bloom tuned against the former authoring spring. */
+export const EASE_CREATE_EXPANSION_SPRING: SpringTransition = {
+  type: "spring",
+  damping: 120,
+  stiffness: 900,
+  mass: 4,
+};
+
+/** Header and control crossfade companion for Create authoring phases. */
+export const EASE_CREATE_CHROME_TIMING: TimingTransition = {
+  type: "timing",
+  duration: 180,
+  easing: EASE_DEFAULT_TIMING.easing,
+};
+
+/** Focus shell fades stay discrete while trigger measurement remains Reanimated. */
+export const EASE_FOCUS_BACKDROP_TIMING: TimingTransition = {
+  type: "timing",
+  duration: 140,
+  easing: EASE_DEFAULT_TIMING.easing,
+};
+export const EASE_FOCUS_CLONE_TIMING: TimingTransition = {
+  type: "timing",
+  duration: 180,
+  easing: EASE_DEFAULT_TIMING.easing,
+};
+
 export const SPRING_CONFIG = {
   stiffness: 900,
   damping: 110,

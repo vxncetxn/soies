@@ -20,17 +20,13 @@ import type { ReactNode, Ref, RefObject } from "react";
 
 import { useRef } from "react";
 import { StyleSheet, useWindowDimensions } from "react-native";
-import Animated, {
-  type SharedValue,
-  interpolate,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
+import { EaseView } from "react-native-ease";
 
 import type { PaperDocument } from "../data/paperDocument";
 import type { PaperSelectionState, PaperTextSurfaceHandle } from "./PaperTextSurface.types";
 
-import { SPRING_CONFIG } from "../constants/animation";
+import { EASE_CREATE_EXPANSION_SPRING } from "../constants/animation";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { getCollapsedArtefactLayout } from "./artefactLayout";
 import InkOverlay from "./InkOverlay";
 import { PaperCanvas } from "./Paper";
@@ -55,8 +51,10 @@ type EditablePaperProps = {
   onChangeDocument: (document: PaperDocument) => void;
   /** Mirrors the native selection/capacity state into the keyboard toolbar. */
   onSelectionStateChange: (state: PaperSelectionState) => void;
-  /** 0 collapsed → 1 expanded; shared with Create chrome and pager controls. */
-  expandProgress: SharedValue<number>;
+  /** Discrete visual endpoint supplied by the Create authoring phase. */
+  expanded: boolean;
+  onRequestType: () => void;
+  onRequestDefault: () => void;
   /** Programmatic focus seam used by Back and artefact Prev/Next navigation. */
   textInputRef: Ref<PaperTextSurfaceHandle | null>;
   /** Keeps the bloom expanded while Prev/Next transfers first responder. */
@@ -79,7 +77,9 @@ const EditablePaper = ({
   document,
   onChangeDocument,
   onSelectionStateChange,
-  expandProgress,
+  expanded,
+  onRequestType,
+  onRequestDefault,
   textInputRef,
   keepExpandedOnBlurRef,
   suppressArtefactFocusRef,
@@ -89,6 +89,7 @@ const EditablePaper = ({
   scribbleCanvas = null,
   onContentReady,
 }: EditablePaperProps) => {
+  const reduceMotionEnabled = useReducedMotionPreference();
   const { width: windowWidth } = useWindowDimensions();
   const localInputRef = useRef<PaperTextSurfaceHandle>(null);
   const { width: baseWidth } = getCollapsedArtefactLayout(windowWidth, "paper");
@@ -107,35 +108,25 @@ const EditablePaper = ({
       });
       return;
     }
-    expandProgress.set(withSpring(1, SPRING_CONFIG));
+    onRequestType();
   };
 
   const handleBlur = () => {
     if (keepExpandedOnBlurRef?.current) {
       return;
     }
-    expandProgress.set(withSpring(0, SPRING_CONFIG));
+    onRequestDefault();
   };
 
-  // The surface owns one transform from collapsed scale to identity. A previous
-  // implementation put the reciprocal scales on nested views; that looked
-  // mathematically equivalent but forced Core Animation to resample the native
-  // text/caret layer even after Type had visually reached its expanded size.
-  const frameStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        scale: interpolate(expandProgress.get(), [0, 1], [collapsedPresentationScale, 1]),
-      },
-    ],
-  }));
+  const scale = expanded ? 1 : collapsedPresentationScale;
 
   return (
-    <Animated.View
-      style={[
-        styles.displayFrame,
-        { width: expandedWidth, height: expandedHeight, transformOrigin: "top" },
-        frameStyle,
-      ]}
+    <EaseView
+      style={[styles.displayFrame, { width: expandedWidth, height: expandedHeight }]}
+      transformOrigin={{ x: 0.5, y: 0 }}
+      initialAnimate={{ scale }}
+      animate={{ scale }}
+      transition={reduceMotionEnabled ? { type: "none" } : EASE_CREATE_EXPANSION_SPRING}
     >
       {/* Keep TextKit mounted at the final screen-space size for the whole
           session. Only this parent's single scale changes, so Type settles on
@@ -159,7 +150,7 @@ const EditablePaper = ({
         {inkOverlayUri && !scribbleActive ? <InkOverlay uri={inkOverlayUri} /> : null}
         {scribbleCanvas}
       </PaperCanvas>
-    </Animated.View>
+    </EaseView>
   );
 };
 

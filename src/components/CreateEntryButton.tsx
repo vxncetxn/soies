@@ -22,11 +22,9 @@
  *   bottom-left.
  *
  * Chrome fade:
- *   The trigger fades out with `chromeProgress` (entry expand) and
- *   the root Entry transition — nested outside `useHomeChromeFade`, which still
- *   owns Stack-expansion opacity for this launcher and `HomeHeader`. Its
- *   bloomed panel lives in the root `bloom` portal (outside this fade wrapper),
- *   so an open menu stays visible regardless of the fade.
+ *   Separate nested Ease wrappers map the Stack-expansion phase and root Entry
+ *   transition to opacity. Its bloomed panel lives in the root `bloom` portal
+ *   outside these wrappers, so an open menu stays visible during either fade.
  *
  * State:
  *   `BloomButton` is controlled, so this component owns the `open` state and
@@ -40,18 +38,17 @@
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import Animated from "react-native-reanimated";
 
 import { entryChromeVisible } from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
-import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
 import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { todayISO } from "../utils/date";
 import BloomButton from "./BloomButton";
 import { useCreateContext } from "./CreateContext";
 import { Icon } from "./Icon";
 import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
+import { StackChromeMotion } from "./StackChromeMotion";
 
 const TRIGGER_ICON_SIZE = 24;
 const TRIGGER_ICON_COLOR = "#79716B";
@@ -63,7 +60,6 @@ const CreateEntryButton = () => {
   const [open, setOpen] = useState(false);
   /** `main` = Paper/Print chooser; otherwise mirrors pick-flow media screen. */
   const [onMainMenu, setOnMainMenu] = useState(true);
-  const chromeFadeStyle = useHomeChromeFade();
   const { state: entryTransitionState } = useEntryTransition();
   const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
@@ -150,7 +146,7 @@ const CreateEntryButton = () => {
       pointerEvents="box-none"
       className="absolute right-5 bottom-5 z-50"
     >
-      <Animated.View style={chromeFadeStyle}>
+      <StackChromeMotion pointerEvents="box-none">
         <BloomButton
           variant="menu"
           open={open}
@@ -168,7 +164,7 @@ const CreateEntryButton = () => {
             <Icon name="plus" size={TRIGGER_ICON_SIZE} color={TRIGGER_ICON_COLOR} />
           </View>
         </BloomButton>
-      </Animated.View>
+      </StackChromeMotion>
     </EntryChromeMotion>
   );
 };

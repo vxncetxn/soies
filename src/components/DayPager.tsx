@@ -30,10 +30,9 @@ import type { WidgetDeepLinkTarget } from "../widgets/widgetDeepLink";
 import { entryChromeVisible } from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
-import { useHomeChromeFade } from "../hooks/useHomeChromeFade";
-import { shouldCollapseStackForWidgetTarget } from "../widgets/widgetDeepLink";
 import { EntryPreview, ScrollIndicator } from "./ScrollIndicator";
 import Stack from "./Stack";
+import { StackChromeMotion } from "./StackChromeMotion";
 
 type DayPagerProps = {
   entries: Entry[];
@@ -84,8 +83,6 @@ const DayPager = ({
   // Animated ref to the ScrollView so we can imperatively `scrollTo` when the
   // user jumps to an entry via the side indicator.
   const scrollRef = useAnimatedRef<ScrollView>();
-  // Stack expansion remains Reanimated; Entry navigation owns an outer Ease fade.
-  const indicatorFadeStyle = useHomeChromeFade();
   const { state: entryTransitionState } = useEntryTransition();
   const entryChromeIsVisible = entryChromeVisible(entryTransitionState, "home");
 
@@ -183,10 +180,6 @@ const DayPager = ({
                   widgetArtefactId={
                     widgetTarget?.entryId === entry.id ? widgetTarget.artefactId : null
                   }
-                  collapseForWidgetTarget={shouldCollapseStackForWidgetTarget(
-                    entry.id,
-                    widgetTarget,
-                  )}
                   onWidgetTargetConsumed={onWidgetTargetConsumed}
                   firstArtefactReadinessRequestId={
                     entryContentReadinessRequest?.entryId === entry.id
@@ -216,7 +209,7 @@ const DayPager = ({
           pointerEvents="box-none"
           className="absolute top-1/2 right-3 z-40 -translate-y-1/2"
         >
-          <Animated.View style={indicatorFadeStyle} pointerEvents="box-none">
+          <StackChromeMotion pointerEvents="box-none">
             <ScrollIndicator
               orientation="vertical"
               count={entries.length}
@@ -225,7 +218,7 @@ const DayPager = ({
               onJumpToIndex={jumpToEntry}
               renderPreview={(index) => <EntryPreview entry={entries[index]} />}
             />
-          </Animated.View>
+          </StackChromeMotion>
         </EntryChromeMotion>
       )}
     </View>

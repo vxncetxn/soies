@@ -121,13 +121,18 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
     activeIndex,
     enteringIndex,
     setEnteringIndex,
+    authoringState,
+    authoringExpanded,
+    authoringMotionRequestId,
     typeState,
     scribbleActive,
-    expandProgress,
     pagerRef,
     keepExpandedOnBlurRef,
     suppressArtefactFocusRef,
     inputRefs,
+    requestType,
+    requestDefault,
+    handleAuthoringMotionEnd,
     handleActiveIndexChange,
     handlePrev,
     handleNext,
@@ -254,7 +259,10 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
       title="Couldn’t continue editing this Paper draft."
     >
       <CreateScreenChrome
-        expandProgress={expandProgress}
+        authoringExpanded={authoringExpanded}
+        authoringPhase={authoringState.phase}
+        authoringMotionRequestId={authoringMotionRequestId}
+        onAuthoringMotionEnd={handleAuthoringMotionEnd}
         typeLabel="PAPER"
         title={title}
         onChangeTitle={setTitle}
@@ -304,7 +312,8 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
             if (!draft) {
               return null;
             }
-            const isActiveScribble = scribbleActive && index === activeIndex;
+            const isActiveScribble =
+              authoringState.phase === "settled" && scribbleActive && index === activeIndex;
             return (
               <Animated.ScrollView
                 ref={(node: ScrollView | null) => {
@@ -325,7 +334,9 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
                     document={draft.document}
                     onChangeDocument={(document) => updateDocument(index, document)}
                     onSelectionStateChange={(state) => updateSelectionState(draft.id, state)}
-                    expandProgress={expandProgress}
+                    expanded={authoringExpanded}
+                    onRequestType={requestType}
+                    onRequestDefault={requestDefault}
                     keepExpandedOnBlurRef={keepExpandedOnBlurRef}
                     suppressArtefactFocusRef={suppressArtefactFocusRef}
                     editable={!saving && !scribbleSaving && !closing}

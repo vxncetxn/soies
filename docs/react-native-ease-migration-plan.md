@@ -2,7 +2,9 @@
 
 This is the live tracker for the partial migration from Reanimated to
 `react-native-ease`. The architectural boundary is accepted in
-[ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md).
+[ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md), with compound
+expansion coordination refined in
+[ADR 0015](./adr/0015-phase-synchronized-ease-expansion.md).
 
 ## Status
 
@@ -46,6 +48,27 @@ and `settling`. Its request-scoped interface is:
 
 Stale request IDs are ignored. Reduce Motion uses `{ type: "none" }` while
 preserving native completion callbacks. Ease hardware layers remain disabled.
+
+## Phase-synchronized expansion contract
+
+Compound expansion no longer uses one shared `0…1` progress value. Reducers
+publish semantic targets, separate Ease views animate their owned properties,
+and one designated completion owner advances each matching request.
+
+- Stack: `collapsed → preparing → expanding → expanded → collapsing`. Portal
+  readiness precedes the canonical-to-portal handoff; the portal is retained
+  through close. Native/Reanimated paging stays continuous.
+- Create: `settled | transitioning | dismissing`, with `default | type |
+  scribble` modes. Type or Scribble remains rendered through its exit. Print's
+  private Reanimated companion follows keyboard geometry without driving the
+  Ease-owned scale or chrome.
+- Focus: `closed → opening → open → closing`. Ease owns backdrop and frozen
+  clone opacity; Reanimated owns trigger measurement and geometry.
+
+`EaseMotionCompletionQueue` maps native completion order back to request IDs,
+including replacement targets and lone native interruptions. Different
+participants may use different timings; they synchronize on phase and retained
+lifetime rather than on every intermediate frame.
 
 ## Navigation adapters
 
@@ -99,12 +122,15 @@ preserving native completion callbacks. Ease hardware layers remain disabled.
 | Create title-focus blur-backdrop fade | Ease | Migrate | Implemented; device gate pending |
 | Focus menu-item staggered fade/rise | Ease | Migrate | Implemented; device gate pending |
 | ScrollIndicator expanded scrubber shell fade/scale | Ease | Migrate | Implemented; device gate pending |
+| Stack expand/collapse correction, presentation scale/shadow, close control, and Home chrome | Ease | Migrate | Implemented; device gate pending |
+| Create Type/Scribble body, Paper/Print scale, header, and controls | Ease | Migrate | Implemented; device gate pending |
+| Focus backdrop and measured subject-clone opacity | Ease | Migrate | Implemented; device gate pending |
 | Home title carousel | Reanimated | Keep | N/A — retained |
 | Day/Artefact paging and indicator/preview interpolation | Reanimated/native scroll | Keep | N/A — retained |
-| Stack expand/collapse, geometry, shadow, close control, chrome | Reanimated | Keep | N/A — retained |
+| Stack fractional pager translation and live stacking order | Reanimated/native scroll | Keep | N/A — retained |
 | Calendar bottom edge fade | Reanimated/custom native prop | Keep | N/A — retained |
-| Create Type/Scribble expansion, header layout, Paper/Print scale, keyboard pin | Reanimated | Keep | N/A — retained |
-| Focus backdrop, measured subject clone, and menu geometry | Reanimated | Keep | N/A — retained |
+| Print interactive keyboard pin geometry companion | Reanimated | Keep | N/A — retained |
+| Focus trigger measurement and clone/menu geometry | Reanimated | Keep | N/A — retained |
 | Bottom-sheet detents/scrims and native carousel momentum | Native libraries | Keep | N/A — retained |
 | BloomButton/BloomPanel/BloomBar morph and content transitions | Reanimated | Ignore | Deferred — ignored |
 | Dormant MorphOverlay | Reanimated | Ignore | Deferred — ignored |
@@ -122,17 +148,21 @@ preserving native completion callbacks. Ease hardware layers remain disabled.
 - Focus rows: 220 ms enter / 150 ms exit with the existing 120 ms base and
   70 ms per-row stagger.
 - Former bare scrubber spring: damping 120, stiffness 900, mass 4.
+- Stack and Create presentation springs: damping 120, stiffness 900, mass 4;
+  companion chrome fades: 180 ms with the legacy curve.
+- Focus backdrop: 140 ms; subject clone: 180 ms. Close delays preserve the
+  former spring's retained-shell feel before the portal is released.
 
 ## Automated acceptance
 
-- Reducer phases, readiness ordering, manual gates, stale events, abort, and
-  settling are covered through the reducer interface.
+- Entry, Stack, Create-authoring, and Focus reducers cover phases, readiness
+  ordering, manual gates, stale events, reversal, abort, and settling.
 - Behavioral adapter tests cover already-mounted Paper/Print readiness, exact
   and fallback Entry targeting, Cancel/Save routing, newest-Entry selection,
   and post-save reload failure. Source contracts additionally cover retained
   participants, pointer/accessibility blocking, and prepared-Home adoption.
-- Toast, Tooltip, retained crossfades, Focus rows, and the scrubber have
-  retention/ownership contracts.
+- Toast, Tooltip, retained crossfades, Stack, Create, Focus, and the scrubber
+  have retention/property-ownership contracts.
 - Required gates: `pnpm check`, React Compiler health checks, production Expo
   exports, and fresh native builds against Expo SDK 57.
 
@@ -149,13 +179,34 @@ preserving native completion callbacks. Ease hardware layers remain disabled.
 - The physical-device gates below remain outstanding and are not inferred from
   simulator or export results.
 
+### Phase 2 validation recorded on 2026-07-21
+
+- All `pnpm check` constituents pass when invoked directly in the isolated
+  workspace runtime: formatting, TypeScript, Oxlint, the targeted React
+  Compiler rule, compiler health (121/121), Strict Mode checks, and all 132
+  tests. The runtime did not provide the `pnpm` launcher itself.
+- Fresh production Expo exports pass for iOS and Android with React Compiler
+  enabled.
+- A fresh generic iOS Simulator Debug build passes with Expo SDK 57 and the
+  native Ease module linked.
+- Source contracts confirm nested property ownership, retained portal/mode
+  lifetimes, settled-only interaction, and the private Print keyboard companion.
+- The physical iPhone behavior matrix remains a device gate; simulator, export,
+  and static checks do not promote Phase 2 rows beyond **Implemented; device
+  gate pending**.
+
 ## Physical device gates still required
 
 On physical iOS, validate release-like builds with Reduce Motion on/off and
 normal/Low Power modes. Exercise Calendar → Home, Paper/Print Create, Cancel,
 Save, rapid repeats, Back, picker cancellation/error, focus/blur, and at least
-100 transition cycles. Confirm full-viewport travel, no Paper disappearance,
-no spinner/flash/crash, memory plateau, and Calendar tap-to-motion p95 ≤ 50 ms.
+100 transition cycles. Phase 2 specifically adds Stack expand/collapse after
+swiping, rapid expand/collapse reversal, widget owner replacement, Paper and
+Print Type focus/blur, Scribble enter/save/back, interactive Print keyboard
+dismissal, and Focus open/close-to-Share. Confirm full-viewport travel, no blank
+portal handoff, no Paper disappearance or blurry identity-rest text, no stale
+chrome, no spinner/flash/crash, memory plateau, and Calendar tap-to-motion p95
+≤ 50 ms.
 
 On physical Android, repeat the timing, clipping, responder, memory, and
 performance matrix without enabling Ease hardware layers. Only then promote

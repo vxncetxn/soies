@@ -105,56 +105,6 @@ export function entrySurfaceMotion(
   return { visible: false, instant: false, completion: null };
 }
 
-/**
- * Associates native completion events with the visibility change that started
- * them. Interrupted and recovery animations remain in order, so a delayed event
- * can never borrow a newer coordinator request ID.
- */
-export class EntryMotionCompletionQueue {
-  private visible: boolean;
-  private hiddenOffset: number;
-  private readonly pending: (EntryMotionCompletion | null)[] = [];
-
-  constructor(initialVisible: boolean, initialHiddenOffset = 0) {
-    this.visible = initialVisible;
-    this.hiddenOffset = initialHiddenOffset;
-  }
-
-  transition(
-    visible: boolean,
-    hiddenOffset: number,
-    completion: EntryMotionCompletion | null,
-  ): void {
-    const visibilityChanged = visible !== this.visible;
-    const hiddenOffsetChanged = !visible && hiddenOffset !== this.hiddenOffset;
-    if (!visibilityChanged && !hiddenOffsetChanged) {
-      return;
-    }
-    this.visible = visible;
-    this.hiddenOffset = hiddenOffset;
-    // Rotation can interrupt an in-flight exit while retargeting the hidden
-    // offset. Carry the same request onto the replacement native batch: the
-    // interrupted event consumes the original token and the replacement's
-    // successful event must still advance the coordinator. Outside an active
-    // phase `completion` is null, so a stationary hidden surface stays inert.
-    this.pending.push(completion);
-  }
-
-  finish(finished: boolean): EntryMotionCompletion | null {
-    const completion = this.pending.shift() ?? null;
-    if (finished || this.pending.length === 0) {
-      // Ease reports an active batch as interrupted when any native prop update
-      // arrives, including a rerender whose animated destination is unchanged.
-      // That no-op update starts no replacement batch, so waiting for a later
-      // successful event would deadlock the coordinator. When a real retarget
-      // exists its token remains queued, and the interrupted completion stays
-      // suppressed until that replacement finishes.
-      return completion;
-    }
-    return null;
-  }
-}
-
 export function entryChromeVisible(
   state: EntryTransitionState,
   participant: Exclude<EntryParticipant, "prepared-home">,

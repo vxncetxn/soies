@@ -1,42 +1,27 @@
 /**
- * Stack — one entry's "deck of cards" and its expand/collapse interaction.
+ * Stack — one Entry's collapsed deck and retained fullscreen pager.
  *
- * This is the core interaction of the home screen. An entry has several
- * artefacts (pages of a paper, or photos of a print). In the **collapsed**
- * state they're shown as a fanned deck (rendered by `CollapsedDeck`); a tap
- * **expands** the entry into a fullscreen horizontal pager you swipe through,
- * and tapping the backdrop or close button **collapses** it back.
- *
- * Architecture (the non-obvious bit):
- *   Collapsed and expanded are **two separate render branches**, not one
- *   teleported node. The collapsed `CollapsedDeck` unmounts when expanded and
- *   a brand-new pager tree mounts inside a root-level `Portal` (`overlay`).
- *   Continuity comes from a single `progress` shared value (0 = collapsed,
- *   1 = expanded) that both branches' `ArtefactWrapper`s read, so the newly
- *   mounted expanded tree picks up the same spring and the morph looks smooth.
- *
- * There's also a third interaction: a **long-press** opens `FocusOverlay` — a
- * blurred backdrop with an actions menu (Edit/Share/Delete...) — which clones
- * the deck and animates from its measured frame. That lives in `FocusOverlay`.
+ * React phases coordinate the portal lifecycle. Ease owns the discrete bloom
+ * endpoints, while Reanimated remains responsible only for fractional pager
+ * position and indicator interpolation.
  */
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { EaseView } from "react-native-ease/uniwind";
 import Animated, {
-  interpolate,
   useAnimatedRef,
   useAnimatedScrollHandler,
-  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
-  withSpring,
 } from "react-native-reanimated";
 import { Portal } from "react-native-teleport";
 import { withUniwind } from "uniwind";
 
 import type { Entry } from "../data/entries";
 
-import { SPRING_CONFIG } from "../constants/animation";
+import { EASE_DEFAULT_TIMING, EASE_STACK_EXPANSION_SPRING } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
+import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { useShare } from "../share/ShareContext";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import CollapsedDeck, { useWrappedArtefacts } from "./CollapsedDeck";
@@ -46,16 +31,15 @@ import { Icon } from "./Icon";
 import LongPressable from "./LongPressable";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
 
-// `Portal` from react-native-teleport doesn't accept className natively, so we
-// wrap it with withUniwind to enable Tailwind classes on the portal's content.
 const StyledPortal = withUniwind(Portal);
+const CLOSE_TRAVEL_Y = 40;
+const CLOSE_FADE_MS = 220;
+const CLOSE_FADE_DELAY_MS = 60;
 
 type StackProps = {
   entry: Entry;
   /** Exact child requested by a consumed widget URL; null for normal Home use. */
   widgetArtefactId?: string | null;
-  /** Closes an existing portal before another entry handles a warm widget tap. */
-  collapseForWidgetTarget?: boolean;
   /** Clears the one-shot command after the expanded pager owns the target. */
   onWidgetTargetConsumed?: () => void;
   /** Entry-transition request targeting the collapsed first Artefact. */
@@ -67,198 +51,175 @@ type StackProps = {
 const Stack = ({
   entry,
   widgetArtefactId = null,
-  collapseForWidgetTarget = false,
   onWidgetTargetConsumed,
   firstArtefactReadinessRequestId,
   onFirstArtefactReady,
 }: StackProps) => {
-  // `chromeProgress` is a screen-level shared value (via ExpandContext) that
-  // drives header/chrome fade-out while *any* entry is expanded. We bump it
-  // to 1 on expand and back to 0 on collapse.
-  const { chromeProgress } = useExpandContext();
+  const {
+    state: expansion,
+    requestExpand,
+    requestCollapse,
+    portalReady,
+    motionFinished,
+    releaseOwner,
+  } = useExpandContext();
+  const reduceMotionEnabled = useReducedMotionPreference();
   const { openShare } = useShare();
   const { supported: featuredWidgetsSupported, openPicker: openWidgetPicker } =
     useFeaturedWidgets();
-  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const { width: screenWidth } = useWindowDimensions();
+  const expandedWidth = screenWidth - 20;
+  const pageWidth = expandedWidth + LAYOUT.EXPANDED_STACK_GAP;
 
-  // Layout math (see docs/01 for the full diagram):
-  //   EXPANDED_WIDTH = one artefact's visible width when expanded (screen - 20px gutter)
-  //   PAGE_WIDTH     = the snap interval; wider than EXPANDED_WIDTH by a "peek"
-  //                    gap so a sliver of the next artefact hints there's more.
-  const EXPANDED_WIDTH = SCREEN_WIDTH - 20;
-  const PAGE_WIDTH = EXPANDED_WIDTH + LAYOUT.EXPANDED_STACK_GAP;
-
-  // React state (each toggle triggers a re-render that swaps the branches).
-  const [isExpanded, setIsExpanded] = useState(false);
-  // Focus owns native blur/morph views, so keep it mounted only while opening,
-  // open, or closing. `focusOpen` drives the animation; `focusMounted` retains
-  // the tree until FocusOverlay reports that its closing spring has settled.
   const [focusMounted, setFocusMounted] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
-  // Which artefact page is currently active. Persisted across expand/collapse
-  // cycles so re-expanding lands you on the same page you left on.
-  const [activePage, setActivePage] = useState(0);
-  // Reset to null after consumption so a later tap on the same installed
-  // widget is treated as a new one-shot command.
-  const [handledWidgetArtefactId, setHandledWidgetArtefactId] = useState<string | null>(null);
-  // A durable Entry key remounts this Stack when identity changes. Keep a local
-  // reference check for an in-place revision of that same Entry so a shortened
-  // Artefact list cannot inherit an out-of-range active page.
-  const [previousEntry, setPreviousEntry] = useState(entry);
-  // Share / Feature-in-Widget are deferred until FocusOverlay reports its close
-  // spring has settled. Store the exact session requested by the tap so a
-  // list/date update during the animation cannot switch the artefact underneath.
+  const [activePageState, setActivePage] = useState(0);
+  const handledWidgetArtefactIdRef = useRef<string | null>(null);
+  const previousEntryRef = useRef(entry);
   const pendingShareRef = useRef<{ entry: Entry; page: number } | null>(null);
   const pendingWidgetPickerRef = useRef<{ entry: Entry; page: number } | null>(null);
   type PendingFocusAction = "share" | "widgetPicker" | null;
   const pendingFocusActionRef = useRef<PendingFocusAction>(null);
 
-  // Ref to the collapsed deck's outer view. Used by FocusOverlay to measure the
-  // deck's on-screen frame and animate the long-press overlay from it.
   const triggerRef = useAnimatedRef<Animated.View>();
-  // Ref to the expanded horizontal ScrollView, for imperative scrollTo on jump.
   const scrollRef = useAnimatedRef<ScrollView>();
-  // Raw horizontal scroll offset of the expanded pager (UI thread).
   const scrollOffset = useSharedValue(0);
-  // 0 = collapsed deck, 1 = expanded pager. The single animation clock shared
-  // by both render branches' ArtefactWrappers.
-  const progress = useSharedValue(0);
+  const activePage = Math.max(0, Math.min(entry.artefacts.length - 1, activePageState));
+  const ownsExpansion = expansion.ownerEntryId === entry.id;
+  const portalMounted = ownsExpansion && expansion.phase !== "collapsed";
+  const portalExpanded =
+    ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "expanded");
+  const canonicalDeckVisible = !ownsExpansion || expansion.phase === "preparing";
+  const motionRequestId =
+    ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "collapsing")
+      ? expansion.requestId
+      : null;
 
-  if (previousEntry !== entry) {
-    setPreviousEntry(entry);
+  useLayoutEffect(() => {
+    if (previousEntryRef.current === entry) {
+      return;
+    }
+    previousEntryRef.current = entry;
     setActivePage(0);
-  }
+    scrollOffset.set(0);
+  }, [entry, scrollOffset]);
 
-  // A warm widget tap can target a different Stack while this one still owns
-  // an expanded portal. Adjust before commit so the new target is the only
-  // fullscreen tree mounted; the layout effect below also resets this Stack's
-  // private animation clock without touching the new owner's shared chrome.
-  if (collapseForWidgetTarget && isExpanded) {
-    setIsExpanded(false);
-    setFocusOpen(false);
-  }
+  useEffect(() => () => releaseOwner(entry.id), [entry.id, releaseOwner]);
+
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollOffset.set(event.contentOffset.x);
+  });
+  const currentPage = useDerivedValue(() => scrollOffset.get() / pageWidth);
+  const activeIndex = useDerivedValue(() => Math.round(currentPage.get()));
+
+  const persistPage = () => {
+    const page = Math.max(
+      0,
+      Math.min(entry.artefacts.length - 1, Math.round(scrollOffset.get() / pageWidth)),
+    );
+    setActivePage(page);
+    scrollRef.current?.scrollTo({ x: page * pageWidth, y: 0, animated: false });
+    scrollOffset.set(page * pageWidth);
+    return page;
+  };
+
+  const expand = () => {
+    requestExpand(entry.id, false);
+  };
+
+  const collapse = () => {
+    persistPage();
+    requestCollapse(entry.id);
+  };
+
+  const restoreScroll = () => {
+    scrollRef.current?.scrollTo({ x: activePage * pageWidth, y: 0, animated: false });
+    scrollOffset.set(activePage * pageWidth);
+    if (ownsExpansion && expansion.phase === "preparing" && expansion.requestId !== null) {
+      portalReady(entry.id, expansion.requestId);
+      if (widgetArtefactId && handledWidgetArtefactIdRef.current === widgetArtefactId) {
+        onWidgetTargetConsumed?.();
+      }
+    }
+  };
+
+  const jumpToArtefact = (index: number) => {
+    scrollRef.current?.scrollTo({ x: index * pageWidth, y: 0, animated: false });
+    scrollOffset.set(index * pageWidth);
+    setActivePage(index);
+  };
 
   const widgetTargetPage = widgetArtefactId
     ? entry.artefacts.findIndex((artefact) => artefact.id === widgetArtefactId)
     : -1;
-  if (widgetArtefactId && handledWidgetArtefactId !== widgetArtefactId && widgetTargetPage >= 0) {
-    setHandledWidgetArtefactId(widgetArtefactId);
-    setActivePage(widgetTargetPage);
-    setIsExpanded(true);
-  } else if (!widgetArtefactId && handledWidgetArtefactId) {
-    setHandledWidgetArtefactId(null);
-  }
 
   useLayoutEffect(() => {
-    scrollOffset.set(0);
-  }, [entry, scrollOffset]);
-
-  useLayoutEffect(() => {
-    if (collapseForWidgetTarget) {
-      progress.set(0);
+    if (!widgetArtefactId) {
+      handledWidgetArtefactIdRef.current = null;
+      return;
     }
-  }, [collapseForWidgetTarget, progress]);
 
-  // Worklet that copies the horizontal scroll offset into `scrollOffset`. Runs
-  // on the UI thread so the artefacts and indicator track scrolling with no
-  // JS round-trip per frame.
-  const onScroll = useAnimatedScrollHandler((event) => {
-    scrollOffset.set(event.contentOffset.x);
-  });
+    // Widget commands arrive as external route state. Defer the resulting
+    // React updates to the next frame so this layout effect only subscribes to
+    // that external change instead of synchronously cascading a render.
+    const frame = requestAnimationFrame(() => {
+      if (widgetTargetPage < 0 || handledWidgetArtefactIdRef.current === widgetArtefactId) {
+        return;
+      }
 
-  // Fractional current page of the expanded pager (0.0 = first artefact, 1.5 =
-  // halfway between the 2nd and 3rd). Drives the artefacts' horizontal
-  // positioning and the scroll indicator.
-  const currentPage = useDerivedValue(() => {
-    return scrollOffset.get() / PAGE_WIDTH;
-  });
+      handledWidgetArtefactIdRef.current = widgetArtefactId;
+      setActivePage(widgetTargetPage);
+      scrollOffset.set(widgetTargetPage * pageWidth);
 
-  // The index of the artefact currently "on top". In the expanded pager this is
-  // the page you're nearest; in the collapsed deck it's the card on top of the
-  // stack. `Math.round` of the fractional current page gives the nearest page.
-  const activeIndex = useDerivedValue(() => {
-    return Math.round(currentPage.get());
-  });
+      if (ownsExpansion && portalMounted) {
+        scrollRef.current?.scrollTo({
+          x: widgetTargetPage * pageWidth,
+          y: 0,
+          animated: false,
+        });
+        if (expansion.phase === "collapsing") {
+          requestExpand(entry.id, false);
+        }
+        onWidgetTargetConsumed?.();
+        return;
+      }
 
-  // Build the wrapped artefacts for the EXPANDED pager. (CollapsedDeck builds
-  // its own internally for the collapsed state.) Both use the same shared
-  // values, so the same `progress`/`currentPage`/`activeIndex` drive both.
+      const replacingOwner = expansion.ownerEntryId !== null && expansion.ownerEntryId !== entry.id;
+      requestExpand(entry.id, replacingOwner);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [
+    entry.id,
+    expansion.ownerEntryId,
+    expansion.phase,
+    onWidgetTargetConsumed,
+    ownsExpansion,
+    pageWidth,
+    portalMounted,
+    requestExpand,
+    scrollOffset,
+    scrollRef,
+    widgetArtefactId,
+    widgetTargetPage,
+  ]);
+
   const wrappedArtefacts = useWrappedArtefacts({
     entry,
-    progress,
+    expanded: portalExpanded,
+    activePage,
     currentPage,
     activeIndex,
+    motionRequestId,
+    onMotionEnd: motionFinished,
   });
 
-  // The close button fades/slides in partway through the expand animation
-  // (starts at progress 0.2) so it doesn't appear instantly with the deck.
-  const closeBtnStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.get(), [0.2, 1], [0, 1]),
-    transform: [{ translateY: interpolate(progress.get(), [0.2, 1], [40, 0]) }],
-  }));
-
-  /**
-   * Capture the page the user is currently on, so collapsing and re-expanding
-   * returns to the same page. Reads the live `scrollOffset` and rounds it to
-   * the nearest page index, clamped to the artefact range. Called from
-   * `collapse` *before* unmounting the pager (after unmount, scrollOffset is
-   * stale/zeroed).
-   */
-  const persistPage = () => {
-    const page = Math.max(
-      0,
-      Math.min(entry.artefacts.length - 1, Math.round(scrollOffset.get() / PAGE_WIDTH)),
-    );
-
-    setActivePage(page);
-  };
-
-  /**
-   * Expand the entry: swap to the expanded render branch and spring `progress`
-   * (and the screen-level `chromeProgress`) to 1. The new pager tree mounts and
-   * its ArtefactWrappers immediately read the spring, so the deck appears to
-   * bloom into the pager.
-   */
-  const expand = () => {
-    setIsExpanded(true);
-
-    progress.set(withSpring(1, SPRING_CONFIG));
-    chromeProgress.set(withSpring(1, SPRING_CONFIG));
-  };
-
-  /**
-   * Collapse the entry: first remember the current page (`persistPage`), then
-   * swap back to the collapsed branch and spring `progress`/`chromeProgress` to
-   * 0. The collapsed deck remounts and its ArtefactWrappers animate back to the
-   * stacked positions using the same `progress`.
-   */
-  const collapse = () => {
-    persistPage();
-
-    setIsExpanded(false);
-
-    progress.set(withSpring(0, SPRING_CONFIG));
-    chromeProgress.set(withSpring(0, SPRING_CONFIG));
-  };
-
-  // Long-press opens the focus/actions overlay (separate from expand/collapse).
   const openFocus = () => {
     setFocusMounted(true);
   };
+  const openMountedFocus = () => setFocusOpen(true);
+  const closeFocus = () => setFocusOpen(false);
 
-  // Wait for the portaled BlurView's first native layout before starting its
-  // opacity animation. Mounting and opening in one commit can leave iOS with
-  // no rendered background to sample, producing a flat dim layer instead.
-  const openMountedFocus = () => {
-    setFocusOpen(true);
-  };
-
-  const closeFocus = () => {
-    setFocusOpen(false);
-  };
-
-  // Begin closing Focus. Presentation happens from `finishFocusClose`, not a
-  // guessed frame delay, so the blur/morph never overlaps the sheet scrim.
   const openShareFromFocus = () => {
     pendingFocusActionRef.current = "share";
     pendingShareRef.current = { entry, page: activePage };
@@ -275,7 +236,6 @@ const Stack = ({
     setFocusMounted(false);
     const action = pendingFocusActionRef.current;
     pendingFocusActionRef.current = null;
-
     if (action === "share") {
       const pending = pendingShareRef.current;
       pendingShareRef.current = null;
@@ -284,7 +244,6 @@ const Stack = ({
       }
       return;
     }
-
     if (action === "widgetPicker") {
       const pending = pendingWidgetPickerRef.current;
       pendingWidgetPickerRef.current = null;
@@ -309,79 +268,49 @@ const Stack = ({
     { label: "Delete", icon: "trash", onPress: () => {} },
   ];
 
-  // Frozen clone shared values for Focus subject (do not share live pager values).
-  const cloneProgress = useSharedValue(0);
   const cloneCurrentPage = useSharedValue(0);
   const cloneActiveIndex = useSharedValue(0);
-
   useLayoutEffect(() => {
     cloneCurrentPage.set(activePage);
     cloneActiveIndex.set(activePage);
   }, [activePage, cloneActiveIndex, cloneCurrentPage]);
 
-  /**
-   * Restore the saved page when the expanded pager lays out. Because the pager
-   * is portaled and mounts fresh each expand, its scroll starts at 0; this
-   * jumps it back to `activePage` (non-animated) and syncs `scrollOffset` so
-   * the indicator and artefacts are immediately correct. Runs on `onLayout`
-   * because the ref isn't usable until the ScrollView has mounted.
-   */
-  const restoreScroll = () => {
-    scrollRef.current?.scrollTo({ x: activePage * PAGE_WIDTH, y: 0, animated: false });
-    scrollOffset.set(activePage * PAGE_WIDTH);
+  const closeVisible = portalExpanded;
+  const closeValues = {
+    opacity: closeVisible ? 1 : 0,
+    translateY: closeVisible ? 0 : CLOSE_TRAVEL_Y,
   };
-
-  /**
-   * Jump to a specific artefact page (called by the expanded ScrollIndicator).
-   * Imperatively scrolls (non-animated) and syncs `scrollOffset` + `activePage`
-   * immediately so downstream animations don't lag by a frame.
-   */
-  const jumpToArtefact = (index: number) => {
-    scrollRef.current?.scrollTo({ x: index * PAGE_WIDTH, y: 0, animated: false });
-    scrollOffset.set(index * PAGE_WIDTH);
-    setActivePage(index);
-  };
-
-  useLayoutEffect(() => {
-    if (!widgetArtefactId || widgetTargetPage < 0) {
-      return;
-    }
-    scrollOffset.set(widgetTargetPage * PAGE_WIDTH);
-    scrollRef.current?.scrollTo({ x: widgetTargetPage * PAGE_WIDTH, y: 0, animated: false });
-    progress.set(withSpring(1, SPRING_CONFIG));
-    chromeProgress.set(withSpring(1, SPRING_CONFIG));
-    onWidgetTargetConsumed?.();
-  }, [
-    PAGE_WIDTH,
-    chromeProgress,
-    onWidgetTargetConsumed,
-    progress,
-    scrollOffset,
-    scrollRef,
-    widgetArtefactId,
-    widgetTargetPage,
-  ]);
+  const closeTransition = reduceMotionEnabled
+    ? ({ type: "none" } as const)
+    : {
+        opacity: {
+          ...EASE_DEFAULT_TIMING,
+          duration: CLOSE_FADE_MS,
+          delay: closeVisible ? CLOSE_FADE_DELAY_MS : 0,
+        },
+        transform: EASE_STACK_EXPANSION_SPRING,
+      };
 
   return (
     <>
-      {/* ---- Collapsed branch ---- */}
-      {!isExpanded && (
-        <View className="relative">
-          {/* Tap expands; long-press opens the focus/actions overlay. */}
+      {canonicalDeckVisible ? (
+        <View
+          className="relative"
+          pointerEvents={ownsExpansion ? "none" : "auto"}
+          accessibilityElementsHidden={ownsExpansion}
+          importantForAccessibility={ownsExpansion ? "no-hide-descendants" : "auto"}
+        >
           <LongPressable onPress={expand} onLongPress={openFocus}>
             <CollapsedDeck
               triggerRef={triggerRef}
               entry={entry}
-              progress={progress}
+              activePage={activePage}
               currentPage={currentPage}
               activeIndex={activeIndex}
               firstArtefactReadinessRequestId={firstArtefactReadinessRequestId}
               onFirstArtefactReady={onFirstArtefactReady}
             />
           </LongPressable>
-          {/* A small "ellipsis" button floating above the deck as an
-              alternative way to open the actions overlay (besides long-press).
-              Positioned above-right of the deck. */}
           <Pressable
             onPress={openFocus}
             accessibilityRole="button"
@@ -391,10 +320,8 @@ const Stack = ({
             <Icon name="ellipsis-horizontal" size={20} color="#79716B" />
           </Pressable>
         </View>
-      )}
+      ) : null}
 
-      {/* Native blur/morph views exist only for an active Focus session. Keep
-          them mounted through the close spring, then release the native tree. */}
       {focusMounted ? (
         <FocusOverlay
           triggerRef={triggerRef}
@@ -402,7 +329,7 @@ const Stack = ({
           subject={
             <CollapsedDeck
               entry={entry}
-              progress={cloneProgress}
+              activePage={activePage}
               currentPage={cloneCurrentPage}
               activeIndex={cloneActiveIndex}
             />
@@ -415,64 +342,53 @@ const Stack = ({
         />
       ) : null}
 
-      {/* ---- Expanded branch ---- */}
-      {isExpanded && (
-        // The entire expanded UI is teleported to the root `overlay` portal
-        // host (mounted in _layout.tsx), so it floats above everything else.
+      {portalMounted ? (
         <StyledPortal hostName="overlay" className="items-center justify-center">
-          <View className="absolute inset-0 items-center justify-center">
-            {/* Invisible backdrop: tap to collapse. Sits behind the card frame. */}
+          <View
+            className="absolute inset-0 items-center justify-center"
+            style={{ opacity: expansion.phase === "preparing" ? 0 : 1 }}
+            pointerEvents="auto"
+            accessibilityElementsHidden={
+              expansion.phase === "preparing" || expansion.phase === "collapsing"
+            }
+            importantForAccessibility={
+              expansion.phase === "preparing" || expansion.phase === "collapsing"
+                ? "no-hide-descendants"
+                : "auto"
+            }
+            accessibilityViewIsModal={
+              expansion.phase === "expanding" || expansion.phase === "expanded"
+            }
+          >
             <Pressable className="absolute inset-0" onPress={collapse} />
-            {/* The card frame. Same aspect-ratio + max-height as the collapsed
-                deck (see deckClassName), so the expanded artefacts scale into a
-                frame that matches the deck's proportions.
-                `pointerEvents="box-none"` is critical: it lets the frame pass
-                touches through to the ScrollView + artefacts beneath instead of
-                capturing them. The artefacts themselves are pointerEvents none
-                (set in ArtefactWrapper), so all gestures go to the ScrollView. */}
             <View
               className={`${entry.type === "paper" ? "aspect-a4" : "aspect-print"} relative max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]`}
               pointerEvents="box-none"
             >
-              {/* The horizontal pager. `snapToInterval` makes it snap one
-                  PAGE_WIDTH at a time; `decelerationRate="fast"` makes flings
-                  stop quickly. Crucially, its *only child* is an empty spacer
-                  View that defines the total scrollable width — the visible
-                  artefacts are NOT children of the ScrollView. They're siblings
-                  (`wrappedArtefacts` below) positioned by transforms that read
-                  the same `currentPage`. This decouples gestures/snapping from
-                  the rendered content so the pager stays cheap to scroll. */}
               <Animated.ScrollView
                 ref={scrollRef}
                 horizontal
-                snapToInterval={PAGE_WIDTH}
+                snapToInterval={pageWidth}
                 decelerationRate="fast"
                 showsHorizontalScrollIndicator={false}
                 scrollEventThrottle={16}
+                scrollEnabled={expansion.phase === "expanded"}
                 onScroll={onScroll}
                 onLayout={restoreScroll}
               >
-                {/* Spacer giving the pager its scrollable width:
-                    (n-1) full page widths + one final EXPANDED_WIDTH so the
-                    last page stops aligned to the left margin instead of
-                    overshooting. */}
                 <View
-                  style={{ width: (entry.artefacts.length - 1) * PAGE_WIDTH + EXPANDED_WIDTH }}
+                  style={{
+                    width: (entry.artefacts.length - 1) * pageWidth + expandedWidth,
+                  }}
                 />
               </Animated.ScrollView>
-
-              {/* The visible artefacts, laid out on top of the pager and
-                  positioned by their ArtefactWrapper transforms. */}
               {wrappedArtefacts}
             </View>
 
-            {/* Bottom-centred horizontal scroll indicator for paging through
-                artefacts. `pointerEvents="box-none"` so the gaps between
-                indicators don't block the pager gestures. z-200 above cards. */}
             <View
               style={{ zIndex: 200 }}
               className="absolute bottom-24 left-1/2 -translate-x-1/2"
-              pointerEvents="box-none"
+              pointerEvents={expansion.phase === "expanded" ? "box-none" : "none"}
             >
               <ScrollIndicator
                 orientation="horizontal"
@@ -484,14 +400,17 @@ const Stack = ({
               />
             </View>
 
-            {/* The close button. Fades/slides in via closeBtnStyle (appears
-                partway through expand). z-210 above the indicator. */}
             <View
               style={{ zIndex: 210 }}
               className="absolute bottom-10 left-1/2 -translate-x-1/2"
               pointerEvents="box-none"
             >
-              <Animated.View style={closeBtnStyle}>
+              <EaseView
+                initialAnimate={{ opacity: 0, translateY: CLOSE_TRAVEL_Y }}
+                animate={closeValues}
+                transition={closeTransition}
+                pointerEvents={closeVisible ? "auto" : "none"}
+              >
                 <Pressable
                   onPress={collapse}
                   accessibilityRole="button"
@@ -500,11 +419,11 @@ const Stack = ({
                 >
                   <Icon name="x-mark" size={22} color="#79716B" />
                 </Pressable>
-              </Animated.View>
+              </EaseView>
             </View>
           </View>
         </StyledPortal>
-      )}
+      ) : null}
     </>
   );
 };

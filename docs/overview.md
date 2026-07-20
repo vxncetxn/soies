@@ -12,7 +12,7 @@
 | Compiler | [React Compiler](https://docs.expo.dev/guides/react-compiler) (`experiments.reactCompiler` in `app.json`; `babel.config.js` with `panicThreshold: 'all_errors'` — diagnostics are **hard build failures**). Validation: `pnpm lint` (Oxlint including native `react/react-compiler`), `pnpm lint:rc`, `pnpm healthcheck:rc`, `pnpm check`. Do not reintroduce manual `useMemo` / `useCallback` / `memo` as a render optimization without a measured re-render problem (`memo(CalendarMonthWithDots)` is the intentional exception for uncompiled flash-calendar). `useCallback` is also permitted when stable identity is an explicit correctness contract with native or third-party APIs; document that contract at the call site. |
 | Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based root Stack) |
 | Styling | [Uniwind](https://docs.uniwind.dev/) + Tailwind CSS v4 (`className` on native views) |
-| Animation | `react-native-ease` for discrete state transitions; Reanimated 4 + Worklets for gesture-, scroll-, keyboard-, layout-, and measurement-driven motion. Shared values use `.get()` / `.set()` for React Compiler compatibility. See [ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md). |
+| Animation | `react-native-ease` for discrete state transitions; Reanimated 4 + Worklets for gesture-, scroll-, keyboard-, layout-, and measurement-driven motion. Shared values use `.get()` / `.set()` for React Compiler compatibility. See [ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md) and the phase-synchronization refinement in [ADR 0015](./adr/0015-phase-synchronized-ease-expansion.md). |
 | Overlays | `react-native-teleport` (portal hosts at the root) + `@swmansion/react-native-bottom-sheet` |
 | Lists / paging | `ScrollView` + Reanimated (day/artefact pagers); FlashList 2 (calendar browse lists) |
 | Calendar UI | `@marceloterreiro/flash-calendar` + `react-native-edge-fade` |
@@ -33,7 +33,9 @@ Ease owns only fixed state changes. If one visual surface also needs a
 Reanimated property, the engines receive separate nested native views; they
 never animate the same property on the same view. Shared Entry transitions use
 the root `EntryTransitionProvider`, and Reduce Motion preserves completion
-callbacks with an immediate Ease transition.
+callbacks with an immediate Ease transition. Compound Stack, Create-authoring,
+and Focus transitions synchronize semantic reducer phases and retained
+lifetimes instead of sharing a per-frame progress scalar.
 
 **Exception:** [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) still uses an unsafe `scheduleOnRN(finishClose, onClose)` bridge but has **no callsite** under `src/`. Do not wire it without applying the BloomPanel pattern first. Physical-device stress matrix: [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md).
 
@@ -100,9 +102,9 @@ diagnostics contain structural component context, never journal content.
 |------|------|
 | [`HomeHeader.tsx`](../src/components/HomeHeader.tsx) | Top bar: plain formatted-date trigger for the native calendar sheet plus animated Entry titles as the Day pager moves. |
 | [`DayPager.tsx`](../src/components/DayPager.tsx) | Vertical pager of **entries** for one day. One full-screen page per entry (`Stack`). It can consume a collapsed Entry target from Recent or an exact expanded Artefact target from a Widget command without changing Home's index-keyed reuse lifecycle. |
-| [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — collapsed deck vs expanded horizontal artefact pager. Tap to expand; long-press or ellipsis opens Focus. Focus's portal, blur, and subject clone mount only for an active open/close session. A widget target immediately expands at the matching artefact ID. |
+| [`Stack.tsx`](../src/components/Stack.tsx) | **Entry stack** — request-scoped `collapsed/preparing/expanding/expanded/collapsing` lifecycle, readiness-gated retained portal, and native/Reanimated horizontal pager. Tap to expand; long-press or ellipsis opens Focus. A widget target prepares the matching Artefact before the portal handoff. |
 | [`CollapsedDeck.tsx`](../src/components/CollapsedDeck.tsx) | Renders the stacked-card collapsed view; `useWrappedArtefacts` builds wrapped `Paper` / `Print` children. |
-| [`ArtefactWrapper.tsx`](../src/components/ArtefactWrapper.tsx) | Animated wrapper per artefact: interpolates position/size/shadow between collapsed stack layout and expanded pager layout. |
+| [`ArtefactWrapper.tsx`](../src/components/ArtefactWrapper.tsx) | Per-Artefact ownership boundary: Reanimated continuously translates with pager position; nested Ease views own phase correction, identity-bound scale, and shadow. |
 | [`Paper.tsx`](../src/components/Paper.tsx) | Text-only artefact renderer (A4 aspect, paper background). |
 | [`Print.tsx`](../src/components/Print.tsx) | Image + caption artefact renderer (polaroid-style aspect). |
 
@@ -116,7 +118,7 @@ diagnostics contain structural component context, never journal content.
 | [`CalendarMonthlyTab.tsx`](../src/components/CalendarMonthlyTab.tsx) | Chronological virtualized month grids from User Creation Day through today, Day-1-aligned month indicators, Focused Month background, Selected Day underline, disabled bounds, type-presence markers, and a viewport-derived final scroll bound. |
 | [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** still used by Create's compact menu. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
 | [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Dormant former fullscreen calendar with no callsite. Deletion is deferred with the broader legacy overlay cleanup. |
-| [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: blurred backdrop, measured subject clone, and menu. On iOS, **Feature in Widget** appears immediately before Share and opens the picker for that Entry. |
+| [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: Reanimated measures and positions the frozen subject/menu; Ease owns retained backdrop/clone opacity and staggered rows through request-scoped open/close phases. On iOS, **Feature in Widget** appears immediately before Share and opens the picker for that Entry. |
 | [`ArtefactFrame.tsx`](../src/components/ArtefactFrame.tsx) / [`artefactFrameGeometry.ts`](../src/components/artefactFrameGeometry.ts) | Shared portrait frame renderer plus pure board/shadow invariants for live capture, cached Featured Artefact previews, and branded empty/unavailable prompts. |
 | [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) | **Unused** legacy morph overlay (no callsite). Kept for reference; unsafe Worklets `onClose` bridge — do not reintroduce without hardening. |
 
@@ -125,7 +127,8 @@ diagnostics contain structural component context, never journal content.
 | File | Role |
 |------|------|
 | [`ScrollIndicator.tsx`](../src/components/ScrollIndicator.tsx) | Reusable page rail (vertical or horizontal). Raw RN View responders avoid RNGH's StrictMode `findNodeHandle` path; scrub moves invoke the latest host jump callback directly on RN/JS. Reanimated keeps continuous rail/host scroll visuals on the UI thread, while Ease owns the retained expanded-shell fade/scale. Exports `EntryPreview` / `ArtefactPreview` for scrubber tiles. |
-| [`ExpandContext.tsx`](../src/components/ExpandContext.tsx) | Shared `chromeProgress` value (0 = chrome visible, 1 = hidden) while a stack is expanded. Used by header, day pager, and stack. |
+| [`ExpandContext.tsx`](../src/components/ExpandContext.tsx) / [`stackExpansion.ts`](../src/components/stackExpansion.ts) | Global Stack portal owner, monotonic request IDs, readiness/completion events, and pure expansion phases. No shared animation progress. |
+| [`StackChromeMotion.tsx`](../src/components/StackChromeMotion.tsx) | Maps Stack phases to an opacity-only Ease endpoint for Home header, launchers, and Day pager chrome. |
 | [`CreateContext.tsx`](../src/components/CreateContext.tsx) | Owns the Create authoring session and adapts open, Cancel, and Save to the shared request-scoped Entry transition. It retains the source tree until Home has entered. |
 | [`BlurTargetViewContext.tsx`](../src/components/BlurTargetViewContext.tsx) | Ref to the root `BlurTargetView` so bloom/focus overlays can blur the correct subtree. |
 | [`Button.tsx`](../src/components/Button.tsx) | Styled pressable (rounded controls background/border). Supports `forwardRef` for morph measurement. |
@@ -212,7 +215,7 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 | [`docs/03-scroll-indicator.md`](./03-scroll-indicator.md) | Scroll indicator (vertical day rail + horizontal artefact rail). |
 | [`docs/react-native-ease-migration-plan.md`](./react-native-ease-migration-plan.md) | Live inventory, shared Entry contract, preserved timings, and automated/physical acceptance status for the partial Ease migration. |
 | [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md) | Physical-device stress matrix for RC / Worklets closure. |
-| [`docs/adr/`](./adr/) | Architecture decision records, including the Ease/Reanimated ownership boundary in ADR 0014. |
+| [`docs/adr/`](./adr/) | Architecture decision records, including the Ease/Reanimated ownership boundary in ADR 0014 and phase synchronization in ADR 0015. |
 
 ---
 

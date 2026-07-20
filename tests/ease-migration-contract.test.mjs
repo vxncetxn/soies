@@ -24,23 +24,22 @@ test("the shared Entry primitive owns full-viewport Ease motion and reduced-moti
   const createContext = readSource("src/components/CreateContext.tsx");
   const createChrome = readSource("src/components/CreateScreenChrome.tsx");
   const dayPager = readSource("src/components/DayPager.tsx");
-  const homeChrome = readSource("src/hooks/useHomeChromeFade.ts");
+  const stackChrome = readSource("src/components/StackChromeMotion.tsx");
 
   assert.match(constants, /ENTRY_TRANSITION_DURATION_MS = 350/);
   assert.match(motion, /from "react-native-ease\/uniwind"/);
   assert.match(motion, /translateY: visible \? 0 : viewportHeight/);
   assert.match(motion, /easing: visible \? "easeOut" : "easeIn"/);
-  assert.match(motion, /EntryMotionCompletionQueue/);
+  assert.match(motion, /EaseMotionCompletionQueue/);
   assert.match(motion, /\{ type: "none" \}/);
   assert.doesNotMatch(motion, /useHardwareLayer/);
   assert.match(createChrome, /<EntrySurfaceMotion[\s\S]*?<EntryChromeMotion/);
   assert.match(createChrome, /<EntrySurfaceMotion[\s\S]{0,240}className="[^"]*bg-background[^"]*"/);
   assert.doesNotMatch(createChrome, /<View style=\{\{ flex: 1 \}\} className="bg-background">/);
-  assert.match(
-    homeChrome,
-    /Stack-expansion opacity; Entry navigation owns its separate Ease wrapper/,
-  );
-  for (const source of [createContext, createChrome, dayPager, homeChrome]) {
+  assert.match(stackChrome, /Opacity-only Stack companion/);
+  assert.match(stackChrome, /EaseView/);
+  assert.match(stackChrome, /stackChromeVisible/);
+  for (const source of [createContext, createChrome, dayPager, stackChrome]) {
     assert.doesNotMatch(source, /createProgress|CREATE_HOME_SLIDE_DISTANCE|CREATE_SCREEN_OFFSET/);
   }
 });
@@ -150,28 +149,82 @@ test("Calendar and Featured Widgets retain both phase trees under Ease opacity o
   assert.match(widgets, /session\.phase === "featured" \? 1 : 0/);
 });
 
-test("Create append and title-focus transitions moved only their discrete wrappers", () => {
+test("Create phase-synchronizes Type and Scribble while keeping Print keyboard geometry local", () => {
   const pager = readSource("src/components/CreateArtefactPager.tsx");
   const chrome = readSource("src/components/CreateScreenChrome.tsx");
+  const authoring = readSource("src/hooks/createAuthoringTransition.ts");
+  const authoringHook = readSource("src/hooks/useCreateArtefactAuthoring.ts");
+  const paper = readSource("src/components/EditablePaper.tsx");
+  const print = readSource("src/components/EditablePrint.tsx");
+  const paperScreen = readSource("src/components/CreatePaperScreen.tsx");
+  const printScreen = readSource("src/components/CreatePrintScreen.tsx");
 
   assert.match(pager, /<EaseView/);
   assert.match(pager, /duration: 320/);
   assert.match(pager, /easing: EASE_APPENDED_ARTEFACT_CURVE/);
   assert.match(pager, /event\.finished && entering/);
+  assert.match(authoring, /"settled"[\s\S]*?"transitioning"[\s\S]*?"dismissing"/);
+  assert.match(authoring, /event\.requestId !== state\.requestId/);
+  assert.match(authoringHook, /authoringMotionRequestId/);
+  assert.doesNotMatch(authoringHook, /SharedValue|useSharedValue|expandProgress/);
+  assert.match(chrome, /EaseMotionCompletionQueue<number>/);
+  assert.match(chrome, /EASE_CREATE_EXPANSION_SPRING/);
+  assert.match(chrome, /authoringPhase === "settled"/);
+  assert.match(chrome, /paddingBottom: authoringExpanded \? 0 : AUTHORING_BODY_TRAVEL/);
   assert.match(chrome, /const TITLE_FOCUS_FADE_MS = 180/);
   assert.match(chrome, /animate=\{\{ opacity: isTitleFocused \? 1 : 0 \}\}/);
-  assert.doesNotMatch(chrome, /titleFocusProgress|withTiming\(isTitleFocused/);
+  assert.doesNotMatch(chrome, /titleFocusProgress|withTiming\(isTitleFocused|expandProgress/);
+  for (const source of [paper, print]) {
+    assert.match(source, /const scale = expanded \? 1 : collapsedPresentationScale/);
+    assert.match(source, /EASE_CREATE_EXPANSION_SPRING/);
+    assert.doesNotMatch(source, /expandProgress/);
+  }
+  assert.match(print, /const geometryProgress = useSharedValue/);
+  assert.match(print, /This private companion is used only/);
+  for (const screen of [paperScreen, printScreen]) {
+    assert.match(screen, /authoringState\.phase === "settled" && scribbleActive/);
+  }
 });
 
-test("Focus menu rows preserve the existing stagger while measured morph motion stays Reanimated", () => {
+test("Stack bloom uses phase-synchronized Ease endpoints around continuous paging", () => {
+  const stack = readSource("src/components/Stack.tsx");
+  const wrapper = readSource("src/components/ArtefactWrapper.tsx");
+  const context = readSource("src/components/ExpandContext.tsx");
+  const chrome = readSource("src/components/StackChromeMotion.tsx");
+
+  assert.match(stack, /expansion\.phase === "preparing"/);
+  assert.match(stack, /scrollEnabled=\{expansion\.phase === "expanded"\}/);
+  assert.match(stack, /motionRequestId/);
+  assert.doesNotMatch(stack, /withSpring|chromeProgress|progress\.set/);
+  assert.match(wrapper, /<Animated\.View[\s\S]*?<EaseView[\s\S]*?<EaseView/);
+  assert.match(wrapper, /currentPage\.get\(\)/);
+  assert.match(wrapper, /EaseMotionCompletionQueue/);
+  assert.doesNotMatch(wrapper, /interpolate|progress\.get\(\)/);
+  assert.match(chrome, /EASE_STACK_CHROME_TIMING/);
+  assert.match(chrome, /const interactive = state\.phase === "collapsed"/);
+  assert.doesNotMatch(context, /SharedValue|useSharedValue|chromeProgress/);
+  assert.match(stack, /accessibilityElementsHidden=\{[\s\S]{0,120}"collapsing"/);
+});
+
+test("Focus phase-synchronizes its Ease shell around Reanimated measurement geometry", () => {
   const focus = readSource("src/components/FocusOverlay.tsx");
+  const focusTransition = readSource("src/components/focusOverlayTransition.ts");
+  const constants = readSource("src/constants/animation.ts");
 
   assert.match(focus, /const MENU_ITEM_DURATION_MS = 220/);
   assert.match(focus, /const MENU_CLOSE_DURATION_MS = 150/);
   assert.match(focus, /const MENU_BASE_DELAY_MS = 120/);
   assert.match(focus, /const MENU_STAGGER_MS = 70/);
   assert.match(focus, /<EaseView[\s\S]{0,420}MENU_BASE_DELAY_MS \+ index \* MENU_STAGGER_MS/);
-  assert.match(focus, /useSharedValue|withSpring|measure\(/);
+  assert.match(focus, /measure\(triggerRef\)/);
+  assert.match(focus, /useAnimatedStyle[\s\S]*?origin\.get\(\)\.x/);
+  assert.match(focus, /EaseMotionCompletionQueue<FocusShellCompletion>/);
+  assert.match(focus, /animate=\{\{ opacity: targetVisible \? 1 : 0 \}\}/);
+  assert.match(focusTransition, /"closed" \| "opening" \| "open" \| "closing"/);
+  assert.match(focusTransition, /event\.requestId <= state\.latestRequestId/);
+  assert.match(constants, /EASE_FOCUS_BACKDROP_TIMING/);
+  assert.match(constants, /EASE_FOCUS_CLONE_TIMING/);
+  assert.doesNotMatch(focus, /progress|withSpring|interpolate/);
   assert.match(focus, /reduceMotionEnabled[\s\S]{0,60}\{ type: "none" \}/);
 });
 

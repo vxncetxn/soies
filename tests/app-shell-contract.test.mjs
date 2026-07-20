@@ -78,9 +78,9 @@ test("Focus stages blur at native foreground scale and releases it after closing
   const stack = readFileSync(stackUrl, "utf8");
   const focusOverlay = readFileSync(focusOverlayUrl, "utf8");
   const openFocus = stack.match(/const openFocus = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
-  const cloneStyle =
+  const cloneGeometryStyle =
     focusOverlay.match(
-      /const cloneStyle = useAnimatedStyle\(\(\) => \(\{[\s\S]*?\n  \}\)\);/,
+      /const cloneGeometryStyle = useAnimatedStyle\(\(\) => \(\{[\s\S]*?\n  \}\)\);/,
     )?.[0] ?? "";
 
   assert.match(stack, /const \[focusMounted, setFocusMounted\] = useState\(false\)/);
@@ -89,8 +89,12 @@ test("Focus stages blur at native foreground scale and releases it after closing
   assert.match(stack, /onNativeReady=\{openMountedFocus\}/);
   assert.match(focusOverlay, /onLayout=\{signalNativeReady\}/);
   assert.match(focusOverlay, /nativeReadySignalledRef\.current/);
-  assert.notEqual(cloneStyle, "");
-  assert.doesNotMatch(cloneStyle, /\bscale:/);
+  assert.notEqual(cloneGeometryStyle, "");
+  assert.doesNotMatch(cloneGeometryStyle, /\bscale:|\bopacity:/);
+  assert.match(
+    focusOverlay,
+    /<Animated\.View style=\{\[styles\.clone, cloneGeometryStyle\]\}[\s\S]{0,160}<EaseView/,
+  );
   assert.match(stack, /const finishFocusClose = \(\) => \{[\s\S]*?setFocusMounted\(false\)/);
   assert.match(stack, /\{focusMounted \? \([\s\S]*?<FocusOverlay/);
 });

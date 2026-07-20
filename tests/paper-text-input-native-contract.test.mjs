@@ -32,16 +32,16 @@ const boundedTextSurfaceSource = readFileSync(
 );
 
 test("focused Paper authoring reaches screen space through one identity scale", () => {
-  const scaleTransforms = editablePaperSource.match(/transform:\s*\[\s*\{\s*scale:/g) ?? [];
-
-  assert.equal(
-    scaleTransforms.length,
-    1,
-    "nested inverse scales still rasterize the native glyph and caret layers",
-  );
+  assert.match(editablePaperSource, /const scale = expanded \? 1 : collapsedPresentationScale/);
   assert.match(
     editablePaperSource,
-    /interpolate\([\s\S]*?expandProgress\.get\(\)[\s\S]*?\[0, 1\][\s\S]*?\[collapsedPresentationScale, 1\]/,
+    /<EaseView[\s\S]{0,240}transformOrigin=\{\{ x: 0\.5, y: 0 \}\}[\s\S]{0,120}animate=\{\{ scale \}\}/,
+    "the canonical Paper surface must have one top-centred Ease scale owner",
+  );
+  assert.doesNotMatch(
+    editablePaperSource,
+    /react-native-reanimated|transform:\s*\[\s*\{\s*scale:/,
+    "nested or competing transform writers can rasterize the native glyph and caret layers",
   );
 });
 
@@ -53,12 +53,12 @@ test("expanded Home artefact text reaches screen space through one device-sized 
   );
   assert.match(
     artefactWrapperSource,
-    /interpolate\([\s\S]*?\[0, 1\][\s\S]*?\[collapsedPresentationScale, 1\]/,
+    /hasCanonicalTextPresentation[\s\S]*?expanded[\s\S]*?\? 1[\s\S]*?: collapsedPresentationScale/,
     "Paper and Print must animate from collapsed size to identity at the device's expanded size",
   );
   assert.match(
     artefactWrapperSource,
-    /width:\s*EXPANDED_WIDTH/,
+    /width:\s*expandedWidth/,
     "the backing surface must follow the actual device width, including large iPads",
   );
   assert.match(
