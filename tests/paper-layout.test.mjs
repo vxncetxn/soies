@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   getArtefactCanvasLayout,
   getCollapsedArtefactLayout,
+  getExpandedArtefactLayout,
 } from "../src/components/artefactLayout.ts";
 import {
   PAPER_CANVAS_HEIGHT,
@@ -50,6 +51,19 @@ test("responsive Paper frames scale one canvas instead of reflowing it", () => {
   assert.deepEqual(new Set(canvases.map(({ width }) => width)), new Set([PAPER_CANVAS_WIDTH]));
   assert.deepEqual(new Set(canvases.map(({ height }) => height)), new Set([PAPER_CANVAS_HEIGHT]));
   assert.equal(new Set(displayFrames.map(({ width }) => width)).size, deviceWidths.length);
+});
+
+test("expanded Artefact frames preserve the complete responsive canvas bounds", () => {
+  const windowWidth = 390;
+
+  for (const type of ["paper", "print"]) {
+    const canvas = getArtefactCanvasLayout(windowWidth, type);
+    const expanded = getExpandedArtefactLayout(windowWidth, type);
+
+    assert.equal(expanded.width, windowWidth - 20);
+    assert.equal(expanded.presentationScale, expanded.width / canvas.width);
+    assert.equal(expanded.height, canvas.height * expanded.presentationScale);
+  }
 });
 
 test("Print caption composition also uses one reference canvas on every device", () => {

@@ -32,6 +32,7 @@ import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference"
 import { useShare } from "../share/ShareContext";
 import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
+import { getCollapsedArtefactLayout, getExpandedArtefactLayout } from "./artefactLayout";
 import CollapsedDeck, { deckClassName, useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
 import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
@@ -39,7 +40,7 @@ import { Icon } from "./Icon";
 import LongPressable from "./LongPressable";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
 import { stackExpandedControlsVisible } from "./stackExpansion";
-import { getCollapsedPortalOffset } from "./stackPortalGeometry";
+import { getCollapseReversalHitFrame, getCollapsedPortalOffset } from "./stackPortalGeometry";
 
 const StyledPortal = withUniwind(Portal);
 const CLOSE_TRAVEL_Y = 40;
@@ -109,7 +110,10 @@ const Stack = ({
     useFeaturedWidgets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const screenViewport = { width: screenWidth, height: screenHeight };
-  const expandedWidth = screenWidth - 20;
+  const artefactKind = entry.type === "paper" ? "paper" : "print";
+  const collapsedArtefactLayout = getCollapsedArtefactLayout(screenWidth, artefactKind);
+  const expandedArtefactLayout = getExpandedArtefactLayout(screenWidth, artefactKind);
+  const expandedWidth = expandedArtefactLayout.width;
   const pageWidth = expandedWidth + LAYOUT.EXPANDED_STACK_GAP;
 
   const [focusMounted, setFocusMounted] = useState(false);
@@ -118,6 +122,7 @@ const Stack = ({
   const [collapsedPortalOffset, setCollapsedPortalOffset] = useState<PortalOffset>({ x: 0, y: 0 });
   const [collapseMeasurementPending, setCollapseMeasurementPending] = useState(false);
   const collapseMeasurementPendingRef = useRef(false);
+  const collapseMeasurementRequestRef = useRef(0);
   const collapseMeasurementFrameRef = useRef<number | null>(null);
   const handledWidgetArtefactIdRef = useRef<string | null>(null);
   const portalPreparationRequestRef = useRef<number | null>(null);
@@ -139,6 +144,8 @@ const Stack = ({
   const expandedControlsVisible = ownsExpansion && stackExpandedControlsVisible(expansion);
   const expandedControlsInteractive =
     ownsExpansion && expansion.phase === "expanded" && !collapseMeasurementPending;
+  const collapseReversalInteractive =
+    ownsExpansion && (collapseMeasurementPending || expansion.phase === "collapsing");
   const canonicalDeckVisible = !ownsExpansion || expansion.phase === "preparing";
   const motionRequestId =
     ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "collapsing")
@@ -148,6 +155,12 @@ const Stack = ({
     translateX: portalExpanded ? 0 : collapsedPortalOffset.x,
     translateY: portalExpanded ? 0 : collapsedPortalOffset.y,
   };
+  const collapseReversalHitFrame = getCollapseReversalHitFrame({
+    viewport: screenViewport,
+    expanded: expandedArtefactLayout,
+    collapsed: collapsedArtefactLayout,
+    collapsedOffset: collapsedPortalOffset,
+  });
   const portalFrameTarget = `${portalExpanded ? "expanded" : "collapsed"}:${portalFrameValues.translateX}:${portalFrameValues.translateY}`;
   const [portalFrameCompletionQueue] = useState(
     () => new EaseMotionCompletionQueue<number>(portalFrameTarget),
@@ -205,6 +218,7 @@ const Stack = ({
       }
       portalPreparationRequestRef.current = null;
       collapseMeasurementPendingRef.current = false;
+      collapseMeasurementRequestRef.current += 1;
       releaseOwner(entry.id);
     },
     [entry.id, releaseOwner],
@@ -236,18 +250,35 @@ const Stack = ({
     setCollapseMeasurementPending(false);
   };
 
-  const measureCollapsePortal = (retriesRemaining: number): void => {
+  const reverseCollapse = () => {
+    if (collapseMeasurementPendingRef.current) {
+      collapseMeasurementRequestRef.current += 1;
+      if (collapseMeasurementFrameRef.current !== null) {
+        cancelAnimationFrame(collapseMeasurementFrameRef.current);
+        collapseMeasurementFrameRef.current = null;
+      }
+      finishCollapseMeasurement();
+      return;
+    }
+
+    expand();
+  };
+
+  const measureCollapsePortal = (measurementRequestId: number, retriesRemaining: number): void => {
     measureCollapsedPortalOffset({
       triggerRef,
       viewport: screenViewport,
       onMeasured: (offset) => {
-        if (!collapseMeasurementPendingRef.current) {
+        if (
+          !collapseMeasurementPendingRef.current ||
+          measurementRequestId !== collapseMeasurementRequestRef.current
+        ) {
           return;
         }
         if (offset === null && retriesRemaining > 0) {
           collapseMeasurementFrameRef.current = requestAnimationFrame(() => {
             collapseMeasurementFrameRef.current = null;
-            measureCollapsePortal(retriesRemaining - 1);
+            measureCollapsePortal(measurementRequestId, retriesRemaining - 1);
           });
           return;
         }
@@ -264,13 +295,19 @@ const Stack = ({
   };
 
   const collapse = () => {
-    if (collapseMeasurementPendingRef.current) {
+    if (
+      collapseMeasurementPendingRef.current ||
+      !ownsExpansion ||
+      (expansion.phase !== "expanding" && expansion.phase !== "expanded")
+    ) {
       return;
     }
+    collapseMeasurementRequestRef.current += 1;
+    const measurementRequestId = collapseMeasurementRequestRef.current;
     collapseMeasurementPendingRef.current = true;
     setCollapseMeasurementPending(true);
     persistPage();
-    measureCollapsePortal(PORTAL_MEASUREMENT_RETRIES);
+    measureCollapsePortal(measurementRequestId, PORTAL_MEASUREMENT_RETRIES);
   };
 
   const preparePortal = (requestId: number, retriesRemaining: number): void => {
@@ -589,6 +626,21 @@ const Stack = ({
               </Animated.ScrollView>
               {wrappedArtefacts}
             </EaseView>
+
+            {/* Ease animates only presentation layers on iOS, so a transformed
+                responder would jump to the collapsed hit frame immediately. */}
+            <View
+              style={{
+                position: "absolute",
+                ...collapseReversalHitFrame,
+                zIndex: 150,
+              }}
+              pointerEvents={collapseReversalInteractive ? "box-none" : "none"}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <Pressable className="absolute inset-0" onPressIn={reverseCollapse} />
+            </View>
 
             <View
               style={{ zIndex: 200 }}

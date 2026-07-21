@@ -14,7 +14,7 @@ import Animated, { type SharedValue, useAnimatedStyle } from "react-native-reani
 import { EASE_STACK_EXPANSION_SPRING, SHADOW_SM, SHADOW_XL } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
-import { getArtefactCanvasLayout, getCollapsedArtefactLayout } from "./artefactLayout";
+import { getCollapsedArtefactLayout, getExpandedArtefactLayout } from "./artefactLayout";
 import { ArtefactPresentationScaleProvider } from "./ArtefactPresentationScale";
 
 type ArtefactWrapperProps = {
@@ -46,11 +46,12 @@ const ArtefactWrapper = ({
   const kind = type === "paper" ? "paper" : "print";
   const hasCanonicalTextPresentation = type === "paper" || type === "print";
   const { width: baseWidth, height: baseHeight } = getCollapsedArtefactLayout(screenWidth, kind);
-  const expandedWidth = screenWidth - 20;
-  const natural = getArtefactCanvasLayout(screenWidth, kind);
-  const presentationScale = expandedWidth / natural.width;
+  const {
+    width: expandedWidth,
+    height: expandedHeight,
+    presentationScale,
+  } = getExpandedArtefactLayout(screenWidth, kind);
   const collapsedPresentationScale = baseWidth / expandedWidth;
-  const expandedHeight = natural.height * presentationScale;
   const expandedRestX = (index - activePage) * screenWidth;
   const collapsedX = (index - activePage) * LAYOUT.STACK_OFFSET;
   const collapsedCorrectionX = collapsedX - expandedRestX;

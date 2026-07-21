@@ -37,6 +37,7 @@ export {
 
 export const PAPER_ASPECT_RATIO = 210 / 297;
 export const COLLAPSED_DECK_HORIZONTAL_GUTTER = 80;
+export const EXPANDED_ARTEFACT_HORIZONTAL_GUTTER = 20;
 
 export type KnownArtefactType = "paper" | "print";
 
@@ -72,4 +73,24 @@ export function getArtefactCanvasLayout(
     return { width: PAPER_CANVAS_WIDTH, height: PAPER_CANVAS_HEIGHT };
   }
   return { width: PRINT_CANVAS_WIDTH, height: PRINT_CANVAS_HEIGHT };
+}
+
+/** Device-sized frame that presents one complete Artefact in an expanded Stack. */
+export function getExpandedArtefactLayout(
+  windowWidth: number,
+  type: KnownArtefactType,
+): {
+  width: number;
+  height: number;
+  presentationScale: number;
+} {
+  const canvas = getArtefactCanvasLayout(windowWidth, type);
+  const width = windowWidth - EXPANDED_ARTEFACT_HORIZONTAL_GUTTER;
+  const presentationScale = width / canvas.width;
+
+  return {
+    width,
+    height: canvas.height * presentationScale,
+    presentationScale,
+  };
 }

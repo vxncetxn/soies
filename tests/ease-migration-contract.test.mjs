@@ -320,6 +320,62 @@ test("expanded Stack controls fade with expansion phases instead of portal lifet
   );
 });
 
+test("a collapsing Stack remains a tap target for immediate expansion reversal", () => {
+  const stack = readSource("src/components/Stack.tsx");
+  const portal = stack.slice(stack.indexOf("{portalMounted ? ("));
+
+  assert.match(
+    stack,
+    /const expandedArtefactLayout = getExpandedArtefactLayout\(screenWidth, artefactKind\)/,
+    "the reversal target must share the visible Artefact's expanded bounds",
+  );
+  assert.match(
+    stack,
+    /const collapsedArtefactLayout = getCollapsedArtefactLayout\(screenWidth, artefactKind\)/,
+    "the reversal target must share the visible Artefact's collapsed origin",
+  );
+  assert.match(
+    stack,
+    /const collapseReversalHitFrame = getCollapseReversalHitFrame\(\{[\s\S]{0,320}viewport: screenViewport[\s\S]{0,160}collapsedOffset: collapsedPortalOffset/,
+    "the reversal target must cover the measured path without a presentation-layer transform",
+  );
+  assert.match(
+    portal,
+    /<View[\s\S]{0,320}\.\.\.collapseReversalHitFrame[\s\S]{0,320}pointerEvents=\{collapseReversalInteractive \? "box-none" : "none"\}[\s\S]{0,240}<Pressable[\s\S]{0,120}onPressIn=\{reverseCollapse\}/,
+    "the retained portal Stack must dispatch expansion before collapse can release it",
+  );
+  assert.match(
+    stack,
+    /const collapseReversalInteractive =\s*ownsExpansion && \(collapseMeasurementPending \|\| expansion\.phase === "collapsing"\)/,
+    "the reversal target must activate before asynchronous collapse measurement begins",
+  );
+  assert.match(
+    stack,
+    /const reverseCollapse = \(\) => \{[\s\S]{0,480}if \(collapseMeasurementPendingRef\.current\)[\s\S]{0,320}finishCollapseMeasurement\(\);[\s\S]{0,80}return;[\s\S]{0,120}expand\(\);/,
+    "a reversal during endpoint measurement must cancel that pending collapse instead of preparing a new portal",
+  );
+  assert.match(
+    stack,
+    /const collapse = \(\) => \{[\s\S]{0,320}collapseMeasurementPendingRef\.current \|\|[\s\S]{0,80}!ownsExpansion \|\|[\s\S]{0,180}expansion\.phase !== "expanding" && expansion\.phase !== "expanded"/,
+    "an already-collapsing Stack must not start a second measurement that can overwrite a reversal",
+  );
+  assert.match(
+    stack,
+    /measurementRequestId !== collapseMeasurementRequestRef\.current/,
+    "a stale native measurement callback must not inherit a newer collapse's pending flag",
+  );
+  assert.doesNotMatch(
+    stack,
+    /collapseReversal(?:Scale|Transform)Values/,
+    "Core Animation presentation transforms cannot own iOS hit geometry",
+  );
+  assert.match(
+    portal,
+    /<Pressable className="absolute inset-0" onPress=\{collapse\} \/>/,
+    "the area outside the Stack reversal envelope must remain a separate collapse target",
+  );
+});
+
 test("Stack freezes expanded interaction before awaiting collapse geometry", () => {
   const stack = readSource("src/components/Stack.tsx");
   const collapse = stack.slice(
@@ -329,7 +385,7 @@ test("Stack freezes expanded interaction before awaiting collapse geometry", () 
 
   assert.ok(
     collapse.indexOf("setCollapseMeasurementPending(true)") <
-      collapse.indexOf("measureCollapsePortal(PORTAL_MEASUREMENT_RETRIES)"),
+      collapse.indexOf("measureCollapsePortal(measurementRequestId, PORTAL_MEASUREMENT_RETRIES)"),
     "interaction must freeze before the asynchronous UI-thread measurement",
   );
   assert.match(

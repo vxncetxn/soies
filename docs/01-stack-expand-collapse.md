@@ -107,6 +107,14 @@ If expansion is requested again during collapse, the same retained portal
 reverses immediately to `expanding`. Superseded native completion events cannot
 settle the newer request.
 
+The portal retains a static reversal hit envelope spanning its expanded frame
+and freshly measured collapsed frame until handoff. This is intentionally the
+Stack's interaction region for the complete collapse: on iOS Ease animates the
+Core Animation presentation layer while UIKit hit testing already sees the
+destination model transform. The untransformed envelope keeps the critically
+damped path tappable, while the remaining fullscreen backdrop stays a separate
+collapse target.
+
 ## Geometry
 
 For a screen width `screenWidth`:
