@@ -73,6 +73,7 @@
     "uniwind": "~1.0.0"
   },
   "devDependencies": {
+    "@babel/preset-typescript": "^7.28.5",
     "@types/react": "~19.2.14",
     "babel-preset-expo": "~57.0.3",
     "oxfmt": "^0.53.0",
@@ -81,6 +82,12 @@
     "typescript": "~6.0.3"
   },
   "packageManager": "pnpm@9.7.1",
+  "pnpm": {
+    "patchedDependencies": {
+      "metro@0.84.4": "patches/metro@0.84.4.patch",
+      "metro-runtime@0.84.4": "patches/metro-runtime@0.84.4.patch"
+    }
+  },
   "expo": {
     "autolinking": {
       "ios": {
