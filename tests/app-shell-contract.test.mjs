@@ -25,6 +25,7 @@ const pickerFlowUrl = new URL("../src/hooks/usePrintImagePickFlow.ts", import.me
 const shareContextUrl = new URL("../src/share/ShareContext.tsx", import.meta.url);
 const widgetsContextUrl = new URL("../src/widgets/FeaturedWidgetsContext.ios.tsx", import.meta.url);
 const appConfigUrl = new URL("../app.json", import.meta.url);
+const packageConfigUrl = new URL("../package.json", import.meta.url);
 
 test("Home is the root Stack route and no tab navigator ships", () => {
   assert.equal(existsSync(homeRouteUrl), true);
@@ -125,4 +126,13 @@ test("Image Picker avoids read permission and recovers Android pending results",
     (plugin) => Array.isArray(plugin) && plugin[0] === "expo-media-library",
   );
   assert.deepEqual(mediaLibraryPlugin[1].granularPermissions, []);
+});
+
+test("Reanimated compiles synchronous non-layout UI prop updates for both native platforms", () => {
+  const packageConfig = JSON.parse(readFileSync(packageConfigUrl, "utf8"));
+  const staticFeatureFlags = packageConfig.reanimated?.staticFeatureFlags;
+
+  assert.equal(staticFeatureFlags?.ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS, true);
+  assert.equal(staticFeatureFlags?.IOS_SYNCHRONOUSLY_UPDATE_UI_PROPS, true);
+  assert.ok(packageConfig.expo.autolinking.ios.buildFromSource.includes("react-native-reanimated"));
 });
