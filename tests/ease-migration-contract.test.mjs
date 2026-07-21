@@ -340,6 +340,21 @@ test("Stack freezes expanded interaction before awaiting collapse geometry", () 
   assert.match(stack, /pointerEvents=\{expandedControlsInteractive \? "auto" : "none"\}/);
 });
 
+test("non-interactive expanded Stack controls leave the accessibility tree", () => {
+  const stack = readSource("src/components/Stack.tsx");
+
+  assert.equal(
+    stack.match(/accessibilityElementsHidden=\{!expandedControlsInteractive\}/g)?.length,
+    2,
+  );
+  assert.equal(
+    stack.match(
+      /importantForAccessibility=\{\s*expandedControlsInteractive \? "auto" : "no-hide-descendants"\s*\}/g,
+    )?.length,
+    2,
+  );
+});
+
 test("Stack never starts portal motion from a missing measurement", () => {
   const stack = readSource("src/components/Stack.tsx");
   const collapseMeasurement = stack.slice(

@@ -215,7 +215,7 @@ lifetime rather than on every intermediate frame.
   focus-dependent clipping ancestor remains explicitly non-collapsable so the
   native input is not reparented while focused.
 - Formatting, TypeScript, project-wide Oxlint, the targeted React Compiler
-  rule, compiler health (122/122), Strict Mode, and all 146 tests pass.
+  rule, compiler health (122/122), Strict Mode, and all 147 tests pass.
 - Fresh production Expo exports pass for iOS and Android. Physical iPhone
   confirmation is recorded for Stack bloom/handoff, Scribble crossfades, title
   focus, and repeated Stack collapse; the expanded-control crossfade remains the

@@ -184,8 +184,8 @@ Expanded controls use the inverse animated-phase endpoint: hidden in
 `collapsed`, `preparing`, and `collapsing`, and visible in `expanding` and
 `expanded`. The horizontal indicator and Home chrome use the same fast opacity
 timing, producing a phase-synchronized crossfade. Expanded controls become
-interactive only in `expanded`, and the retained portal lets their exit finish
-while the card collapses.
+interactive and enter the accessibility tree only in `expanded`; the retained
+portal lets their visual exit finish while the card collapses.
 
 ## Completion and interruption
 

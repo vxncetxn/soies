@@ -594,6 +594,10 @@ const Stack = ({
               style={{ zIndex: 200 }}
               className="absolute bottom-24 left-1/2 -translate-x-1/2"
               pointerEvents={expandedControlsInteractive ? "box-none" : "none"}
+              accessibilityElementsHidden={!expandedControlsInteractive}
+              importantForAccessibility={
+                expandedControlsInteractive ? "auto" : "no-hide-descendants"
+              }
             >
               <EaseView
                 initialAnimate={{ opacity: 0 }}
@@ -615,6 +619,10 @@ const Stack = ({
               style={{ zIndex: 210 }}
               className="absolute bottom-10 left-1/2 -translate-x-1/2"
               pointerEvents="box-none"
+              accessibilityElementsHidden={!expandedControlsInteractive}
+              importantForAccessibility={
+                expandedControlsInteractive ? "auto" : "no-hide-descendants"
+              }
             >
               <EaseView
                 initialAnimate={{ opacity: 0, translateY: CLOSE_TRAVEL_Y }}
