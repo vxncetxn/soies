@@ -1,6 +1,7 @@
 const { getDefaultConfig } = require("expo/metro-config");
-const { getBundleModeMetroConfig } = require("react-native-worklets/bundleMode");
 const { withUniwindConfig } = require("uniwind/metro");
+
+const { withBundleModeAndUniwind } = require("./metro.bundle-mode");
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
@@ -10,4 +11,4 @@ const uniwindConfig = withUniwindConfig(config, {
   dtsFile: "./src/uniwind-types.d.ts",
 });
 
-module.exports = getBundleModeMetroConfig(uniwindConfig);
+module.exports = withBundleModeAndUniwind(uniwindConfig);
