@@ -341,8 +341,13 @@ test("a collapsing Stack remains a tap target for immediate expansion reversal",
   );
   assert.match(
     portal,
-    /<View[\s\S]{0,320}\.\.\.collapseReversalHitFrame[\s\S]{0,320}pointerEvents=\{collapseReversalInteractive \? "box-none" : "none"\}[\s\S]{0,240}<Pressable[\s\S]{0,120}onPressIn=\{reverseCollapse\}/,
-    "the retained portal Stack must dispatch expansion before collapse can release it",
+    /<View[\s\S]{0,320}\.\.\.collapseReversalHitFrame[\s\S]{0,320}pointerEvents=\{collapseReversalInteractive \? "box-none" : "none"\}[\s\S]{0,240}<Pressable[\s\S]{0,160}onPressIn=\{beginCollapseReversalTap\}[\s\S]{0,160}onPressMove=\{trackCollapseReversalTap\}[\s\S]{0,160}onPress=\{finishCollapseReversalTap\}/,
+    "the retained portal Stack must track travel and reverse only after a recognized tap",
+  );
+  assert.doesNotMatch(
+    portal,
+    /onPressIn=\{reverseCollapse\}/,
+    "touch-down must not reverse collapse before Pressable can reject a swipe",
   );
   assert.match(
     stack,

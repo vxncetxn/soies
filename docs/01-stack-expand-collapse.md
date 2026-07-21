@@ -113,7 +113,9 @@ Stack's interaction region for the complete collapse: on iOS Ease animates the
 Core Animation presentation layer while UIKit hit testing already sees the
 destination model transform. The untransformed envelope keeps the critically
 damped path tappable, while the remaining fullscreen backdrop stays a separate
-collapse target.
+collapse target. Touch-down only arms reversal; the gesture must release as a
+recognized press without ever travelling more than 10 points. A swipe across
+the envelope therefore does not reverse the collapse.
 
 ## Geometry
 
@@ -230,6 +232,7 @@ consumed after readiness, not merely after the React request is issued.
 | `src/components/stackExpansion.ts` | Pure phases, request validation, owner replacement, and chrome selector. |
 | `src/components/ExpandContext.tsx` | Global reducer provider and monotonic request IDs. |
 | `src/components/Stack.tsx` | Portal preparation, page persistence, paging, Focus, close control, and widget targeting. |
+| `src/components/stackCollapseReversal.ts` | Tap-travel gate that rejects swipes during collapse reversal. |
 | `src/components/CollapsedDeck.tsx` | Canonical/portal deck construction. |
 | `src/components/ArtefactWrapper.tsx` | Nested Reanimated geometry and Ease presentation owners. |
 | `src/components/StackChromeMotion.tsx` | Phase-to-opacity adapter for Home chrome. |

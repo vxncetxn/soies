@@ -6,7 +6,13 @@
  * position and indicator interpolation.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  View,
+  type GestureResponderEvent,
+  useWindowDimensions,
+} from "react-native";
 import { EaseView } from "react-native-ease/uniwind";
 import Animated, {
   type AnimatedRef,
@@ -39,6 +45,7 @@ import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
 import { Icon } from "./Icon";
 import LongPressable from "./LongPressable";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
+import { StackCollapseReversalTapGesture } from "./stackCollapseReversal";
 import { stackExpandedControlsVisible } from "./stackExpansion";
 import { getCollapseReversalHitFrame, getCollapsedPortalOffset } from "./stackPortalGeometry";
 
@@ -165,6 +172,7 @@ const Stack = ({
   const [portalFrameCompletionQueue] = useState(
     () => new EaseMotionCompletionQueue<number>(portalFrameTarget),
   );
+  const [collapseReversalTapGesture] = useState(() => new StackCollapseReversalTapGesture());
 
   useLayoutEffect(() => {
     // Preparation can change the collapsed geometry with a no-motion Ease
@@ -262,6 +270,22 @@ const Stack = ({
     }
 
     expand();
+  };
+
+  const beginCollapseReversalTap = (event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.touches[0] ?? event.nativeEvent;
+    collapseReversalTapGesture.begin({ pageX: touch.pageX, pageY: touch.pageY });
+  };
+
+  const trackCollapseReversalTap = (event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.touches[0] ?? event.nativeEvent;
+    collapseReversalTapGesture.move({ pageX: touch.pageX, pageY: touch.pageY });
+  };
+
+  const finishCollapseReversalTap = () => {
+    if (collapseReversalTapGesture.consumeTap()) {
+      reverseCollapse();
+    }
   };
 
   const measureCollapsePortal = (measurementRequestId: number, retriesRemaining: number): void => {
@@ -639,7 +663,12 @@ const Stack = ({
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants"
             >
-              <Pressable className="absolute inset-0" onPressIn={reverseCollapse} />
+              <Pressable
+                className="absolute inset-0"
+                onPressIn={beginCollapseReversalTap}
+                onPressMove={trackCollapseReversalTap}
+                onPress={finishCollapseReversalTap}
+              />
             </View>
 
             <View
