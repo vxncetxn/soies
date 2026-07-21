@@ -65,7 +65,9 @@ are ignored. If the owner unmounts, the reducer returns to `collapsed`.
 3. The pager restores `activePage` and writes the matching `scrollOffset`.
    Reanimated then measures the canonical deck in page coordinates. Its centre
    delta from the raw visual viewport centre becomes the portal frame's
-   collapsed translation endpoint.
+   collapsed translation endpoint. Measurement is retried for a bounded number
+   of frames; if no native frame is available, the request aborts instead of
+   revealing a portal with stale geometry.
 4. `preparing` applies that measured endpoint without animation. Its target is
    registered as a no-completion queue entry. On the next frame, `portalReady`
    advances the reducer to `expanding`; the canonical deck becomes
@@ -84,11 +86,14 @@ native `ScrollView` are readiness work, not animation work.
 
 1. `persistPage()` rounds and clamps the current fractional page.
 2. The pager is synchronously frozen at that page by updating both native
-   scroll position and the Reanimated offset.
+   scroll position and the Reanimated offset, then disabling expanded-control
+   interaction before native measurement begins.
 3. The canonical deck is measured again and the current viewport dimensions are
    read so rotation or Home layout changes cannot leave a stale return origin.
-   `requestCollapse` then enters `collapsing`; the portal remains mounted and
-   scrolling is disabled.
+   Measurement receives the same bounded retry policy as expansion. A missing
+   frame leaves the Stack expanded and interactive rather than animating toward
+   a stale endpoint. Once a fresh endpoint is available, `requestCollapse`
+   enters `collapsing`; the portal remains mounted and scrolling is disabled.
 4. Ease returns the complete portal frame to the measured Home origin while
    returning card correction, scale, and shadow to their collapsed endpoints.
    The horizontal indicator and close control fade out from the start of this
@@ -227,7 +232,8 @@ consumed after readiness, not merely after the React request is issued.
 ## Regression gates
 
 Automated tests cover reducer ordering, stale requests, immediate reversal,
-widget owner replacement, owner teardown, native-text scale ownership, and the
+widget owner replacement, owner teardown, native-text scale ownership, bounded
+measurement failure, expanded-control interaction/fades, and the
 Ease/Reanimated source boundary. Physical iOS acceptance should additionally
 exercise rapid tap reversals, collapse after swiping, widget replacement, and
 Reduce Motion, watching for blank handoff frames or stale Home chrome.

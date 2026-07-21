@@ -207,13 +207,15 @@ lifetime rather than on every intermediate frame.
 - Expanded Stack controls now target the inverse chrome phase: the horizontal
   indicator and close control fade in during expansion and begin fading out as
   soon as collapse starts, while Home controls crossfade in the other direction.
+  Expanded interaction freezes before the fresh collapse measurement, and both
+  directions refuse to animate from missing or stale geometry.
 - Scribble controls now animate from/to opacity zero while the reducer retains
   Scribble through its exit. The Create title input remains under a stable plain
   native responder island while a sibling Ease mask owns its visual fade. Its
   focus-dependent clipping ancestor remains explicitly non-collapsable so the
   native input is not reparented while focused.
 - Formatting, TypeScript, project-wide Oxlint, the targeted React Compiler
-  rule, compiler health (122/122), Strict Mode, and all 144 tests pass.
+  rule, compiler health (122/122), Strict Mode, and all 146 tests pass.
 - Fresh production Expo exports pass for iOS and Android. Physical iPhone
   confirmation is recorded for Stack bloom/handoff, Scribble crossfades, title
   focus, and repeated Stack collapse; the expanded-control crossfade remains the

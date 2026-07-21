@@ -30,7 +30,9 @@ and the Focus shell.
   delta and the expanded origin. The measured collapsed endpoint is committed
   before the portal is revealed. The Teleport host's reported page origin is
   deliberately excluded because it can inherit a safe-area offset that its
-  visually viewport-centred child does not share.
+  visually viewport-centred child does not share. A missing native measurement
+  aborts expansion or leaves an expanded Stack open after bounded retries; stale
+  geometry never starts portal motion.
 - Stack card correction, scale, shadow, expanded controls, and Home chrome use
   discrete Ease endpoints. The horizontal indicator and close control fade out
   from the start of `collapsing` while Home chrome fades in. Native paging and

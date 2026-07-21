@@ -100,6 +100,7 @@ const Stack = ({
     requestCollapse,
     portalReady,
     motionFinished,
+    abort,
     releaseOwner,
   } = useExpandContext();
   const reduceMotionEnabled = useReducedMotionPreference();
@@ -115,6 +116,9 @@ const Stack = ({
   const [focusOpen, setFocusOpen] = useState(false);
   const [activePageState, setActivePage] = useState(0);
   const [collapsedPortalOffset, setCollapsedPortalOffset] = useState<PortalOffset>({ x: 0, y: 0 });
+  const [collapseMeasurementPending, setCollapseMeasurementPending] = useState(false);
+  const collapseMeasurementPendingRef = useRef(false);
+  const collapseMeasurementFrameRef = useRef<number | null>(null);
   const handledWidgetArtefactIdRef = useRef<string | null>(null);
   const portalPreparationRequestRef = useRef<number | null>(null);
   const portalReadyFrameRef = useRef<number | null>(null);
@@ -133,6 +137,8 @@ const Stack = ({
   const portalExpanded =
     ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "expanded");
   const expandedControlsVisible = ownsExpansion && stackExpandedControlsVisible(expansion);
+  const expandedControlsInteractive =
+    ownsExpansion && expansion.phase === "expanded" && !collapseMeasurementPending;
   const canonicalDeckVisible = !ownsExpansion || expansion.phase === "preparing";
   const motionRequestId =
     ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "collapsing")
@@ -194,7 +200,11 @@ const Stack = ({
       if (portalReadyFrameRef.current !== null) {
         cancelAnimationFrame(portalReadyFrameRef.current);
       }
+      if (collapseMeasurementFrameRef.current !== null) {
+        cancelAnimationFrame(collapseMeasurementFrameRef.current);
+      }
       portalPreparationRequestRef.current = null;
+      collapseMeasurementPendingRef.current = false;
       releaseOwner(entry.id);
     },
     [entry.id, releaseOwner],
@@ -221,18 +231,46 @@ const Stack = ({
     requestExpand(entry.id, false);
   };
 
-  const collapse = () => {
-    persistPage();
+  const finishCollapseMeasurement = () => {
+    collapseMeasurementPendingRef.current = false;
+    setCollapseMeasurementPending(false);
+  };
+
+  const measureCollapsePortal = (retriesRemaining: number): void => {
     measureCollapsedPortalOffset({
       triggerRef,
       viewport: screenViewport,
       onMeasured: (offset) => {
-        if (offset !== null) {
-          setCollapsedPortalOffset(offset);
+        if (!collapseMeasurementPendingRef.current) {
+          return;
         }
+        if (offset === null && retriesRemaining > 0) {
+          collapseMeasurementFrameRef.current = requestAnimationFrame(() => {
+            collapseMeasurementFrameRef.current = null;
+            measureCollapsePortal(retriesRemaining - 1);
+          });
+          return;
+        }
+        if (offset === null) {
+          finishCollapseMeasurement();
+          return;
+        }
+
+        setCollapsedPortalOffset(offset);
+        finishCollapseMeasurement();
         requestCollapse(entry.id);
       },
     });
+  };
+
+  const collapse = () => {
+    if (collapseMeasurementPendingRef.current) {
+      return;
+    }
+    collapseMeasurementPendingRef.current = true;
+    setCollapseMeasurementPending(true);
+    persistPage();
+    measureCollapsePortal(PORTAL_MEASUREMENT_RETRIES);
   };
 
   const preparePortal = (requestId: number, retriesRemaining: number): void => {
@@ -240,17 +278,23 @@ const Stack = ({
       triggerRef,
       viewport: screenViewport,
       onMeasured: (offset) => {
-        if (offset === null && retriesRemaining > 0) {
-          portalReadyFrameRef.current = requestAnimationFrame(() => {
-            portalReadyFrameRef.current = null;
-            preparePortal(requestId, retriesRemaining - 1);
-          });
+        if (portalPreparationRequestRef.current !== requestId) {
+          return;
+        }
+        if (offset === null) {
+          if (retriesRemaining > 0) {
+            portalReadyFrameRef.current = requestAnimationFrame(() => {
+              portalReadyFrameRef.current = null;
+              preparePortal(requestId, retriesRemaining - 1);
+            });
+            return;
+          }
+          portalPreparationRequestRef.current = null;
+          abort(entry.id, requestId);
           return;
         }
 
-        if (offset !== null) {
-          setCollapsedPortalOffset(offset);
-        }
+        setCollapsedPortalOffset(offset);
 
         // Preparing applies the measured endpoint without animation. Give that
         // native commit one frame before revealing and targeting expansion.
@@ -533,7 +577,7 @@ const Stack = ({
                 decelerationRate="fast"
                 showsHorizontalScrollIndicator={false}
                 scrollEventThrottle={16}
-                scrollEnabled={expansion.phase === "expanded"}
+                scrollEnabled={expandedControlsInteractive}
                 onScroll={onScroll}
                 onLayout={restoreScroll}
               >
@@ -549,7 +593,7 @@ const Stack = ({
             <View
               style={{ zIndex: 200 }}
               className="absolute bottom-24 left-1/2 -translate-x-1/2"
-              pointerEvents={expansion.phase === "expanded" ? "box-none" : "none"}
+              pointerEvents={expandedControlsInteractive ? "box-none" : "none"}
             >
               <EaseView
                 initialAnimate={{ opacity: 0 }}
@@ -576,7 +620,7 @@ const Stack = ({
                 initialAnimate={{ opacity: 0, translateY: CLOSE_TRAVEL_Y }}
                 animate={closeValues}
                 transition={closeTransition}
-                pointerEvents={closeVisible ? "auto" : "none"}
+                pointerEvents={expandedControlsInteractive ? "auto" : "none"}
               >
                 <Pressable
                   onPress={collapse}

@@ -194,7 +194,7 @@ test("Stack bloom uses phase-synchronized Ease endpoints around continuous pagin
   const chrome = readSource("src/components/StackChromeMotion.tsx");
 
   assert.match(stack, /expansion\.phase === "preparing"/);
-  assert.match(stack, /scrollEnabled=\{expansion\.phase === "expanded"\}/);
+  assert.match(stack, /scrollEnabled=\{expandedControlsInteractive\}/);
   assert.match(stack, /motionRequestId/);
   assert.match(stack, /EaseMotionCompletionQueue<number>/);
   assert.match(stack, /handlePortalFrameMotionEnd/);
@@ -317,6 +317,52 @@ test("expanded Stack controls fade with expansion phases instead of portal lifet
   assert.match(
     stack,
     /<EaseView\s+initialAnimate=\{\{ opacity: 0 \}\}\s+animate=\{\{ opacity: expandedControlsVisible \? 1 : 0 \}\}\s+transition=\{expandedControlsTransition\}[\s\S]{0,500}<ScrollIndicator/,
+  );
+});
+
+test("Stack freezes expanded interaction before awaiting collapse geometry", () => {
+  const stack = readSource("src/components/Stack.tsx");
+  const collapse = stack.slice(
+    stack.indexOf("const collapse ="),
+    stack.indexOf("const preparePortal"),
+  );
+
+  assert.ok(
+    collapse.indexOf("setCollapseMeasurementPending(true)") <
+      collapse.indexOf("measureCollapsePortal(PORTAL_MEASUREMENT_RETRIES)"),
+    "interaction must freeze before the asynchronous UI-thread measurement",
+  );
+  assert.match(
+    stack,
+    /const expandedControlsInteractive =[\s\S]{0,160}!collapseMeasurementPending/,
+  );
+  assert.match(stack, /scrollEnabled=\{expandedControlsInteractive\}/);
+  assert.match(stack, /pointerEvents=\{expandedControlsInteractive \? "auto" : "none"\}/);
+});
+
+test("Stack never starts portal motion from a missing measurement", () => {
+  const stack = readSource("src/components/Stack.tsx");
+  const collapseMeasurement = stack.slice(
+    stack.indexOf("const measureCollapsePortal"),
+    stack.indexOf("const collapse ="),
+  );
+  const portalPreparation = stack.slice(
+    stack.indexOf("const preparePortal"),
+    stack.indexOf("const restoreScroll"),
+  );
+
+  assert.match(collapseMeasurement, /offset === null[\s\S]*?retriesRemaining > 0/);
+  assert.match(
+    collapseMeasurement,
+    /if \(offset === null\)[\s\S]*?finishCollapseMeasurement\(\);[\s\S]*?return;/,
+  );
+  assert.ok(
+    collapseMeasurement.indexOf("setCollapsedPortalOffset(offset)") <
+      collapseMeasurement.indexOf("requestCollapse(entry.id)"),
+  );
+  assert.match(
+    portalPreparation,
+    /if \(offset === null\)[\s\S]*?abort\(entry.id, requestId\);[\s\S]*?return;/,
   );
 });
 
