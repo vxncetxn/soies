@@ -9,32 +9,71 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { EaseView } from "react-native-ease/uniwind";
 import Animated, {
+  type AnimatedRef,
+  measure,
   useAnimatedRef,
   useAnimatedScrollHandler,
   useDerivedValue,
   useSharedValue,
 } from "react-native-reanimated";
 import { Portal } from "react-native-teleport";
+import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 import { withUniwind } from "uniwind";
 
 import type { Entry } from "../data/entries";
 
-import { EASE_DEFAULT_TIMING, EASE_STACK_EXPANSION_SPRING } from "../constants/animation";
+import {
+  EASE_DEFAULT_TIMING,
+  EASE_STACK_CHROME_TIMING,
+  EASE_STACK_EXPANSION_SPRING,
+} from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { useShare } from "../share/ShareContext";
+import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
-import CollapsedDeck, { useWrappedArtefacts } from "./CollapsedDeck";
+import CollapsedDeck, { deckClassName, useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
 import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
 import { Icon } from "./Icon";
 import LongPressable from "./LongPressable";
 import { ArtefactPreview, ScrollIndicator } from "./ScrollIndicator";
+import { stackExpandedControlsVisible } from "./stackExpansion";
+import { getCollapsedPortalOffset } from "./stackPortalGeometry";
 
 const StyledPortal = withUniwind(Portal);
 const CLOSE_TRAVEL_Y = 40;
 const CLOSE_FADE_MS = 220;
 const CLOSE_FADE_DELAY_MS = 60;
+const PORTAL_MEASUREMENT_RETRIES = 2;
+const STACK_MOTION_WATCHDOG_MS = 1000;
+const STACK_REDUCED_MOTION_WATCHDOG_MS = 50;
+
+type PortalOffset = { x: number; y: number };
+
+/**
+ * Measure the canonical deck in page coordinates, then compare it with the
+ * visual viewport centre used to lay out the teleported Ease frame. Teleport's
+ * host inherits a SafeAreaView page offset, but that offset is not part of its
+ * child's visual transform coordinate space.
+ */
+const measureCollapsedPortalOffset = ({
+  triggerRef,
+  viewport,
+  onMeasured,
+}: {
+  triggerRef: AnimatedRef<Animated.View>;
+  viewport: { width: number; height: number };
+  onMeasured: (offset: PortalOffset | null) => void;
+}) => {
+  scheduleOnUI(() => {
+    "worklet";
+    const triggerLayout = measure(triggerRef);
+    const offset = triggerLayout ? getCollapsedPortalOffset(triggerLayout, viewport) : null;
+
+    scheduleOnRN(onMeasured, offset);
+  });
+};
 
 type StackProps = {
   entry: Entry;
@@ -67,14 +106,18 @@ const Stack = ({
   const { openShare } = useShare();
   const { supported: featuredWidgetsSupported, openPicker: openWidgetPicker } =
     useFeaturedWidgets();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const screenViewport = { width: screenWidth, height: screenHeight };
   const expandedWidth = screenWidth - 20;
   const pageWidth = expandedWidth + LAYOUT.EXPANDED_STACK_GAP;
 
   const [focusMounted, setFocusMounted] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   const [activePageState, setActivePage] = useState(0);
+  const [collapsedPortalOffset, setCollapsedPortalOffset] = useState<PortalOffset>({ x: 0, y: 0 });
   const handledWidgetArtefactIdRef = useRef<string | null>(null);
+  const portalPreparationRequestRef = useRef<number | null>(null);
+  const portalReadyFrameRef = useRef<number | null>(null);
   const previousEntryRef = useRef(entry);
   const pendingShareRef = useRef<{ entry: Entry; page: number } | null>(null);
   const pendingWidgetPickerRef = useRef<{ entry: Entry; page: number } | null>(null);
@@ -89,11 +132,53 @@ const Stack = ({
   const portalMounted = ownsExpansion && expansion.phase !== "collapsed";
   const portalExpanded =
     ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "expanded");
+  const expandedControlsVisible = ownsExpansion && stackExpandedControlsVisible(expansion);
   const canonicalDeckVisible = !ownsExpansion || expansion.phase === "preparing";
   const motionRequestId =
     ownsExpansion && (expansion.phase === "expanding" || expansion.phase === "collapsing")
       ? expansion.requestId
       : null;
+  const portalFrameValues = {
+    translateX: portalExpanded ? 0 : collapsedPortalOffset.x,
+    translateY: portalExpanded ? 0 : collapsedPortalOffset.y,
+  };
+  const portalFrameTarget = `${portalExpanded ? "expanded" : "collapsed"}:${portalFrameValues.translateX}:${portalFrameValues.translateY}`;
+  const [portalFrameCompletionQueue] = useState(
+    () => new EaseMotionCompletionQueue<number>(portalFrameTarget),
+  );
+
+  useLayoutEffect(() => {
+    // Preparation can change the collapsed geometry with a no-motion Ease
+    // update. Queue that null token as well so its native completion cannot be
+    // mistaken for the following expansion request.
+    portalFrameCompletionQueue.transition(portalFrameTarget, motionRequestId);
+  }, [motionRequestId, portalFrameCompletionQueue, portalFrameTarget]);
+
+  useEffect(() => {
+    if (motionRequestId === null) {
+      return;
+    }
+
+    // Ease's native callback has no request identity and can be dropped if an
+    // in-flight native batch is invalidated by another prop commit. The model
+    // layer still owns the requested endpoint, so settle after a conservative
+    // spring window and discard callbacks that belonged to the abandoned batch.
+    const watchdog = setTimeout(
+      () => {
+        portalFrameCompletionQueue.reset(portalFrameTarget);
+        motionFinished(motionRequestId);
+      },
+      reduceMotionEnabled ? STACK_REDUCED_MOTION_WATCHDOG_MS : STACK_MOTION_WATCHDOG_MS,
+    );
+
+    return () => clearTimeout(watchdog);
+  }, [
+    motionFinished,
+    motionRequestId,
+    portalFrameCompletionQueue,
+    portalFrameTarget,
+    reduceMotionEnabled,
+  ]);
 
   useLayoutEffect(() => {
     if (previousEntryRef.current === entry) {
@@ -104,7 +189,16 @@ const Stack = ({
     scrollOffset.set(0);
   }, [entry, scrollOffset]);
 
-  useEffect(() => () => releaseOwner(entry.id), [entry.id, releaseOwner]);
+  useEffect(
+    () => () => {
+      if (portalReadyFrameRef.current !== null) {
+        cancelAnimationFrame(portalReadyFrameRef.current);
+      }
+      portalPreparationRequestRef.current = null;
+      releaseOwner(entry.id);
+    },
+    [entry.id, releaseOwner],
+  );
 
   const onScroll = useAnimatedScrollHandler((event) => {
     scrollOffset.set(event.contentOffset.x);
@@ -129,18 +223,64 @@ const Stack = ({
 
   const collapse = () => {
     persistPage();
-    requestCollapse(entry.id);
+    measureCollapsedPortalOffset({
+      triggerRef,
+      viewport: screenViewport,
+      onMeasured: (offset) => {
+        if (offset !== null) {
+          setCollapsedPortalOffset(offset);
+        }
+        requestCollapse(entry.id);
+      },
+    });
+  };
+
+  const preparePortal = (requestId: number, retriesRemaining: number): void => {
+    measureCollapsedPortalOffset({
+      triggerRef,
+      viewport: screenViewport,
+      onMeasured: (offset) => {
+        if (offset === null && retriesRemaining > 0) {
+          portalReadyFrameRef.current = requestAnimationFrame(() => {
+            portalReadyFrameRef.current = null;
+            preparePortal(requestId, retriesRemaining - 1);
+          });
+          return;
+        }
+
+        if (offset !== null) {
+          setCollapsedPortalOffset(offset);
+        }
+
+        // Preparing applies the measured endpoint without animation. Give that
+        // native commit one frame before revealing and targeting expansion.
+        portalReadyFrameRef.current = requestAnimationFrame(() => {
+          portalReadyFrameRef.current = null;
+          portalPreparationRequestRef.current = null;
+          portalReady(entry.id, requestId);
+          if (widgetArtefactId && handledWidgetArtefactIdRef.current === widgetArtefactId) {
+            onWidgetTargetConsumed?.();
+          }
+        });
+      },
+    });
   };
 
   const restoreScroll = () => {
     scrollRef.current?.scrollTo({ x: activePage * pageWidth, y: 0, animated: false });
     scrollOffset.set(activePage * pageWidth);
-    if (ownsExpansion && expansion.phase === "preparing" && expansion.requestId !== null) {
-      portalReady(entry.id, expansion.requestId);
-      if (widgetArtefactId && handledWidgetArtefactIdRef.current === widgetArtefactId) {
-        onWidgetTargetConsumed?.();
-      }
+    if (
+      !ownsExpansion ||
+      expansion.phase !== "preparing" ||
+      expansion.requestId === null ||
+      portalPreparationRequestRef.current === expansion.requestId
+    ) {
+      return;
     }
+
+    const requestId = expansion.requestId;
+    portalPreparationRequestRef.current = requestId;
+    preparePortal(requestId, PORTAL_MEASUREMENT_RETRIES);
   };
 
   const jumpToArtefact = (index: number) => {
@@ -210,9 +350,19 @@ const Stack = ({
     activePage,
     currentPage,
     activeIndex,
-    motionRequestId,
-    onMotionEnd: motionFinished,
   });
+
+  const handlePortalFrameMotionEnd = (finished: boolean) => {
+    // The portal cannot hand back to Home until its outermost position reaches
+    // the canonical deck. Inner card springs may report completion first.
+    const requestId = portalFrameCompletionQueue.finish(finished);
+    // An interrupted batch does not prove that the portal reached its handoff
+    // endpoint. The request-scoped watchdog will settle it safely if no
+    // replacement completion follows.
+    if (finished && requestId !== null) {
+      motionFinished(requestId);
+    }
+  };
 
   const openFocus = () => {
     setFocusMounted(true);
@@ -276,6 +426,13 @@ const Stack = ({
   }, [activePage, cloneActiveIndex, cloneCurrentPage]);
 
   const closeVisible = portalExpanded;
+  const portalFrameTransition =
+    reduceMotionEnabled || expansion.phase === "preparing"
+      ? ({ type: "none" } as const)
+      : EASE_STACK_EXPANSION_SPRING;
+  const expandedControlsTransition = reduceMotionEnabled
+    ? ({ type: "none" } as const)
+    : EASE_STACK_CHROME_TIMING;
   const closeValues = {
     opacity: closeVisible ? 1 : 0,
     translateY: closeVisible ? 0 : CLOSE_TRAVEL_Y,
@@ -293,34 +450,33 @@ const Stack = ({
 
   return (
     <>
-      {canonicalDeckVisible ? (
-        <View
-          className="relative"
-          pointerEvents={ownsExpansion ? "none" : "auto"}
-          accessibilityElementsHidden={ownsExpansion}
-          importantForAccessibility={ownsExpansion ? "no-hide-descendants" : "auto"}
+      <View
+        className="relative"
+        style={{ opacity: canonicalDeckVisible ? 1 : 0 }}
+        pointerEvents={ownsExpansion ? "none" : "auto"}
+        accessibilityElementsHidden={ownsExpansion}
+        importantForAccessibility={ownsExpansion ? "no-hide-descendants" : "auto"}
+      >
+        <LongPressable onPress={expand} onLongPress={openFocus}>
+          <CollapsedDeck
+            triggerRef={triggerRef}
+            entry={entry}
+            activePage={activePage}
+            currentPage={currentPage}
+            activeIndex={activeIndex}
+            firstArtefactReadinessRequestId={firstArtefactReadinessRequestId}
+            onFirstArtefactReady={onFirstArtefactReady}
+          />
+        </LongPressable>
+        <Pressable
+          onPress={openFocus}
+          accessibilityRole="button"
+          accessibilityLabel="Entry options"
+          className="absolute -top-12 -right-2 z-[110] rounded-full p-2"
         >
-          <LongPressable onPress={expand} onLongPress={openFocus}>
-            <CollapsedDeck
-              triggerRef={triggerRef}
-              entry={entry}
-              activePage={activePage}
-              currentPage={currentPage}
-              activeIndex={activeIndex}
-              firstArtefactReadinessRequestId={firstArtefactReadinessRequestId}
-              onFirstArtefactReady={onFirstArtefactReady}
-            />
-          </LongPressable>
-          <Pressable
-            onPress={openFocus}
-            accessibilityRole="button"
-            accessibilityLabel="Entry options"
-            className="absolute -top-12 -right-2 z-[110] rounded-full p-2"
-          >
-            <Icon name="ellipsis-horizontal" size={20} color="#79716B" />
-          </Pressable>
-        </View>
-      ) : null}
+          <Icon name="ellipsis-horizontal" size={20} color="#79716B" />
+        </Pressable>
+      </View>
 
       {focusMounted ? (
         <FocusOverlay
@@ -344,7 +500,8 @@ const Stack = ({
 
       {portalMounted ? (
         <StyledPortal hostName="overlay" className="items-center justify-center">
-          <View
+          <Animated.View
+            collapsable={false}
             className="absolute inset-0 items-center justify-center"
             style={{ opacity: expansion.phase === "preparing" ? 0 : 1 }}
             pointerEvents="auto"
@@ -361,8 +518,12 @@ const Stack = ({
             }
           >
             <Pressable className="absolute inset-0" onPress={collapse} />
-            <View
-              className={`${entry.type === "paper" ? "aspect-a4" : "aspect-print"} relative max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]`}
+            <EaseView
+              className={deckClassName(entry.type)}
+              initialAnimate={portalFrameValues}
+              animate={portalFrameValues}
+              transition={portalFrameTransition}
+              onTransitionEnd={(event) => handlePortalFrameMotionEnd(event.finished)}
               pointerEvents="box-none"
             >
               <Animated.ScrollView
@@ -383,21 +544,27 @@ const Stack = ({
                 />
               </Animated.ScrollView>
               {wrappedArtefacts}
-            </View>
+            </EaseView>
 
             <View
               style={{ zIndex: 200 }}
               className="absolute bottom-24 left-1/2 -translate-x-1/2"
               pointerEvents={expansion.phase === "expanded" ? "box-none" : "none"}
             >
-              <ScrollIndicator
-                orientation="horizontal"
-                count={entry.artefacts.length}
-                currentPage={currentPage}
-                maxVisible={5}
-                onJumpToIndex={jumpToArtefact}
-                renderPreview={(index) => <ArtefactPreview entry={entry} index={index} />}
-              />
+              <EaseView
+                initialAnimate={{ opacity: 0 }}
+                animate={{ opacity: expandedControlsVisible ? 1 : 0 }}
+                transition={expandedControlsTransition}
+              >
+                <ScrollIndicator
+                  orientation="horizontal"
+                  count={entry.artefacts.length}
+                  currentPage={currentPage}
+                  maxVisible={5}
+                  onJumpToIndex={jumpToArtefact}
+                  renderPreview={(index) => <ArtefactPreview entry={entry} index={index} />}
+                />
+              </EaseView>
             </View>
 
             <View
@@ -421,7 +588,7 @@ const Stack = ({
                 </Pressable>
               </EaseView>
             </View>
-          </View>
+          </Animated.View>
         </StyledPortal>
       ) : null}
     </>

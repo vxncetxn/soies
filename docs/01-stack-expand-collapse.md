@@ -15,19 +15,21 @@ is actively scrolling.
 | Concern | Owner | Why |
 |---|---|---|
 | Expansion phase, portal owner, request identity | React reducer | These are discrete application states. |
-| Card correction, scale, shadow, close-control entrance | `react-native-ease` | Each has fixed collapsed and expanded endpoints. |
+| Portal-origin translation, card correction, scale, shadow, close-control entrance | `react-native-ease` | Each has fixed collapsed and expanded endpoints. |
 | Home header, launchers, Day pager chrome | `react-native-ease` | Opacity follows the Stack phase, not animation progress. |
 | Horizontal drag, snapping, fractional page translation | Native `ScrollView` + Reanimated | Values change continuously with user input. |
+| Canonical-deck measurement and viewport dimensions | Reanimated + React Native | The deck's native page frame and the Teleport child's visual viewport establish the discrete collapsed portal endpoint. |
 | Paper/Print content readiness | Native renderers + React request IDs | Entry navigation must wait for real native content. |
 
 One native view never receives the same property from both animation engines.
 `ArtefactWrapper` expresses that boundary as nested views:
 
 ```text
-Animated.View       continuous pager translateX + live zIndex
-  EaseView           collapsed-position correction translateX
-    EaseView         presentation scale + shadow
-      Paper/Print    canonical content
+EaseView              portal frame translateX/translateY
+  Animated.View       continuous pager translateX + live zIndex
+    EaseView           collapsed-position correction translateX
+      EaseView         presentation scale + shadow
+        Paper/Print    canonical content
 ```
 
 ## State machine
@@ -57,15 +59,21 @@ are ignored. If the owner unmounts, the reducer returns to `collapsed`.
 
 1. `Stack` calls `requestExpand(entry.id)`. The reducer enters `preparing` and
    assigns that Entry as portal owner.
-2. The portal tree mounts invisibly. The canonical collapsed deck remains
-   visible, preventing a blank frame while the native pager lays out.
-3. The pager restores `activePage`, writes the matching `scrollOffset`, and
-   reports `portalReady` for the active request.
-4. The reducer enters `expanding`. The canonical deck is hidden and the portal
-   becomes visible at the identical collapsed endpoint.
-5. Ease animates the correction, presentation scale/shadow, close control, and
-   Home chrome to their expanded endpoints.
-6. Only the active card carries the request completion token. Its presentation
+2. The portal tree mounts invisibly. The canonical collapsed deck remains in
+   layout and visible, preventing both a blank frame and a Home reflow while
+   the native pager lays out.
+3. The pager restores `activePage` and writes the matching `scrollOffset`.
+   Reanimated then measures the canonical deck in page coordinates. Its centre
+   delta from the raw visual viewport centre becomes the portal frame's
+   collapsed translation endpoint.
+4. `preparing` applies that measured endpoint without animation. Its target is
+   registered as a no-completion queue entry. On the next frame, `portalReady`
+   advances the reducer to `expanding`; the canonical deck becomes
+   opacity-hidden and the portal becomes visible at the same physical origin.
+5. Ease animates the correction and presentation scale/shadow to their expanded
+   endpoints while crossfading Home chrome out and the horizontal indicator and
+   close control in.
+6. The outer portal frame carries the request completion token. Its translation
    completion advances the reducer to `expanded`, when horizontal scrolling is
    enabled.
 
@@ -77,12 +85,18 @@ native `ScrollView` are readiness work, not animation work.
 1. `persistPage()` rounds and clamps the current fractional page.
 2. The pager is synchronously frozen at that page by updating both native
    scroll position and the Reanimated offset.
-3. `requestCollapse(entry.id)` enters `collapsing`; the portal remains mounted
-   and scrolling becomes disabled.
-4. Ease returns the card, shadow, close control, and Home chrome to their
-   collapsed endpoints.
-5. The matching active-card completion returns the reducer to `collapsed`.
-   Only then is the portal released and the canonical deck interactive again.
+3. The canonical deck is measured again and the current viewport dimensions are
+   read so rotation or Home layout changes cannot leave a stale return origin.
+   `requestCollapse` then enters `collapsing`; the portal remains mounted and
+   scrolling is disabled.
+4. Ease returns the complete portal frame to the measured Home origin while
+   returning card correction, scale, and shadow to their collapsed endpoints.
+   The horizontal indicator and close control fade out from the start of this
+   phase while Home chrome fades back in.
+5. The matching portal-frame completion returns the reducer to `collapsed`.
+   Only then is the portal released and the already-retained canonical shell
+   made visible and interactive. Its deck and ellipsis never leave Home layout,
+   so this handoff cannot move the surrounding row.
 
 If expansion is requested again during collapse, the same retained portal
 reverses immediately to `expanding`. Superseded native completion events cannot
@@ -96,6 +110,27 @@ For a screen width `screenWidth`:
 expandedWidth = screenWidth - 20;
 pageWidth = expandedWidth + LAYOUT.EXPANDED_STACK_GAP;
 ```
+
+The Teleport host is mounted inside the app's safe-area hierarchy, so measuring
+that host can report an inherited page origin even though its teleported child
+is visually centred in the raw viewport. That host origin is not part of the
+child's transform coordinate space. Stack therefore combines the canonical
+deck's native page frame with the current viewport dimensions:
+
+```ts
+collapsedPortalOffset = canonicalDeckCenter - viewportCenter;
+portalFrameTranslation = expanded ? { x: 0, y: 0 } : collapsedPortalOffset;
+```
+
+Do not subtract the Teleport host's reported `pageX` or `pageY`. On the physical
+device used to diagnose the collapse handoff, its inherited safe-area
+`pageY = 12.6667` produced the same 19-recorded-pixel vertical jump for both
+Paper and Print.
+
+The canonical shell remains mounted at opacity zero while its portal owns the
+Entry. During `preparing`, the offset is installed with a no-motion transition
+and committed for one frame before expansion begins. During collapse, the same
+portal-frame owner springs back to the freshly measured offset.
 
 The native horizontal pager snaps at `pageWidth`; the extra gap leaves a visual
 peek of the next Artefact. Reanimated exposes:
@@ -140,16 +175,32 @@ only after the reducer returns to `collapsed`, even when their opacity is
 already animating back during `collapsing`. Entry navigation opacity is a
 separate outer Ease wrapper, preserving one owner per native view.
 
+Expanded controls use the inverse animated-phase endpoint: hidden in
+`collapsed`, `preparing`, and `collapsing`, and visible in `expanding` and
+`expanded`. The horizontal indicator and Home chrome use the same fast opacity
+timing, producing a phase-synchronized crossfade. Expanded controls become
+interactive only in `expanded`, and the retained portal lets their exit finish
+while the card collapses.
+
 ## Completion and interruption
 
 Ease completion events do not include application request IDs.
-`EaseMotionCompletionQueue` associates each target change with its logical
-request. It suppresses a cancelled completion when a replacement target is
-queued, accepts the replacement's completion, and treats a lone native
-interruption as logical completion so the state machine cannot remain stuck.
+`EaseMotionCompletionQueue` associates each target change—including the hidden
+no-motion preparation update—with its logical request. It suppresses a
+cancelled completion when a replacement target is queued and accepts the
+replacement's completion.
 
-Changing viewport geometry produces a new target signature as well, allowing
-the same queue to recover safely when dimensions change during a transition.
+Ease 0.7.3 can omit a completion when another native prop commit invalidates an
+in-flight batch. Stack therefore has a request-scoped watchdog after the spring
+settle window. If the current request is still pending, it reconciles the queue
+to the current endpoint before advancing the reducer; a late callback can
+neither strand the portal nor settle a later request. Interrupted callbacks do
+not release the portal before that safe endpoint window.
+
+Stack's queue follows the portal frame's semantic `expanded`/`collapsed` target
+and measured translation coordinates. Geometry can retarget that frame without
+creating a second lifecycle owner; only a matching phase request may release
+the portal.
 
 ## Widget targets
 

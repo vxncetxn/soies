@@ -7,7 +7,6 @@
  */
 import type { ReactNode } from "react";
 
-import { useLayoutEffect, useState } from "react";
 import { StyleSheet, useWindowDimensions } from "react-native";
 import { EaseView } from "react-native-ease";
 import Animated, { type SharedValue, useAnimatedStyle } from "react-native-reanimated";
@@ -15,7 +14,6 @@ import Animated, { type SharedValue, useAnimatedStyle } from "react-native-reani
 import { EASE_STACK_EXPANSION_SPRING, SHADOW_SM, SHADOW_XL } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
-import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import { getArtefactCanvasLayout, getCollapsedArtefactLayout } from "./artefactLayout";
 import { ArtefactPresentationScaleProvider } from "./ArtefactPresentationScale";
 
@@ -31,9 +29,6 @@ type ArtefactWrapperProps = {
   currentPage: SharedValue<number>;
   /** UI-thread nearest page used only for live stacking order. */
   activeIndex: SharedValue<number>;
-  /** Only the active card carries the reducer completion token. */
-  motionRequestId?: number | null;
-  onMotionEnd?: (requestId: number) => void;
   children: ReactNode;
 };
 
@@ -44,8 +39,6 @@ const ArtefactWrapper = ({
   activePage,
   currentPage,
   activeIndex,
-  motionRequestId = null,
-  onMotionEnd,
   children,
 }: ArtefactWrapperProps) => {
   const reduceMotionEnabled = useReducedMotionPreference();
@@ -77,19 +70,6 @@ const ArtefactWrapper = ({
     shadowRadius: expanded ? SHADOW_XL.radius : SHADOW_SM.radius,
     elevation: expanded ? SHADOW_XL.elevation : SHADOW_SM.elevation,
   };
-  const targetSignature = [
-    expanded ? "expanded" : "collapsed",
-    screenWidth,
-    activePage,
-    index,
-    scale,
-  ].join(":");
-  const [completionQueue] = useState(() => new EaseMotionCompletionQueue<number>(targetSignature));
-
-  useLayoutEffect(() => {
-    completionQueue.transition(targetSignature, motionRequestId);
-  }, [completionQueue, motionRequestId, targetSignature]);
-
   const pagePositionStyle = useAnimatedStyle(() => {
     const liveActiveIndex = activeIndex.get();
     return {
@@ -124,12 +104,6 @@ const ArtefactWrapper = ({
           initialAnimate={presentation}
           animate={presentation}
           transition={transition}
-          onTransitionEnd={(event) => {
-            const requestId = completionQueue.finish(event.finished);
-            if (requestId !== null) {
-              onMotionEnd?.(requestId);
-            }
-          }}
         >
           {hasCanonicalTextPresentation ? (
             <ArtefactPresentationScaleProvider presentationScale={presentationScale}>

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createStackExpansionState,
   stackChromeVisible,
+  stackExpandedControlsVisible,
   stackExpansionReducer,
 } from "../src/components/stackExpansion.ts";
 
@@ -80,6 +81,22 @@ test("an expanded Stack collapses through its retained portal and can reverse im
   assert.deepEqual(
     stackExpansionReducer(closingAgain, { type: "motionFinished", requestId: 4 }),
     createStackExpansionState(),
+  );
+});
+
+test("expanded controls crossfade opposite Home chrome at Stack phase boundaries", () => {
+  const phases = ["collapsed", "preparing", "expanding", "expanded", "collapsing"];
+
+  assert.deepEqual(
+    phases.map((phase) =>
+      stackExpandedControlsVisible({
+        phase,
+        ownerEntryId: phase === "collapsed" ? null : "entry-a",
+        requestId: null,
+        retainHiddenChrome: false,
+      }),
+    ),
+    [false, false, true, true, false],
   );
 });
 

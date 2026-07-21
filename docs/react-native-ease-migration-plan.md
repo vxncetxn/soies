@@ -57,7 +57,8 @@ and one designated completion owner advances each matching request.
 
 - Stack: `collapsed → preparing → expanding → expanded → collapsing`. Portal
   readiness precedes the canonical-to-portal handoff; the portal is retained
-  through close. Native/Reanimated paging stays continuous.
+  through close, and its outer translation frame owns logical completion.
+  Native/Reanimated paging stays continuous.
 - Create: `settled | transitioning | dismissing`, with `default | type |
   scribble` modes. Type or Scribble remains rendered through its exit. Print's
   private Reanimated companion follows keyboard geometry without driving the
@@ -194,6 +195,29 @@ lifetime rather than on every intermediate frame.
 - The physical iPhone behavior matrix remains a device gate; simulator, export,
   and static checks do not promote Phase 2 rows beyond **Implemented; device
   gate pending**.
+
+### Phase 2 regression hardening recorded on 2026-07-21
+
+- Stack now measures the canonical deck against the Teleport child's raw visual
+  viewport, commits that collapsed endpoint before reveal, and retains the
+  canonical Home shell at opacity zero. The Teleport host's inherited safe-area
+  page origin is deliberately excluded because it does not participate in the
+  child's transform coordinate space. This addresses the missing open bloom and
+  the close-time deck/ellipsis layout handoff.
+- Expanded Stack controls now target the inverse chrome phase: the horizontal
+  indicator and close control fade in during expansion and begin fading out as
+  soon as collapse starts, while Home controls crossfade in the other direction.
+- Scribble controls now animate from/to opacity zero while the reducer retains
+  Scribble through its exit. The Create title input remains under a stable plain
+  native responder island while a sibling Ease mask owns its visual fade. Its
+  focus-dependent clipping ancestor remains explicitly non-collapsable so the
+  native input is not reparented while focused.
+- Formatting, TypeScript, project-wide Oxlint, the targeted React Compiler
+  rule, compiler health (122/122), Strict Mode, and all 144 tests pass.
+- Fresh production Expo exports pass for iOS and Android. Physical iPhone
+  confirmation is recorded for Stack bloom/handoff, Scribble crossfades, title
+  focus, and repeated Stack collapse; the expanded-control crossfade remains the
+  current device acceptance gate.
 
 ## Physical device gates still required
 

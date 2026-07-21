@@ -22,15 +22,30 @@ and the Focus shell.
 
 - Stack uses `collapsed`, `preparing`, `expanding`, `expanded`, and `collapsing`.
   The portal is mounted and restored during `preparing`, retained through
-  collapse, and released only after the active card's matching Ease completion.
-- Stack card correction, scale, shadow, close control, and Home chrome use
-  discrete Ease endpoints. Native paging and the Reanimated
-  `currentPage`/`activeIndex` geometry remain continuous.
+  collapse, and released only after the outer portal frame's matching Ease
+  completion.
+- Stack retains its canonical Home shell at opacity zero while the portal owns
+  the Entry. Reanimated measures that shell and React Native supplies the raw
+  visual viewport dimensions; an outer Ease frame animates between their centre
+  delta and the expanded origin. The measured collapsed endpoint is committed
+  before the portal is revealed. The Teleport host's reported page origin is
+  deliberately excluded because it can inherit a safe-area offset that its
+  visually viewport-centred child does not share.
+- Stack card correction, scale, shadow, expanded controls, and Home chrome use
+  discrete Ease endpoints. The horizontal indicator and close control fade out
+  from the start of `collapsing` while Home chrome fades in. Native paging and
+  the Reanimated `currentPage`/`activeIndex` geometry remain continuous.
 - Create uses a request-scoped authoring reducer with `settled`, `transitioning`,
   and `dismissing` phases plus `default`, `type`, and `scribble` modes. The body,
   canonical card scale, headers, and controls target Ease endpoints.
 - Create retains the outgoing Type or Scribble mode while returning to Default,
   so native responders and the live Ink canvas are not removed during exit.
+- Scribble tools target the same phase opacity as the retained Default controls.
+  The title `TextInput` stays under a stable plain native responder view; a
+  non-interactive sibling Ease mask supplies its header fade without reparenting
+  or retargeting the focused input. Its focus-dependent clipping ancestor is
+  explicitly non-collapsable so React Native cannot flatten and reparent that
+  native responder when the clipping style changes.
 - Print keeps a private Reanimated geometry companion for its interactive
   keyboard pin. That value does not coordinate other components and does not
   write the Ease-owned card scale.
@@ -41,6 +56,10 @@ and the Focus shell.
   request tokens. Newer targets supersede cancelled completions, stale request
   IDs cannot settle newer work, and a lone native interruption cannot strand a
   reducer between phases.
+- Stack also queues its hidden no-motion geometry preparation and uses a
+  request-scoped settle watchdog. This contains Ease 0.7.3's unkeyed or omitted
+  native completion events without allowing a late callback to release a newer
+  portal request.
 - When Ease and Reanimated are both necessary, they own separate nested native
   views. Paper and Print settle with one scale-bearing ancestor at identity.
 
@@ -60,6 +79,10 @@ durations or equal intermediate values.
 - **Move all remaining geometry to Ease** — rejected for paging, measurement,
   and interactive keyboard motion, which are continuous inputs rather than
   discrete application phases.
+- **Measure the Teleport host as the portal origin** — rejected after physical
+  Paper and Print recordings showed the same 19-pixel collapse handoff. The
+  host reported an inherited safe-area page origin, while the teleported child's
+  transform coordinate space remained centred in the raw viewport.
 - **Unmount old trees as soon as the target changes** — rejected because Portal
   layout, native text responders, Ink canvases, and close actions require
   retained native views until readiness or completion.

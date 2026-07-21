@@ -1,3 +1,5 @@
+import type { Transition } from "react-native-ease";
+
 /**
  * CreateScreenChrome — shared shell for Create Paper / Create Print.
  *
@@ -16,7 +18,7 @@
  * `children` inside the paper-slide region.
  */
 import { BlurTargetView, BlurView } from "expo-blur";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -106,6 +108,91 @@ export type CreateScreenChromeProps = {
   floatingAccessory?: ReactNode;
   children: ReactNode;
 };
+
+type CreateTitleFieldProps = {
+  authoringExpanded: boolean;
+  defaultInteractive: boolean;
+  inputRef: RefObject<TextInput | null>;
+  isTitleFocused: boolean;
+  onBlur: () => void;
+  onChangeTitle: (title: string) => void;
+  onFocus: () => void;
+  saving: boolean;
+  title: string;
+  transition: Transition;
+  typeLabel: CreateScreenChromeProps["typeLabel"];
+};
+
+/**
+ * Keep the TextInput under a plain native View for its entire focus session.
+ * The sibling Ease mask provides the same visual fade without making the
+ * native responder a child of a phase-retargeted animation view.
+ */
+const CreateTitleField = ({
+  authoringExpanded,
+  defaultInteractive,
+  inputRef,
+  isTitleFocused,
+  onBlur,
+  onChangeTitle,
+  onFocus,
+  saving,
+  title,
+  transition,
+  typeLabel,
+}: CreateTitleFieldProps) => (
+  <View
+    className="px-5"
+    pointerEvents={defaultInteractive ? "auto" : "none"}
+    accessibilityElementsHidden={!defaultInteractive}
+    importantForAccessibility={defaultInteractive ? "auto" : "no-hide-descendants"}
+  >
+    <View className="mb-3 flex-row items-center gap-2">
+      <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
+      <Text className="font-mono text-xs tracking-widest text-secondary">{typeLabel}</Text>
+    </View>
+    <View>
+      <TextInput
+        ref={inputRef}
+        value={title}
+        onChangeText={onChangeTitle}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        editable={!saving}
+        placeholder="Title of entry"
+        placeholderTextColor="#79716B"
+        multiline
+        scrollEnabled={false}
+        style={[
+          styles.titleInput,
+          !isTitleFocused ? styles.titleInputIdle : null,
+          {
+            color: isTitleFocused ? "#FFFFFF" : title.length > 0 ? "transparent" : "#79716B",
+          },
+        ]}
+      />
+      {!isTitleFocused && title.length > 0 ? (
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          pointerEvents="none"
+          style={styles.titleIdleOverlay}
+        >
+          {title}
+        </Text>
+      ) : null}
+    </View>
+
+    <EaseView
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      className="bg-background"
+      initialAnimate={{ opacity: authoringExpanded ? 1 : 0 }}
+      animate={{ opacity: authoringExpanded ? 1 : 0 }}
+      transition={transition}
+    />
+  </View>
+);
 
 const CreateScreenChrome = ({
   authoringExpanded,
@@ -374,7 +461,10 @@ const CreateScreenChrome = ({
         style={StyleSheet.absoluteFill}
       >
         {scribbleActive && scribbleTools ? (
-          <View
+          <EaseView
+            initialAnimate={{ opacity: 0 }}
+            animate={{ opacity: authoringExpanded ? 1 : 0 }}
+            transition={chromeTransition}
             pointerEvents={expandedInteractive ? "box-none" : "none"}
             style={{
               position: "absolute",
@@ -384,7 +474,7 @@ const CreateScreenChrome = ({
             }}
           >
             {scribbleTools}
-          </View>
+          </EaseView>
         ) : null}
 
         <EaseView
@@ -418,7 +508,10 @@ const CreateScreenChrome = ({
           </Pressable>
         </EaseView>
 
+        {/* Focus removes this header's clipping. Preserve its native identity
+          so Fabric cannot flatten/reparent the focused TextInput. */}
         <View
+          collapsable={false}
           style={[
             styles.headerOverlay,
             { paddingTop: topPad },
@@ -437,55 +530,19 @@ const CreateScreenChrome = ({
             animate={{ opacity: authoringExpanded ? 1 : 0 }}
             transition={chromeTransition}
           />
-          <EaseView
-            className="px-5"
-            initialAnimate={{ opacity: authoringExpanded ? 0 : 1 }}
-            animate={{ opacity: authoringExpanded ? 0 : 1 }}
+          <CreateTitleField
+            authoringExpanded={authoringExpanded}
+            defaultInteractive={defaultInteractive}
+            inputRef={titleInputRef}
+            isTitleFocused={isTitleFocused}
+            onBlur={handleTitleBlur}
+            onChangeTitle={onChangeTitle}
+            onFocus={handleTitleFocus}
+            saving={saving}
+            title={title}
             transition={chromeTransition}
-            pointerEvents={defaultInteractive ? "auto" : "none"}
-            accessibilityElementsHidden={!defaultInteractive}
-            importantForAccessibility={defaultInteractive ? "auto" : "no-hide-descendants"}
-          >
-            <View className="mb-3 flex-row items-center gap-2">
-              <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
-              <Text className="font-mono text-xs tracking-widest text-secondary">{typeLabel}</Text>
-            </View>
-            <View>
-              <TextInput
-                ref={titleInputRef}
-                value={title}
-                onChangeText={onChangeTitle}
-                onFocus={handleTitleFocus}
-                onBlur={handleTitleBlur}
-                editable={!saving}
-                placeholder="Title of entry"
-                placeholderTextColor="#79716B"
-                multiline
-                scrollEnabled={false}
-                style={[
-                  styles.titleInput,
-                  !isTitleFocused ? styles.titleInputIdle : null,
-                  {
-                    color: isTitleFocused
-                      ? "#FFFFFF"
-                      : title.length > 0
-                        ? "transparent"
-                        : "#79716B",
-                  },
-                ]}
-              />
-              {!isTitleFocused && title.length > 0 ? (
-                <Text
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  pointerEvents="none"
-                  style={styles.titleIdleOverlay}
-                >
-                  {title}
-                </Text>
-              ) : null}
-            </View>
-          </EaseView>
+            typeLabel={typeLabel}
+          />
 
           <EaseView
             style={[styles.expandedHeader, { top: topPad, height: EXPANDED_HEADER_HEIGHT }]}

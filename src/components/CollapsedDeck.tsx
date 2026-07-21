@@ -53,8 +53,6 @@ type UseWrappedArtefactsParams = {
   // The index of the card that's "on top" in the collapsed stack (the one
   // the user is currently on). Drives the collapsed horizontal offsets.
   activeIndex: SharedValue<number>;
-  motionRequestId?: number | null;
-  onMotionEnd?: (requestId: number) => void;
   /** Entry-transition request targeting this Entry's first Artefact. */
   firstArtefactReadinessRequestId?: number | null;
   /** Canonical first-Artefact readiness used by Calendar and Save handoffs. */
@@ -76,8 +74,6 @@ export const useWrappedArtefacts = ({
   activePage,
   currentPage,
   activeIndex,
-  motionRequestId,
-  onMotionEnd,
   firstArtefactReadinessRequestId,
   onFirstArtefactReady,
 }: UseWrappedArtefactsParams) => {
@@ -95,8 +91,6 @@ export const useWrappedArtefacts = ({
       activePage={activePage}
       currentPage={currentPage}
       activeIndex={activeIndex}
-      motionRequestId={index === activePage ? motionRequestId : null}
-      onMotionEnd={index === activePage ? onMotionEnd : undefined}
     >
       {renderArtefactContent(
         artefact,
@@ -120,8 +114,6 @@ type CollapsedDeckProps = {
   activePage: number;
   currentPage: SharedValue<number>;
   activeIndex: SharedValue<number>;
-  motionRequestId?: number | null;
-  onMotionEnd?: (requestId: number) => void;
   // Optional ref to the deck's outer view. `Stack` passes its `triggerRef`
   // here so that `FocusOverlay` (the long-press menu) can measure the deck's
   // on-screen frame and animate the overlay from it.
@@ -145,8 +137,6 @@ const CollapsedDeck = ({
   activePage,
   currentPage,
   activeIndex,
-  motionRequestId,
-  onMotionEnd,
   triggerRef,
   firstArtefactReadinessRequestId,
   onFirstArtefactReady,
@@ -157,8 +147,6 @@ const CollapsedDeck = ({
     activePage,
     currentPage,
     activeIndex,
-    motionRequestId,
-    onMotionEnd,
     firstArtefactReadinessRequestId,
     onFirstArtefactReady,
   });

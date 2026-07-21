@@ -19,6 +19,17 @@ export class EaseMotionCompletionQueue<TCompletion> {
     this.pending.push(completion);
   }
 
+  /**
+   * Reconcile with a target that is already known to be visually settled.
+   * This is used by request-scoped watchdogs when native drops a completion;
+   * pending callbacks from the abandoned batch must not be assigned to the
+   * next logical motion.
+   */
+  reset(target: string): void {
+    this.target = target;
+    this.pending.length = 0;
+  }
+
   finish(finished: boolean): TCompletion | null {
     const completion = this.pending.shift() ?? null;
     if (finished || this.pending.length === 0) {

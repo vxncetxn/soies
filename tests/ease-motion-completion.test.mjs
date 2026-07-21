@@ -44,3 +44,30 @@ test("completion tokens stay ordered across recovery and geometry retargets", ()
   assert.equal(rotating.finish(false), null);
   assert.deepEqual(rotating.finish(true), first);
 });
+
+test("a no-motion preparation completion stays ahead of the Stack spring request", () => {
+  const queue = new EaseMotionCompletionQueue("collapsed:0:0");
+  const expansion = { requestId: 6, kind: "expand" };
+
+  queue.transition("collapsed:-0.16:-0.33", null);
+  queue.transition("expanded:0:0", expansion);
+
+  assert.equal(queue.finish(true), null);
+  assert.deepEqual(queue.finish(true), expansion);
+});
+
+test("watchdog reconciliation discards stale native completions", () => {
+  const queue = new EaseMotionCompletionQueue("collapsed:0:0");
+  const expansion = { requestId: 7, kind: "expand" };
+  const collapse = { requestId: 8, kind: "collapse" };
+
+  queue.transition("expanded:0:0", expansion);
+  queue.transition("collapsed:-0.16:-0.33", collapse);
+  assert.deepEqual(queue.finish(true), expansion);
+
+  queue.reset("collapsed:-0.16:-0.33");
+  assert.equal(queue.finish(true), null);
+
+  queue.transition("expanded:0:0", expansion);
+  assert.deepEqual(queue.finish(true), expansion);
+});

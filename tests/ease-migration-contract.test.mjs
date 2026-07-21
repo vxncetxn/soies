@@ -174,6 +174,7 @@ test("Create phase-synchronizes Type and Scribble while keeping Print keyboard g
   assert.match(chrome, /const TITLE_FOCUS_FADE_MS = 180/);
   assert.match(chrome, /animate=\{\{ opacity: isTitleFocused \? 1 : 0 \}\}/);
   assert.doesNotMatch(chrome, /titleFocusProgress|withTiming\(isTitleFocused|expandProgress/);
+
   for (const source of [paper, print]) {
     assert.match(source, /const scale = expanded \? 1 : collapsedPresentationScale/);
     assert.match(source, /EASE_CREATE_EXPANSION_SPRING/);
@@ -195,15 +196,128 @@ test("Stack bloom uses phase-synchronized Ease endpoints around continuous pagin
   assert.match(stack, /expansion\.phase === "preparing"/);
   assert.match(stack, /scrollEnabled=\{expansion\.phase === "expanded"\}/);
   assert.match(stack, /motionRequestId/);
+  assert.match(stack, /EaseMotionCompletionQueue<number>/);
+  assert.match(stack, /handlePortalFrameMotionEnd/);
+  assert.match(
+    stack,
+    /<EaseView[\s\S]*?className=\{deckClassName\(entry\.type\)\}[\s\S]*?onTransitionEnd=/,
+  );
   assert.doesNotMatch(stack, /withSpring|chromeProgress|progress\.set/);
   assert.match(wrapper, /<Animated\.View[\s\S]*?<EaseView[\s\S]*?<EaseView/);
   assert.match(wrapper, /currentPage\.get\(\)/);
-  assert.match(wrapper, /EaseMotionCompletionQueue/);
+  assert.doesNotMatch(wrapper, /motionRequestId|onMotionEnd|EaseMotionCompletionQueue/);
   assert.doesNotMatch(wrapper, /interpolate|progress\.get\(\)/);
   assert.match(chrome, /EASE_STACK_CHROME_TIMING/);
   assert.match(chrome, /const interactive = state\.phase === "collapsed"/);
   assert.doesNotMatch(context, /SharedValue|useSharedValue|chromeProgress/);
   assert.match(stack, /accessibilityElementsHidden=\{[\s\S]{0,120}"collapsing"/);
+});
+
+test("Scribble controls crossfade against the retained Default controls", () => {
+  const chrome = readSource("src/components/CreateScreenChrome.tsx");
+  const scribbleStart = chrome.indexOf("{scribbleActive && scribbleTools");
+  const scribbleLayer = chrome.slice(
+    scribbleStart,
+    chrome.indexOf("style={StyleSheet.absoluteFill}", scribbleStart),
+  );
+
+  assert.match(
+    scribbleLayer,
+    /<EaseView[\s\S]*?initialAnimate=\{\{ opacity: 0 \}\}[\s\S]*?animate=\{\{ opacity: authoringExpanded \? 1 : 0 \}\}/,
+    "Scribble controls must not mount and unmount fully opaque",
+  );
+});
+
+test("Create title input keeps a stable native responder island during its focus fade", () => {
+  const chrome = readSource("src/components/CreateScreenChrome.tsx");
+  const titleField = chrome.slice(
+    chrome.indexOf("const CreateTitleField"),
+    chrome.indexOf("const CreateScreenChrome"),
+  );
+
+  assert.match(
+    chrome,
+    /<CreateTitleField/,
+    "the title input must not live in the retargeting Ease header wrapper",
+  );
+  assert.match(titleField, /=> \(\s*<View/);
+  assert.match(
+    chrome,
+    /<View\s+collapsable=\{false\}\s+style=\{\[\s*styles\.headerOverlay/,
+    "the focus-dependent clipping ancestor must not flatten and reparent the native input",
+  );
+  assert.ok(
+    titleField.indexOf("<TextInput") < titleField.indexOf("<EaseView"),
+    "Ease must mask the title as a sibling instead of owning its native responder",
+  );
+});
+
+test("Stack commits its collapsed portal endpoint before beginning expansion", () => {
+  const stack = readSource("src/components/Stack.tsx");
+  const portalPreparation = stack.slice(
+    stack.indexOf("const preparePortal"),
+    stack.indexOf("const jumpToArtefact"),
+  );
+
+  assert.match(
+    portalPreparation,
+    /requestAnimationFrame\([\s\S]*?portalReady/,
+    "the collapsed Ease endpoint must reach native before the portal targets expanded",
+  );
+});
+
+test("Stack retains its canonical shell so collapse cannot reflow Home", () => {
+  const stack = readSource("src/components/Stack.tsx");
+
+  assert.doesNotMatch(
+    stack,
+    /\{canonicalDeckVisible \? \(/,
+    "the canonical Stack shell must stay in layout while its portal is active",
+  );
+  assert.match(stack, /opacity: canonicalDeckVisible \? 1 : 0/);
+});
+
+test("Stack portal returns to the measured canonical deck origin before handoff", () => {
+  const stack = readSource("src/components/Stack.tsx");
+
+  assert.match(stack, /measure\(triggerRef\)/);
+  assert.match(stack, /getCollapsedPortalOffset\(triggerLayout, viewport\)/);
+  assert.match(stack, /collapsedPortalOffset/);
+  assert.match(stack, /translateY: portalExpanded \? 0 : collapsedPortalOffset\.y/);
+  assert.match(stack, /expansion\.phase === "preparing"[\s\S]{0,100}type: "none"/);
+});
+
+test("Stack measures its collapsed portal endpoint in the visual viewport coordinate space", () => {
+  const stack = readSource("src/components/Stack.tsx");
+  const measurement = stack.slice(
+    stack.indexOf("const measureCollapsedPortalOffset"),
+    stack.indexOf("type StackProps"),
+  );
+
+  assert.match(stack, /height: screenHeight/);
+  assert.doesNotMatch(measurement, /portalLayout\.page[XY]/);
+});
+
+test("Stack completion accounts for preparation batches and dropped native callbacks", () => {
+  const stack = readSource("src/components/Stack.tsx");
+
+  assert.match(
+    stack,
+    /portalFrameCompletionQueue\.transition\(portalFrameTarget, motionRequestId\)/,
+  );
+  assert.match(stack, /STACK_MOTION_WATCHDOG_MS = 1000/);
+  assert.match(stack, /portalFrameCompletionQueue\.reset\(portalFrameTarget\)/);
+  assert.match(stack, /if \(finished && requestId !== null\)/);
+});
+
+test("expanded Stack controls fade with expansion phases instead of portal lifetime", () => {
+  const stack = readSource("src/components/Stack.tsx");
+
+  assert.match(stack, /stackExpandedControlsVisible\(expansion\)/);
+  assert.match(
+    stack,
+    /<EaseView\s+initialAnimate=\{\{ opacity: 0 \}\}\s+animate=\{\{ opacity: expandedControlsVisible \? 1 : 0 \}\}\s+transition=\{expandedControlsTransition\}[\s\S]{0,500}<ScrollIndicator/,
+  );
 });
 
 test("Focus phase-synchronizes its Ease shell around Reanimated measurement geometry", () => {

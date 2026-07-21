@@ -43,6 +43,11 @@ export function stackChromeVisible(state: StackExpansionState): boolean {
   );
 }
 
+/** Expanded controls crossfade against Home chrome at the animated phases. */
+export function stackExpandedControlsVisible(state: StackExpansionState): boolean {
+  return state.phase === "expanding" || state.phase === "expanded";
+}
+
 export function stackExpansionReducer(
   state: StackExpansionState,
   event: StackExpansionEvent,
