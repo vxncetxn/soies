@@ -8,7 +8,8 @@
  * the fallback so Print's centered composition does not silently become top-led.
  */
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { BoundedTextSurfaceHandle, BoundedTextSurfaceProps } from "./BoundedTextSurface.types";
 

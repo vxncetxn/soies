@@ -97,6 +97,9 @@ final class PaperTextInputView: ExpoView, UITextViewDelegate {
 
   /** Stable style tokens corresponding one-for-one with newline-delimited paragraphs. */
   private var paragraphPresets: [ParagraphPreset] = [.defaultPreset]
+  // STX-001: UIKit needs safe values before Expo applies React props. These
+  // launch-only font, metric, and color defaults mirror fixedTokens.artefact;
+  // tests compare both sides so the native first frame cannot drift.
   /** Safe launch default mirrors Paper props until Expo applies the configured PostScript name. */
   private var fontPostScriptName = "ABCStefanUnlicensedTrial-Simple"
   /** Safe launch metrics mirror JS product tokens; Expo props remain authoritative. */

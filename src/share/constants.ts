@@ -1,12 +1,10 @@
 /**
- * Share canvas tokens — baked as hex so export capture does not depend on the
- * live system appearance (uniwind `bg-background` would follow the phone theme).
- * Values match `--color-background` light/dark in `src/global.css`.
+ * Share canvas tokens are fixed so export capture does not depend on the live
+ * system appearance.
  */
-export const SHARE_BG = {
-  light: "#EEEEEE",
-  dark: "#44403B",
-} as const;
+import { fixedTokens } from "../styles/tokens";
+
+export const SHARE_BG = fixedTokens.export.background;
 
 export type ShareBackgroundId = keyof typeof SHARE_BG;
 

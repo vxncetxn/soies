@@ -5,10 +5,10 @@
  * interaction is unchanged outside Scribble.
  */
 import { Image } from "expo-image";
-import { StyleSheet, View } from "react-native";
-import { withUniwind } from "uniwind";
+import { View } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
-const StyledImage = withUniwind(Image);
+const StyledImage = withUnistyles(Image);
 
 type InkOverlayProps = {
   uri: string;

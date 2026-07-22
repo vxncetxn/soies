@@ -9,9 +9,11 @@
  */
 import { Image } from "expo-image";
 import { type ReactNode, useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import { ContentReadinessLatch } from "../data/contentReadiness";
+import { fixedTokens } from "../styles/tokens";
 import { useArtefactPresentationScale } from "./ArtefactPresentationScale";
 import InkOverlay from "./InkOverlay";
 import PrintCaptionSurface from "./PrintCaptionSurface";
@@ -62,7 +64,6 @@ export function PrintCanvas({
   return (
     <View
       pointerEvents="box-none"
-      className="bg-paper"
       style={[
         styles.canvas,
         { width: PRINT_CANVAS_WIDTH * scale, height: PRINT_CANVAS_HEIGHT * scale },
@@ -170,6 +171,7 @@ const Print = ({
 const styles = StyleSheet.create({
   // The canonical card clips photo, caption and Ink at one shared boundary.
   canvas: {
+    backgroundColor: fixedTokens.artefact.paperSurface,
     position: "relative",
     overflow: "hidden",
   },

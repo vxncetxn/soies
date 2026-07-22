@@ -64,9 +64,8 @@ function FeaturedArtefactWidgetLayout(
     accessibilityLabel: `Featured Artefact ${slotIndex} is empty. Feature an artefact in Soies.`,
   };
   const dark = environment.colorScheme === "dark";
-  // Hex values serialize into SwiftUI. These exactly match `bg-background` in
-  // global.css (#EEEEEE/#44403B); importing a theme helper would not survive
-  // expo-widgets serializing only this function into the extension.
+  // STX-002: these mirror fixedTokens.widget because Expo Widgets serializes
+  // only this function and cannot capture the imported TypeScript catalog.
   const background = dark ? "#44403B" : "#EEEEEE";
   const textColor = dark ? "#F8F5F1" : "#282421";
   // WidgetKit's default margins are disabled in app.json so the frame can grow,

@@ -28,6 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedProps } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { DraftInk } from "../data/ink";
 import type { PaperDocument, PaperParagraphPreset } from "../data/paperDocument";
@@ -42,6 +43,7 @@ import { useCreateEntrySave } from "../hooks/useCreateEntrySave";
 import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
 import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
 import { useScribbleSession } from "../hooks/useScribbleSession";
+import { fixedTokens } from "../styles/tokens";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
 import { useCreateContext } from "./CreateContext";
@@ -301,8 +303,8 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
           onEnteringComplete={() => setEnteringIndex(null)}
           suppressArtefactFocusRef={suppressArtefactFocusRef}
           renderPreview={(index) => (
-            <View className="h-14 w-10 items-center justify-center overflow-hidden rounded-sm bg-paper">
-              <Text numberOfLines={3} className="px-0.5 font-mono text-[6px] text-primary">
+            <View style={styles.preview}>
+              <Text numberOfLines={3} style={styles.previewText}>
                 {artefacts[index]?.document.text || " "}
               </Text>
             </View>
@@ -326,10 +328,7 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
                 scrollEnabled={!scribbleActive}
                 animatedProps={scrollAnimatedProps}
               >
-                <View
-                  style={{ width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT }}
-                  className="items-center justify-start"
-                >
+                <View style={styles.artefactSlot(EXPANDED_WIDTH, EXPANDED_HEIGHT)}>
                   <EditablePaper
                     document={draft.document}
                     onChangeDocument={(document) => updateDocument(index, document)}
@@ -375,3 +374,26 @@ const CreatePaperScreen = ({ date, onClose, onFirstArtefactReady }: CreatePaperS
 };
 
 export default CreatePaperScreen;
+
+const styles = StyleSheet.create({
+  artefactSlot: (width: number, height: number) => ({
+    alignItems: "center",
+    height,
+    justifyContent: "flex-start",
+    width,
+  }),
+  preview: {
+    alignItems: "center",
+    backgroundColor: fixedTokens.artefact.paperSurface,
+    borderRadius: 2,
+    height: 56,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 40,
+  },
+  previewText: {
+    ...fixedTokens.artefact.typography.thumbnail,
+    color: fixedTokens.artefact.text.color,
+    paddingHorizontal: 2,
+  },
+});

@@ -27,15 +27,20 @@ test("the shared Entry primitive owns full-viewport Ease motion and reduced-moti
   const stackChrome = readSource("src/components/StackChromeMotion.tsx");
 
   assert.match(constants, /ENTRY_TRANSITION_DURATION_MS = 350/);
-  assert.match(motion, /from "react-native-ease\/uniwind"/);
+  assert.match(motion, /from "react-native-ease"/);
+  assert.match(motion, /withUnistyles\(EaseView\)/);
+  assert.doesNotMatch(motion, /react-native-ease\/uniwind/);
   assert.match(motion, /translateY: visible \? 0 : viewportHeight/);
   assert.match(motion, /easing: visible \? "easeOut" : "easeIn"/);
   assert.match(motion, /EaseMotionCompletionQueue/);
   assert.match(motion, /\{ type: "none" \}/);
   assert.doesNotMatch(motion, /useHardwareLayer/);
   assert.match(createChrome, /<EntrySurfaceMotion[\s\S]*?<EntryChromeMotion/);
-  assert.match(createChrome, /<EntrySurfaceMotion[\s\S]{0,240}className="[^"]*bg-background[^"]*"/);
-  assert.doesNotMatch(createChrome, /<View style=\{\{ flex: 1 \}\} className="bg-background">/);
+  assert.match(createChrome, /<EntrySurfaceMotion[\s\S]{0,120}style=\{styles\.entrySurface\}/);
+  assert.match(
+    createChrome,
+    /entrySurface: \{[\s\S]{0,100}backgroundColor: theme\.colors\.canvas\.app/,
+  );
   assert.match(stackChrome, /Opacity-only Stack companion/);
   assert.match(stackChrome, /EaseView/);
   assert.match(stackChrome, /stackChromeVisible/);
@@ -159,7 +164,7 @@ test("Create phase-synchronizes Type and Scribble while keeping Print keyboard g
   const paperScreen = readSource("src/components/CreatePaperScreen.tsx");
   const printScreen = readSource("src/components/CreatePrintScreen.tsx");
 
-  assert.match(pager, /<EaseView/);
+  assert.match(pager, /<StyledEaseView/);
   assert.match(pager, /duration: 320/);
   assert.match(pager, /easing: EASE_APPENDED_ARTEFACT_CURVE/);
   assert.match(pager, /event\.finished && entering/);
@@ -200,7 +205,7 @@ test("Stack bloom uses phase-synchronized Ease endpoints around continuous pagin
   assert.match(stack, /handlePortalFrameMotionEnd/);
   assert.match(
     stack,
-    /<EaseView[\s\S]*?className=\{deckClassName\(entry\.type\)\}[\s\S]*?onTransitionEnd=/,
+    /<StyledEaseView[\s\S]*?style=\{deckStyles\.deck\(entry\.type, screenWidth\)\}[\s\S]*?onTransitionEnd=/,
   );
   assert.doesNotMatch(stack, /withSpring|chromeProgress|progress\.set/);
   assert.match(wrapper, /<Animated\.View[\s\S]*?<EaseView[\s\S]*?<EaseView/);
@@ -223,7 +228,7 @@ test("Scribble controls crossfade against the retained Default controls", () => 
 
   assert.match(
     scribbleLayer,
-    /<EaseView[\s\S]*?initialAnimate=\{\{ opacity: 0 \}\}[\s\S]*?animate=\{\{ opacity: authoringExpanded \? 1 : 0 \}\}/,
+    /<StyledEaseView[\s\S]*?initialAnimate=\{\{ opacity: 0 \}\}[\s\S]*?animate=\{\{ opacity: authoringExpanded \? 1 : 0 \}\}/,
     "Scribble controls must not mount and unmount fully opaque",
   );
 });
@@ -247,7 +252,7 @@ test("Create title input keeps a stable native responder island during its focus
     "the focus-dependent clipping ancestor must not flatten and reparent the native input",
   );
   assert.ok(
-    titleField.indexOf("<TextInput") < titleField.indexOf("<EaseView"),
+    titleField.indexOf("<ThemedTextInput") < titleField.indexOf("<StyledEaseView"),
     "Ease must mask the title as a sibling instead of owning its native responder",
   );
 });
@@ -316,7 +321,7 @@ test("expanded Stack controls fade with expansion phases instead of portal lifet
   assert.match(stack, /stackExpandedControlsVisible\(expansion\)/);
   assert.match(
     stack,
-    /<EaseView\s+initialAnimate=\{\{ opacity: 0 \}\}\s+animate=\{\{ opacity: expandedControlsVisible \? 1 : 0 \}\}\s+transition=\{expandedControlsTransition\}[\s\S]{0,500}<ScrollIndicator/,
+    /<StyledEaseView\s+initialAnimate=\{\{ opacity: 0 \}\}\s+animate=\{\{ opacity: expandedControlsVisible \? 1 : 0 \}\}\s+transition=\{expandedControlsTransition\}[\s\S]{0,500}<ScrollIndicator/,
   );
 });
 
@@ -376,7 +381,7 @@ test("a collapsing Stack remains a tap target for immediate expansion reversal",
   );
   assert.match(
     portal,
-    /<Pressable className="absolute inset-0" onPress=\{collapse\} \/>/,
+    /<Pressable style=\{styles\.absoluteFill\} onPress=\{collapse\} \/>/,
     "the area outside the Stack reversal envelope must remain a separate collapse target",
   );
 });
@@ -451,7 +456,7 @@ test("Focus phase-synchronizes its Ease shell around Reanimated measurement geom
   assert.match(focus, /const MENU_CLOSE_DURATION_MS = 150/);
   assert.match(focus, /const MENU_BASE_DELAY_MS = 120/);
   assert.match(focus, /const MENU_STAGGER_MS = 70/);
-  assert.match(focus, /<EaseView[\s\S]{0,420}MENU_BASE_DELAY_MS \+ index \* MENU_STAGGER_MS/);
+  assert.match(focus, /<StyledEaseView[\s\S]{0,420}MENU_BASE_DELAY_MS \+ index \* MENU_STAGGER_MS/);
   assert.match(focus, /measure\(triggerRef\)/);
   assert.match(focus, /useAnimatedStyle[\s\S]*?origin\.get\(\)\.x/);
   assert.match(focus, /EaseMotionCompletionQueue<FocusShellCompletion>/);
@@ -473,10 +478,12 @@ test("ScrollIndicator retains the Ease scrubber shell until close completion", (
   );
 
   assert.match(indicator, /const \[scrubberMounted, setScrubberMounted\] = useState\(false\)/);
-  assert.match(indicator, /from "react-native-ease\/uniwind"/);
+  assert.match(indicator, /from "react-native-ease"/);
+  assert.match(indicator, /withUnistyles\(EaseView\)/);
+  assert.doesNotMatch(indicator, /react-native-ease\/uniwind/);
   assert.match(indicator, /setScrubberMounted\(true\)[\s\S]{0,60}setExpanded\(true\)/);
   assert.doesNotMatch(collapse, /setScrubberMounted\(false\)/);
-  assert.match(indicator, /\{scrubberMounted \? \([\s\S]*?<EaseView/);
+  assert.match(indicator, /\{scrubberMounted \? \([\s\S]*?<StyledEaseView/);
   assert.match(indicator, /event\.finished && !expanded[\s\S]{0,60}setScrubberMounted\(false\)/);
   assert.match(indicator, /expanded[\s\S]{0,80}EASE_LEGACY_SPRING[\s\S]{0,80}EASE_DEFAULT_TIMING/);
   assert.match(indicator, /reduceMotionEnabled[\s\S]{0,60}\{ type: "none" \}/);

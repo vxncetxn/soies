@@ -5,6 +5,7 @@
 import { ReactNode } from "react";
 import { AccessibilityRole, Pressable } from "react-native";
 import Animated, { useAnimatedRef, useSharedValue } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
 
 import BloomPanel, { useBloomOriginFade } from "./BloomPanel";
 
@@ -26,7 +27,6 @@ type BloomBarProps = {
   onClose?: () => void;
   variant?: "fullscreen" | "menu";
   contentKey?: string | number;
-  className?: string;
   portalHostName?: string;
 };
 
@@ -39,7 +39,6 @@ const BloomBar = ({
   onClose,
   variant = "menu",
   contentKey,
-  className,
   portalHostName = "bloom",
 }: BloomBarProps) => {
   const barRef = useAnimatedRef<Animated.View>();
@@ -51,9 +50,8 @@ const BloomBar = ({
       <Animated.View
         ref={barRef}
         collapsable={false}
-        style={originFadeStyle}
+        style={[styles.bar, originFadeStyle]}
         pointerEvents={open ? "none" : "auto"}
-        className={`flex-row items-center gap-3 self-start rounded-4xl border border-controls-border bg-controls-background px-3 py-2 ${className ?? ""}`}
       >
         {slots.map((slot, index) => (
           <Pressable
@@ -67,7 +65,7 @@ const BloomBar = ({
             }}
             accessibilityRole={slot.accessibilityRole ?? "button"}
             accessibilityLabel={slot.accessibilityLabel}
-            className="p-1"
+            style={styles.slot}
           >
             {slot.node}
           </Pressable>
@@ -90,3 +88,22 @@ const BloomBar = ({
 };
 
 export default BloomBar;
+
+const styles = StyleSheet.create((theme) => ({
+  bar: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderCurve: "continuous",
+    borderRadius: 32,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  slot: {
+    padding: 4,
+  },
+}));

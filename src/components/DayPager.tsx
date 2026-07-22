@@ -23,6 +23,7 @@ import Animated, {
   useAnimatedScrollHandler,
   type SharedValue,
 } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { Entry } from "../data/entries";
 import type { WidgetDeepLinkTarget } from "../widgets/widgetDeepLink";
@@ -146,13 +147,13 @@ const DayPager = ({
   };
 
   return (
-    <View className="relative flex-1">
+    <View style={styles.root}>
       {/* Measuring wrapper. On layout we read its height, clamp it to the
           safe-area max (`computedHeight`), and report it up. The ScrollView
           is only rendered once that height is known, so pages always have a
           concrete height to fill. */}
       <View
-        className="flex-1"
+        style={styles.flex}
         onLayout={(event) => {
           const h = event.nativeEvent.layout.height;
           const finalH = Math.min(h, computedHeight);
@@ -167,14 +168,10 @@ const DayPager = ({
             scrollEventThrottle={16}
             removeClippedSubviews
             onScroll={onScroll}
-            style={{ height: pagerHeight }}
+            style={styles.pager(pagerHeight)}
           >
             {entries.map((entry) => (
-              <View
-                key={entry.id}
-                style={{ height: pagerHeight }}
-                className="items-center justify-center px-5"
-              >
+              <View key={entry.id} style={styles.page(pagerHeight)}>
                 <Stack
                   entry={entry}
                   widgetArtefactId={
@@ -207,7 +204,7 @@ const DayPager = ({
         <EntryChromeMotion
           visible={entryChromeIsVisible}
           pointerEvents="box-none"
-          className="absolute top-1/2 right-3 z-40 -translate-y-1/2"
+          style={styles.indicatorPosition}
         >
           <StackChromeMotion pointerEvents="box-none">
             <ScrollIndicator
@@ -226,3 +223,29 @@ const DayPager = ({
 };
 
 export default DayPager;
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  indicatorPosition: {
+    position: "absolute",
+    right: 12,
+    top: "50%",
+    transform: [{ translateY: "-50%" }],
+    zIndex: 40,
+  },
+  page: (height: number) => ({
+    alignItems: "center",
+    height,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  }),
+  pager: (height: number) => ({
+    height,
+  }),
+  root: {
+    flex: 1,
+    position: "relative",
+  },
+});

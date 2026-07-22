@@ -17,6 +17,7 @@
  */
 import { useCallback, useRef } from "react";
 import { useWindowDimensions, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { PaperArtefact, PrintArtefact } from "../data/entries";
 
@@ -24,6 +25,7 @@ import { getArtefactCanvasLayout } from "../components/artefactLayout";
 import Paper from "../components/Paper";
 import Print from "../components/Print";
 import { isPrintArtefact } from "../data/entries";
+import { fixedTokens } from "../styles/tokens";
 import { SHARE_ARTEFACT_WIDTH } from "./constants";
 
 type ShareArtefactCardProps = {
@@ -95,21 +97,14 @@ export function ShareArtefactCard({ artefact, width, onReady, onError }: ShareAr
   return (
     <View
       onLayout={onLayout}
-      style={{
+      style={styles.card(
         width,
-        height: displayHeight,
-        boxShadow: `0 ${4 * exportScale}px ${16 * exportScale}px rgba(0,0,0,0.18)`,
-      }}
+        displayHeight,
+        `0 ${4 * exportScale}px ${16 * exportScale}px ${fixedTokens.share.cardShadow}`,
+      )}
     >
-      <View style={{ width, height: displayHeight, overflow: "hidden" }}>
-        <View
-          style={{
-            width: layoutWidth,
-            height: layoutHeight,
-            transform: [{ scale }],
-            transformOrigin: "top left",
-          }}
-        >
+      <View style={styles.clip(width, displayHeight)}>
+        <View style={styles.canvas(layoutWidth, layoutHeight, scale)}>
           {isPrint ? (
             <Print
               imagePath={artefact.imagePath}
@@ -134,3 +129,22 @@ export function ShareArtefactCard({ artefact, width, onReady, onError }: ShareAr
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  canvas: (width: number, height: number, scale: number) => ({
+    height,
+    transform: [{ scale }],
+    transformOrigin: "top left",
+    width,
+  }),
+  card: (width: number, height: number, boxShadow: string) => ({
+    boxShadow,
+    height,
+    width,
+  }),
+  clip: (width: number, height: number) => ({
+    height,
+    overflow: "hidden",
+    width,
+  }),
+});

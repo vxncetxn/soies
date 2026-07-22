@@ -1,18 +1,16 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { CalendarEntryPreview as CalendarEntryPreviewModel } from "../data/calendarBrowse";
 
 import { LAYOUT } from "../constants/layout";
 import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
+import { fixedTokens } from "../styles/tokens";
 import { getArtefactCanvasLayout } from "./artefactLayout";
 import { ArtefactPresentationScaleProvider } from "./ArtefactPresentationScale";
 import { renderArtefactContent } from "./renderArtefactContent";
 
-const PAPER_MARKER = "#E4DF00";
-const PRINT_MARKER = "#F32DD5";
-const UNKNOWN_MARKER = "#99938E";
-const CARD_BACKGROUND = "#F8F8F8";
 const STACK_LIMIT = 5;
 
 type PreviewBoundaryProps = {
@@ -39,10 +37,9 @@ class PreviewBoundary extends Component<PreviewBoundaryProps, { failed: boolean 
     if (this.state.failed) {
       return (
         <View
-          style={{ width: this.props.width, height: this.props.height }}
-          className="items-center justify-center rounded-sm bg-white"
+          style={[styles.previewFallback, { width: this.props.width, height: this.props.height }]}
         >
-          <Text className="text-xs text-secondary">Preview unavailable</Text>
+          <Text style={styles.previewFallbackText}>Preview unavailable</Text>
         </View>
       );
     }
@@ -52,12 +49,12 @@ class PreviewBoundary extends Component<PreviewBoundaryProps, { failed: boolean 
 
 function markerColor(type: string): string {
   if (type === "paper") {
-    return PAPER_MARKER;
+    return fixedTokens.artefactType.paper;
   }
   if (type === "print") {
-    return PRINT_MARKER;
+    return fixedTokens.artefactType.printCalendar;
   }
-  return UNKNOWN_MARKER;
+  return fixedTokens.artefactType.unknown;
 }
 
 type PreviewStackProps = {
@@ -104,7 +101,7 @@ function PreviewStack({ entry, cardHeight, cardWidth, renderContent }: PreviewSt
               {renderArtefactContent(artefact)}
             </ArtefactPresentationScaleProvider>
           ) : (
-            <View style={StyleSheet.absoluteFill} className="bg-white" />
+            <View style={styles.emptyArtefact} />
           )}
         </View>
       </View>
@@ -142,7 +139,6 @@ export default function CalendarEntryPreview({
         {
           width,
           height,
-          backgroundColor: CARD_BACKGROUND,
           opacity: pressed ? 0.78 : 1,
         },
       ]}
@@ -164,8 +160,19 @@ export default function CalendarEntryPreview({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
+  artefact: {
+    left: 0,
+    overflow: "hidden",
+    position: "absolute",
+    shadowColor: fixedTokens.effects.shadowColor,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    top: 0,
+  },
   card: {
+    backgroundColor: theme.colors.surface.subtle,
     borderRadius: 16,
     overflow: "hidden",
     position: "relative",
@@ -179,6 +186,10 @@ const styles = StyleSheet.create({
     width: 16,
     zIndex: 4,
   },
+  emptyArtefact: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: fixedTokens.artefact.paperSurface,
+  },
   previewCenter: {
     alignItems: "center",
     bottom: 0,
@@ -189,31 +200,30 @@ const styles = StyleSheet.create({
     top: 0,
   },
   placeholder: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E7E5E4",
+    backgroundColor: fixedTokens.artefact.paperSurface,
+    borderColor: theme.colors.border.subtle,
     borderWidth: StyleSheet.hairlineWidth,
     left: 0,
     position: "absolute",
-    shadowColor: "#000000",
+    shadowColor: fixedTokens.effects.shadowColor,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 2,
     top: 0,
   },
-  artefact: {
-    left: 0,
-    overflow: "hidden",
-    position: "absolute",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    top: 0,
+  previewFallback: {
+    alignItems: "center",
+    backgroundColor: fixedTokens.artefact.paperSurface,
+    borderRadius: 2,
+    justifyContent: "center",
+  },
+  previewFallbackText: {
+    ...theme.typography.ui.caption,
+    color: theme.colors.content.secondary,
   },
   unsupportedLabel: {
-    color: "#79716B",
-    fontFamily: "Geist-Regular",
-    fontSize: 10,
+    ...theme.typography.calendar.previewLabel,
+    color: theme.colors.content.muted,
     marginTop: 4,
   },
-});
+}));

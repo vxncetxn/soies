@@ -19,8 +19,9 @@
 import type { ReactNode, Ref, RefObject } from "react";
 
 import { useRef } from "react";
-import { StyleSheet, useWindowDimensions } from "react-native";
+import { useWindowDimensions } from "react-native";
 import { EaseView } from "react-native-ease";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { PaperDocument } from "../data/paperDocument";
 import type { PaperSelectionState, PaperTextSurfaceHandle } from "./PaperTextSurface.types";

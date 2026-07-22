@@ -34,13 +34,14 @@ import Animated, {
   useAnimatedRef,
   useSharedValue,
 } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
 
 import BloomPanel, { useBloomOriginFade } from "./BloomPanel";
 
 type BloomButtonProps = Omit<PressableProps, "onPress"> & {
   /** Content rendered inside the inline trigger button (e.g. the date pill). */
   children: ReactNode;
-  /** Content rendered inside the bloomed panel (e.g. CalendarOverlay / menu items). */
+  /** Content rendered inside the bloomed panel (for example, Create menu items). */
   panelNode: ReactNode;
   variant?: "fullscreen" | "menu";
   /** Controlled open state — the parent decides when the panel is open. */
@@ -51,8 +52,6 @@ type BloomButtonProps = Omit<PressableProps, "onPress"> & {
   onClose?: () => void;
   /** Optional external progress shared value; defaults to an internal one. */
   progress?: SharedValue<number>;
-  /** Extra NativeWind classes appended to the inline trigger wrapper. */
-  className?: string;
   /**
    * Opt-in identity key for menu content switching. When it changes while open,
    * the previous `panelNode` cross-fades out and height springs to the new
@@ -71,7 +70,6 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
       onOpenChange,
       onClose,
       progress: progressProp,
-      className,
       contentKey,
       ...props
     },
@@ -91,9 +89,8 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
         <Animated.View
           ref={triggerRef}
           collapsable={false}
-          style={triggerStyle}
+          style={[styles.trigger, triggerStyle]}
           pointerEvents={open ? "none" : "auto"}
-          className={`self-start rounded-4xl border border-controls-border bg-controls-background ${className ?? ""}`}
         >
           <Pressable ref={ref} {...props} onPress={handleTriggerPress}>
             {children}
@@ -116,3 +113,14 @@ const BloomButton = forwardRef<View, PropsWithChildren<BloomButtonProps>>(
 );
 
 export default BloomButton;
+
+const styles = StyleSheet.create((theme) => ({
+  trigger: {
+    alignSelf: "flex-start",
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderCurve: "continuous",
+    borderRadius: 32,
+    borderWidth: 1,
+  },
+}));

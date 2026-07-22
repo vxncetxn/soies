@@ -1,20 +1,34 @@
-# Expo Router and Uniwind
+# soies
 
-Use [Expo Router](https://docs.expo.dev/router/introduction/) with [Uniwind](https://docs.uniwind.dev/) styling.
+A personal journal built with Expo 57 and React Native. Dated Entries contain
+text Papers or image Prints and can be browsed, authored, shared, and featured
+in an iOS Home Screen Widget.
 
-## Launch your own
+## Styling
 
-[![Launch with Expo](https://github.com/expo/examples/blob/master/.gh-assets/launch.svg?raw=true)](https://launch.expo.dev/?github=https://github.com/expo/examples/tree/master/with-router-uniwind)
+[React Native Unistyles 3](https://www.unistyl.es/v3/start/introduction/) is the
+only app-owned styling system. `src/styles/themes.ts` defines semantic adaptive
+Chrome tokens and follows the device light/dark appearance automatically.
+`src/styles/tokens.ts` owns fixed Artefact, capture, Share, Frame, Ink, Widget,
+and bootstrap values that must not change with device appearance.
 
-## 🚀 How to use
+[React Native Boost](https://react-native-boost.oss.kuatsu.de/docs) optimizes
+safe native `Text` and `View` hosts in explicit Unistyles mode. Its conservative
+bailouts remain enabled. Unavoidable native and serialized mirrors are tracked
+in [`docs/styling-token-exceptions.md`](./docs/styling-token-exceptions.md).
+
+## Development
 
 ```sh
-npx create-expo-app -e with-router-uniwind
+pnpm install
+pnpm start -- --clear
+pnpm check
+pnpm exec expo export --platform ios --clear
 ```
 
-## Deploy
+Unistyles contains native code, so Expo Go is not supported. After changing
+native dependencies or app configuration, regenerate/rebuild the development
+client with `pnpm ios` or `pnpm android`.
 
-Deploy on all platforms with Expo Application Services (EAS).
-
-- Deploy the website: `npx eas-cli deploy` — [Learn more](https://docs.expo.dev/eas/hosting/get-started/)
-- Deploy on iOS and Android using: `npx eas-cli build` — [Learn more](https://expo.dev/eas)
+Read [`docs/README.md`](./docs/README.md) for feature documentation and
+[`docs/overview.md`](./docs/overview.md) for the repository map.

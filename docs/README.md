@@ -15,6 +15,9 @@ experience. For domain terminology (`Entry`, `Artefact`, `Paper`, `Print`), read
 Cross-feature Entry and discrete-animation ownership is tracked in
 [React Native Ease migration tracker](./react-native-ease-migration-plan.md)
 and [ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md).
+The visual ownership seam is recorded in
+[ADR 0016](./adr/0016-unistyles-styling-boundary.md), with unavoidable mirrors
+tracked in the [styling token exception ledger](./styling-token-exceptions.md).
 
 ## How the features fit together
 
@@ -92,9 +95,9 @@ after the spring settles. `ScrollIndicator` uses raw RN View responders, so
 scrub jumps call the host callback directly without crossing a Worklets
 boundary.
 
-`MorphOverlay.tsx` is a dormant legacy component with no callsite. Its
-function-valued close bridge is unsafe; harden it using the `BloomPanel`
-completion-sequence pattern before reuse.
+The dormant `CalendarOverlay` and `MorphOverlay` implementations were removed
+during the Unistyles migration; the active Calendar sheet and Focus overlay are
+the only supported paths.
 
 ## Runtime validation
 

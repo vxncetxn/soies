@@ -15,7 +15,8 @@
  * session receives fresh draft state after the return Entry transition completes.
  */
 import { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { useCreateContext } from "./CreateContext";

@@ -16,7 +16,7 @@
 import type { ReactNode, Ref, RefObject } from "react";
 
 import { useEffect, useRef } from "react";
-import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { Pressable, useWindowDimensions } from "react-native";
 import { EaseView } from "react-native-ease";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, {
@@ -27,6 +27,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { PrintCaptionSurfaceHandle } from "./PrintCaptionSurface";
 

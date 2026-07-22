@@ -7,14 +7,16 @@
  * allowing Paper and Print to own different geometry and line constraints.
  */
 
+import { fixedTokens } from "../styles/tokens";
+
 /** Expo/RN registration alias used by JavaScript-rendered fallbacks. */
-export const ARTEFACT_TEXT_FONT_FAMILY = "ABCStefan-Simple-Trial";
+export const ARTEFACT_TEXT_FONT_FAMILY = fixedTokens.artefact.text.fontFamily;
 /** UIKit resolves bundled fonts by PostScript name rather than Expo's alias. */
-export const ARTEFACT_TEXT_NATIVE_FONT_FAMILY = "ABCStefanUnlicensedTrial-Simple";
+export const ARTEFACT_TEXT_NATIVE_FONT_FAMILY = fixedTokens.artefact.text.nativeFontFamily;
 /** Authored artefact content remains fixed even when surrounding chrome changes theme. */
-export const ARTEFACT_TEXT_COLOR = "#0C0A09";
+export const ARTEFACT_TEXT_COLOR = fixedTokens.artefact.text.color;
 /** Muted prompt shared by the two create adapters. */
-export const ARTEFACT_TEXT_PLACEHOLDER_COLOR = "#79716B";
+export const ARTEFACT_TEXT_PLACEHOLDER_COLOR = fixedTokens.artefact.text.placeholderColor;
 /** Shared uppercase invitation shown only while an editable artefact is empty. */
 export const ARTEFACT_TEXT_PLACEHOLDER = "TAP TO START TYPING";
 

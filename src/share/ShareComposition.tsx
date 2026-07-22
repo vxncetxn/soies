@@ -10,9 +10,11 @@
  * carousel scale never affects pixel output.
  */
 import { Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { PaperArtefact, PrintArtefact } from "../data/entries";
 
+import { fixedTokens } from "../styles/tokens";
 import {
   SHARE_ARTEFACT_WIDTH,
   SHARE_BG,
@@ -58,8 +60,11 @@ export function ShareComposition({
   const brandGap = 28 * scale;
   // No preview-only floor: preview and export must be the same composition at
   // different scales, including small brand type.
-  const brandFontSize = 36 * scale;
-  const brandColor = background === "dark" && variant === "canvas" ? "#D6D3D1" : "#78716C";
+  const brandFontSize = fixedTokens.share.brand.baseFontSize * scale;
+  const brandColor =
+    background === "dark" && variant === "canvas"
+      ? fixedTokens.share.brand.darkCanvasText
+      : fixedTokens.share.brand.defaultText;
   if (variant === "sticker") {
     // Hug the card. Stories `stickerImage` uses the PNG’s full bounds — a 1080×1920
     // frame with a 640-wide card letterboxes into a skinny column in IG.
@@ -67,12 +72,10 @@ export function ShareComposition({
       <View
         collapsable={false}
         style={[
-          {
-            width: artefactWidth,
-            paddingBottom: brandGap + brandFontSize * 1.4,
-            backgroundColor: "transparent",
-            alignItems: "center",
-          },
+          styles.sticker(
+            artefactWidth,
+            brandGap + brandFontSize * fixedTokens.share.brand.lineHeightRatio,
+          ),
           style,
         ]}
       >
@@ -83,16 +86,8 @@ export function ShareComposition({
           onError={onError}
         />
         {/* Transparent gap between card and brand — intentional empty space. */}
-        <View style={{ height: brandGap }} />
-        <Text
-          style={{
-            fontFamily: "GeistMono-Regular",
-            fontSize: brandFontSize,
-            color: brandColor,
-          }}
-        >
-          {SHARE_BRAND}
-        </Text>
+        <View style={styles.brandGap(brandGap)} />
+        <Text style={styles.brand(brandFontSize, brandColor)}>{SHARE_BRAND}</Text>
       </View>
     );
   }
@@ -100,17 +95,7 @@ export function ShareComposition({
   return (
     <View
       collapsable={false}
-      style={[
-        {
-          width,
-          height,
-          backgroundColor: SHARE_BG[background],
-          alignItems: "center",
-          justifyContent: "center",
-          paddingBottom: 48 * scale,
-        },
-        style,
-      ]}
+      style={[styles.canvas(width, height, SHARE_BG[background], 48 * scale), style]}
     >
       <ShareArtefactCard
         artefact={artefact}
@@ -118,23 +103,39 @@ export function ShareComposition({
         onReady={onReady}
         onError={onError}
       />
-      <View
-        style={{
-          position: "absolute",
-          right: 40 * scale,
-          bottom: 40 * scale,
-        }}
-      >
-        <Text
-          style={{
-            fontFamily: "GeistMono-Regular",
-            fontSize: brandFontSize,
-            color: brandColor,
-          }}
-        >
-          {SHARE_BRAND}
-        </Text>
+      <View style={styles.brandPosition(40 * scale)}>
+        <Text style={styles.brand(brandFontSize, brandColor)}>{SHARE_BRAND}</Text>
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  brand: (fontSize: number, color: string) => ({
+    color,
+    fontFamily: fixedTokens.share.brand.fontFamily,
+    fontSize,
+  }),
+  brandGap: (height: number) => ({
+    height,
+  }),
+  brandPosition: (inset: number) => ({
+    bottom: inset,
+    position: "absolute",
+    right: inset,
+  }),
+  canvas: (width: number, height: number, backgroundColor: string, paddingBottom: number) => ({
+    alignItems: "center",
+    backgroundColor,
+    height,
+    justifyContent: "center",
+    paddingBottom,
+    width,
+  }),
+  sticker: (width: number, paddingBottom: number) => ({
+    alignItems: "center",
+    backgroundColor: fixedTokens.common.transparent,
+    paddingBottom,
+    width,
+  }),
+});

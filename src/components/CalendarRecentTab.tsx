@@ -5,12 +5,12 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
-  StyleSheet,
   Text,
   View,
   type ViewToken,
   useWindowDimensions,
 } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import type { RecentEntryCursor, RecentEntryPreviewPage } from "../db/repositories/entries";
 
@@ -23,6 +23,10 @@ import {
 } from "../data/calendarBrowse";
 import { loadRecentPreviewPage } from "../data/calendarBrowseCache";
 import CalendarEntryPreviewCard from "./CalendarEntryPreview";
+
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 const RECENT_CONTENT_INSET =
   LAYOUT.CALENDAR_SHEET.RECENT_CONTENT_TOP - LAYOUT.CALENDAR_SHEET.RECENT_HEADER_HEIGHT;
@@ -42,10 +46,10 @@ type CalendarRecentTabProps = {
 
 function LoadingRow({ width, height }: { width: number; height: number }) {
   return (
-    <View style={{ paddingTop: RECENT_CONTENT_INSET, width, alignSelf: "center" }}>
+    <View style={styles.loadingContainer(width)}>
       <View style={styles.loadingDay}>
         <View style={styles.loadingDayLabel} />
-        <View style={{ height, borderRadius: 16, backgroundColor: "#F8F8F8" }} />
+        <View style={[styles.loadingCard, { height }]} />
       </View>
     </View>
   );
@@ -304,7 +308,7 @@ export default function CalendarRecentTab({
           </View>
         ) : loadingMore ? (
           <View style={styles.footer}>
-            <ActivityIndicator />
+            <ThemedActivityIndicator />
           </View>
         ) : null
       }
@@ -312,7 +316,16 @@ export default function CalendarRecentTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
+  loadingCard: {
+    backgroundColor: theme.colors.surface.subtle,
+    borderRadius: 16,
+  },
+  loadingContainer: (width: number) => ({
+    alignSelf: "center",
+    paddingTop: RECENT_CONTENT_INSET,
+    width,
+  }),
   loadingDay: {
     gap: 6,
   },
@@ -324,11 +337,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   dayLabel: {
-    color: "#8A8581",
-    fontFamily: "GeistMono-Regular",
-    fontSize: 13,
-    letterSpacing: 0.3,
-    lineHeight: 18,
+    ...theme.typography.calendar.metadata,
+    color: theme.colors.content.muted,
   },
   row: {
     alignSelf: "center",
@@ -344,21 +354,19 @@ const styles = StyleSheet.create({
     paddingTop: RECENT_CONTENT_INSET / 2,
   },
   stateText: {
-    color: "#252525",
-    fontFamily: "Geist-Regular",
-    fontSize: 16,
+    ...theme.typography.calendar.body,
+    color: theme.colors.content.primary,
   },
   retryButton: {
-    borderColor: "#DEDAD7",
+    borderColor: theme.colors.border.subtle,
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 18,
     paddingVertical: 9,
   },
   retryText: {
-    color: "#252525",
-    fontFamily: "Geist-Medium",
-    fontSize: 14,
+    ...theme.typography.calendar.button,
+    color: theme.colors.content.primary,
   },
   footer: {
     alignItems: "center",
@@ -367,12 +375,11 @@ const styles = StyleSheet.create({
     paddingTop: 18,
   },
   footerText: {
-    color: "#79716B",
-    fontFamily: "Geist-Regular",
-    fontSize: 13,
+    ...theme.typography.calendar.footer,
+    color: theme.colors.content.muted,
   },
   footerRetry: {
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-});
+}));

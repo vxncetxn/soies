@@ -30,10 +30,13 @@ import Animated, {
   useDerivedValue,
   useSharedValue,
 } from "react-native-reanimated";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { EASE_APPENDED_ARTEFACT_CURVE } from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { ScrollIndicator } from "./ScrollIndicator";
+
+const StyledEaseView = withUnistyles(EaseView);
 
 /** Mount active page ± this many neighbors (keeps Print image decode bounded). */
 const PAGE_WINDOW_RADIUS = 1;
@@ -71,8 +74,8 @@ const EnteringWrap = ({ entering, onEnteringComplete, children }: EnteringWrapPr
   const reduceMotionEnabled = useReducedMotionPreference();
 
   return (
-    <EaseView
-      style={{ flex: 1 }}
+    <StyledEaseView
+      style={styles.flex}
       initialAnimate={entering ? { opacity: 0, translateY: 28 } : { opacity: 1, translateY: 0 }}
       animate={{ opacity: 1, translateY: 0 }}
       transition={
@@ -91,7 +94,7 @@ const EnteringWrap = ({ entering, onEnteringComplete, children }: EnteringWrapPr
       }}
     >
       {children}
-    </EaseView>
+    </StyledEaseView>
   );
 };
 
@@ -230,7 +233,7 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
     }, []);
 
     return (
-      <View className="flex-1" pointerEvents="box-none">
+      <View style={styles.flex} pointerEvents="box-none">
         <Animated.ScrollView
           ref={scrollRef}
           horizontal
@@ -241,18 +244,14 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
           scrollEventThrottle={16}
           onScroll={onScroll}
           keyboardShouldPersistTaps="handled"
-          style={{ flex: 1 }}
+          style={styles.flex}
           // Horizontal ScrollView defaults can vertically center short pages —
           // stretch so Print/Paper Scribble slots sit under the header.
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={styles.scrollContent}
         >
           {Array.from({ length: count }, (_, index) => (
-            <View
-              key={pageKeys?.[index] ?? String(index)}
-              style={{ width: PAGE_WIDTH, height: "100%" }}
-              className="items-center"
-            >
-              <View style={{ width: EXPANDED_WIDTH, flex: 1 }}>
+            <View key={pageKeys?.[index] ?? String(index)} style={styles.page(PAGE_WIDTH)}>
+              <View style={styles.pageContent(EXPANDED_WIDTH)}>
                 {shouldMountPage(index) ? (
                   <EnteringWrap
                     entering={enteringIndex === index}
@@ -261,7 +260,7 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
                     {renderPage(index)}
                   </EnteringWrap>
                 ) : (
-                  <View style={{ flex: 1 }} />
+                  <View style={styles.flex} />
                 )}
               </View>
             </View>
@@ -269,11 +268,7 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
         </Animated.ScrollView>
 
         {showScrollIndicator && count > 0 ? (
-          <View
-            style={{ zIndex: 200 }}
-            className="absolute bottom-28 left-1/2 -translate-x-1/2"
-            pointerEvents="box-none"
-          >
+          <View style={styles.indicator} pointerEvents="box-none">
             <ScrollIndicator
               orientation="horizontal"
               count={count}
@@ -290,3 +285,28 @@ const CreateArtefactPager = forwardRef<CreateArtefactPagerHandle, CreateArtefact
 );
 
 export default CreateArtefactPager;
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  indicator: {
+    bottom: 112,
+    left: "50%",
+    position: "absolute",
+    transform: [{ translateX: "-50%" }],
+    zIndex: 200,
+  },
+  page: (width: number) => ({
+    alignItems: "center",
+    height: "100%",
+    width,
+  }),
+  pageContent: (width: number) => ({
+    flex: 1,
+    width,
+  }),
+  scrollContent: {
+    flexGrow: 1,
+  },
+});

@@ -12,6 +12,7 @@
  */
 import { Pressable, Text, View } from "react-native";
 import Animated, { SharedValue, useAnimatedStyle } from "react-native-reanimated";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { TITLE_TRAVEL } from "../constants/animation";
 import { entryChromeVisible } from "../entry-transition/entryTransition";
@@ -20,6 +21,10 @@ import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
 import { formatDisplayDate } from "../utils/date";
 import { Icon } from "./Icon";
 import { StackChromeMotion } from "./StackChromeMotion";
+
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 type AnimatedTitleProps = {
   // One title string per day in the visible pager window.
@@ -62,11 +67,7 @@ const TitleLayer = ({
   });
 
   return (
-    <Animated.Text
-      style={style}
-      numberOfLines={1}
-      className="absolute inset-x-0 top-0 font-sans-medium text-xl leading-7 text-primary"
-    >
+    <Animated.Text style={[styles.titleLayer, style]} numberOfLines={1}>
       {title}
     </Animated.Text>
   );
@@ -83,7 +84,7 @@ const AnimatedTitle = ({ titles, currentPage }: AnimatedTitleProps) => {
   }
 
   return (
-    <View className="relative h-7 overflow-hidden">
+    <View style={styles.titleViewport}>
       {titles.map((title, index) => (
         <TitleLayer key={index} title={title} index={index} currentPage={currentPage} />
       ))}
@@ -111,7 +112,7 @@ const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderPr
   return (
     // Floating header pinned to the top. `z-50` keeps it above the pager; the
     // modal sheet itself lives in the bottom-sheet provider above this subtree.
-    <View className="absolute z-50 w-full px-5 py-2">
+    <View style={styles.header}>
       {/* Entry and Stack own independent opacity wrappers and never share a writer. */}
       <EntryChromeMotion visible={entryChromeIsVisible} pointerEvents="box-none">
         <StackChromeMotion pointerEvents="box-none">
@@ -119,18 +120,16 @@ const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderPr
             onPress={onCalendarPress}
             accessibilityRole="button"
             accessibilityLabel="Open calendar"
-            className="w-full rounded-4xl border border-controls-border bg-controls-background"
+            style={styles.trigger}
           >
             {/* Trigger content: the animated title carousel above the formatted
               date + chevron. `w-full` makes this fill the pill (left-aligned
               with `px-6` padding), matching the pre-refactor layout. */}
-            <View className="flex w-full gap-1 px-6 py-2">
+            <View style={styles.triggerContent}>
               <AnimatedTitle titles={titles} currentPage={currentPage} />
-              <View className="flex flex-row items-center gap-2">
-                <Text className="font-mono text-base text-secondary">
-                  {formatDisplayDate(date)}
-                </Text>
-                <Icon name="chevron-down" size={20} color="#79716B" />
+              <View style={styles.dateRow}>
+                <Text style={styles.dateLabel}>{formatDisplayDate(date)}</Text>
+                <ThemedIcon name="chevron-down" size={20} />
               </View>
             </View>
           </Pressable>
@@ -141,3 +140,49 @@ const HomeHeader = ({ date, titles, currentPage, onCalendarPress }: HomeHeaderPr
 };
 
 export default HomeHeader;
+
+const styles = StyleSheet.create((theme) => ({
+  dateLabel: {
+    ...theme.typography.calendar.homeDate,
+    color: theme.colors.content.secondary,
+  },
+  dateRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    position: "absolute",
+    width: "100%",
+    zIndex: 50,
+  },
+  titleLayer: {
+    ...theme.typography.ui.screenTitle,
+    color: theme.colors.content.primary,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  titleViewport: {
+    height: 28,
+    overflow: "hidden",
+    position: "relative",
+  },
+  trigger: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderCurve: "continuous",
+    borderRadius: 32,
+    borderWidth: 1,
+    width: "100%",
+  },
+  triggerContent: {
+    gap: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    width: "100%",
+  },
+}));

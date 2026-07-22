@@ -10,12 +10,12 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
-  StyleSheet,
   Text,
   View,
   type ViewToken,
   useWindowDimensions,
 } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import { LAYOUT } from "../constants/layout";
 import {
@@ -30,6 +30,7 @@ import {
   type PeriodFrame,
 } from "../data/calendarBrowse";
 import { loadMonthTypePresence } from "../data/calendarBrowseCache";
+import { fixedTokens } from "../styles/tokens";
 
 const MONTHLY_CONTENT_INSET =
   LAYOUT.CALENDAR_SHEET.MONTHLY_CONTENT_TOP - LAYOUT.CALENDAR_SHEET.MONTHLY_HEADER_HEIGHT;
@@ -41,9 +42,6 @@ const WEEK_GAP = 6;
 const MONTH_PADDING = 10;
 const MONTH_GAP = 14;
 const FOCUS_HYSTERESIS = 12;
-const PAPER_MARKER = "#E4DF00";
-const PRINT_MARKER = "#F32DD5";
-const UNKNOWN_MARKER = "#99938E";
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 };
 
 type MonthItem = {
@@ -70,13 +68,13 @@ function buildMonthFrames(items: readonly MonthItem[]): PeriodFrame[] {
 function markerColors(types: readonly string[]): string[] {
   const colors: string[] = [];
   if (types.includes("paper")) {
-    colors.push(PAPER_MARKER);
+    colors.push(fixedTokens.artefactType.paper);
   }
   if (types.includes("print")) {
-    colors.push(PRINT_MARKER);
+    colors.push(fixedTokens.artefactType.printCalendar);
   }
   if (types.some((type) => type !== "paper" && type !== "print")) {
-    colors.push(UNKNOWN_MARKER);
+    colors.push(fixedTokens.artefactType.unknown);
   }
   return colors;
 }
@@ -167,8 +165,8 @@ function MonthGrid({
         {
           width,
           height: monthHeight(monthId) - MONTH_GAP,
-          backgroundColor: focused ? "#F5F5F5" : "transparent",
         },
+        focused ? styles.focusedMonth : styles.unfocusedMonth,
       ]}
     >
       <View style={styles.monthIndicatorRow}>
@@ -447,7 +445,7 @@ export default function CalendarMonthlyTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
   },
@@ -468,10 +466,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   monthIndicator: {
-    color: "#171717",
-    fontFamily: "Geist-Medium",
-    fontSize: 17,
-    lineHeight: MONTH_INDICATOR_HEIGHT,
+    ...theme.typography.calendar.month,
+    color: theme.colors.content.primary,
   },
   dayCell: {
     alignItems: "center",
@@ -482,19 +478,17 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   dayPressed: {
-    backgroundColor: "#ECECEC",
+    backgroundColor: theme.colors.surface.subtle,
   },
   dayText: {
-    color: "#171717",
-    fontFamily: "Geist-Regular",
-    fontSize: 19,
-    lineHeight: 24,
+    ...theme.typography.calendar.day,
+    color: theme.colors.content.primary,
   },
   dayTextDisabled: {
-    color: "#C5C3C1",
+    color: theme.colors.content.disabled,
   },
   selectedUnderline: {
-    backgroundColor: "#171717",
+    backgroundColor: theme.colors.content.primary,
     borderRadius: 1,
     bottom: 8,
     height: 2,
@@ -515,7 +509,7 @@ const styles = StyleSheet.create({
   markerError: {
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
+    backgroundColor: theme.colors.surface.elevated,
     borderRadius: 999,
     flexDirection: "row",
     gap: 10,
@@ -526,13 +520,17 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   markerErrorText: {
-    color: "#79716B",
-    fontFamily: "Geist-Regular",
-    fontSize: 12,
+    ...theme.typography.ui.caption,
+    color: theme.colors.content.muted,
   },
   markerRetry: {
-    color: "#252525",
-    fontFamily: "Geist-Medium",
-    fontSize: 12,
+    ...theme.typography.ui.captionMedium,
+    color: theme.colors.content.primary,
   },
-});
+  focusedMonth: {
+    backgroundColor: theme.colors.surface.subtle,
+  },
+  unfocusedMonth: {
+    backgroundColor: fixedTokens.common.transparent,
+  },
+}));

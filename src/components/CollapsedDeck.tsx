@@ -13,13 +13,15 @@
  * a single frame that has the right aspect ratio for the entry type.
  *
  * It also exports two reusable pieces:
- *   - `deckClassName` — the Tailwind class string that gives a deck its aspect
+ *   - `deckStyles` — the Unistyles geometry that gives a deck its aspect
  *     ratio + max height (shared by the collapsed deck here and the expanded
  *     frame in `Stack`, so the two states match in size).
  *   - `useWrappedArtefacts` — the hook that builds a canonical or portal copy
  *     of the wrapped artefacts from the same phase and pager inputs.
  */
+import { useWindowDimensions } from "react-native";
 import Animated, { type AnimatedRef, type SharedValue } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { Entry } from "../data/entries";
 
@@ -27,7 +29,7 @@ import ArtefactWrapper from "./ArtefactWrapper";
 import { renderArtefactContent } from "./renderArtefactContent";
 
 /**
- * Build the className for a deck/frame given the entry type.
+ * Build the style for a deck/frame given the entry type and viewport width.
  *
  * - `aspect-a4` (papers) or `aspect-print` (prints) sets the card's aspect
  *   ratio.
@@ -38,8 +40,18 @@ import { renderArtefactContent } from "./renderArtefactContent";
  * This same string is used by `Stack` for the retained portal frame so the
  * canonical and portal trees share the same base coordinate system.
  */
-export const deckClassName = (type: Entry["type"]) =>
-  `${type === "paper" ? "aspect-a4" : "aspect-print"} relative max-h-[calc((100vw-80px)/210*297)] w-[calc(100vw-80px)]`;
+export const deckStyles = StyleSheet.create({
+  deck: (type: Entry["type"], viewportWidth: number) => {
+    const width = Math.max(0, viewportWidth - 80);
+
+    return {
+      aspectRatio: type === "paper" ? 210 / 297 : 53 / 86,
+      maxHeight: (width / 210) * 297,
+      position: "relative",
+      width,
+    };
+  },
+});
 
 type UseWrappedArtefactsParams = {
   entry: Entry;
@@ -141,6 +153,7 @@ const CollapsedDeck = ({
   firstArtefactReadinessRequestId,
   onFirstArtefactReady,
 }: CollapsedDeckProps) => {
+  const window = useWindowDimensions();
   const wrappedArtefacts = useWrappedArtefacts({
     entry,
     expanded,
@@ -152,7 +165,11 @@ const CollapsedDeck = ({
   });
 
   return (
-    <Animated.View ref={triggerRef} collapsable={false} className={deckClassName(entry.type)}>
+    <Animated.View
+      ref={triggerRef}
+      collapsable={false}
+      style={deckStyles.deck(entry.type, window.width)}
+    >
       {wrappedArtefacts}
     </Animated.View>
   );

@@ -134,7 +134,7 @@ lifetime rather than on every intermediate frame.
 | Focus trigger measurement and clone/menu geometry | Reanimated | Keep | N/A — retained |
 | Bottom-sheet detents/scrims and native carousel momentum | Native libraries | Keep | N/A — retained |
 | BloomButton/BloomPanel/BloomBar morph and content transitions | Reanimated | Ignore | Deferred — ignored |
-| Dormant MorphOverlay | Reanimated | Ignore | Deferred — ignored |
+| Former MorphOverlay | Reanimated | Remove | Deleted during the app-wide Unistyles migration; it had no callsite |
 
 ## Preserved timing tokens
 

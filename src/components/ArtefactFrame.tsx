@@ -20,11 +20,13 @@
  * callers receive the standard live artefact renderer.
  */
 import { type ReactNode } from "react";
-import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { Artefact } from "../data/entries";
 
 import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
+import { fixedTokens } from "../styles/tokens";
 import {
   FRAME_BOARD_SCALE,
   FRAME_BOARD_SHADOW_BLUR,
@@ -56,13 +58,14 @@ type FrameBoxShadows = {
 /** Materialize proportional CSS shadows from the pure board-width scale. */
 function frameBoxShadows(scale: number): FrameBoxShadows {
   const px = (value: number) => `${value * scale}px`;
+  const shadow = fixedTokens.frame.shadow;
   return {
-    board: `0 ${px(FRAME_BOARD_SHADOW_OFFSET_Y)} ${px(FRAME_BOARD_SHADOW_BLUR)} rgba(0,0,0,0.20), 0 ${px(5)} ${px(10)} rgba(0,0,0,0.11), inset 0 0 0 ${px(1)} rgba(255,255,255,0.72)`,
-    mat: `inset 0 ${px(8)} ${px(7)} rgba(0,0,0,0.18), 0 ${px(3)} ${px(3)} rgba(255,255,255,0.92)`,
-    well: `inset 0 ${px(4)} ${px(2)} rgba(0,0,0,0.18)`,
+    board: `0 ${px(FRAME_BOARD_SHADOW_OFFSET_Y)} ${px(FRAME_BOARD_SHADOW_BLUR)} ${shadow.boardKey}, 0 ${px(5)} ${px(10)} ${shadow.boardAmbient}, inset 0 0 0 ${px(1)} ${shadow.boardRim}`,
+    mat: `inset 0 ${px(8)} ${px(7)} ${shadow.inset}, 0 ${px(3)} ${px(3)} ${shadow.matHighlight}`,
+    well: `inset 0 ${px(4)} ${px(2)} ${shadow.inset}`,
     // Match Home's collapsed SHADOW_SM. Against the white well this only
     // reveals the page boundary; it must not compete with the board shadow.
-    artefact: `0 ${px(1)} ${px(2)} rgba(0,0,0,0.05)`,
+    artefact: `0 ${px(1)} ${px(2)} ${shadow.artefact}`,
   };
 }
 
@@ -177,24 +180,24 @@ const styles = StyleSheet.create({
   },
   board: {
     position: "absolute",
-    backgroundColor: "#F8F8F8",
+    backgroundColor: fixedTokens.frame.boardSurface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.9)",
+    borderColor: fixedTokens.frame.boardBorder,
   },
   mat: {
     position: "absolute",
-    backgroundColor: "#F9F9F7",
+    backgroundColor: fixedTokens.frame.matSurface,
   },
   // A low-contrast ellipse approximates the reference's radial centre light
   // without introducing a gradient/rendering dependency for a subtle cue.
   matHighlight: {
     position: "absolute",
     borderRadius: 9999,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: fixedTokens.frame.wellSurface,
   },
   well: {
     overflow: "hidden",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: fixedTokens.frame.artefactSurface,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -80,7 +80,7 @@
  */
 import { BlurView } from "expo-blur";
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { LayoutChangeEvent, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { LayoutChangeEvent, Pressable, useWindowDimensions, View } from "react-native";
 import Animated, {
   type AnimatedRef,
   interpolate,
@@ -94,6 +94,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
+import { StyleSheet } from "react-native-unistyles";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import {
@@ -433,13 +434,8 @@ const BloomPanel = ({
 
         <Animated.View
           onLayout={handlePanelLayout}
-          style={[styles.panel, panelStyle]}
+          style={[styles.panel, variant === "menu" && styles.menuPanel, panelStyle]}
           pointerEvents="auto"
-          className={
-            variant === "menu"
-              ? "border border-controls-border bg-controls-background"
-              : "bg-controls-background"
-          }
         >
           {variant === "fullscreen" || hasOpened ? (
             <>
@@ -516,7 +512,7 @@ const BloomPanel = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   root: {
     ...StyleSheet.absoluteFill,
   },
@@ -524,10 +520,15 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
   },
   panel: {
+    backgroundColor: theme.colors.surface.control,
     position: "absolute",
     top: 0,
     left: 0,
     overflow: "hidden",
+  },
+  menuPanel: {
+    borderColor: theme.colors.border.control,
+    borderWidth: 1,
   },
   contentWrap: {
     transformOrigin: "top left",
@@ -538,6 +539,6 @@ const styles = StyleSheet.create({
     top: 0,
     opacity: 0,
   },
-});
+}));
 
 export default BloomPanel;

@@ -25,7 +25,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { PixelRatio, StyleSheet, View } from "react-native";
+import { PixelRatio, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 import { captureRef, releaseCapture } from "react-native-view-shot";
 
 import type { PaperArtefact, PrintArtefact } from "../data/entries";

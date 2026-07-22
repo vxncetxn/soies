@@ -18,16 +18,17 @@ import {
   NativeSyntheticEvent,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 
 import type { Artefact, Entry, PaperArtefact, PrintArtefact } from "../data/entries";
 
 import { isUnknownArtefact } from "../data/entries";
+import { fixedTokens } from "../styles/tokens";
 import {
   SHARE_BG,
   SHARE_EXPORT_HEIGHT,
@@ -94,6 +95,10 @@ const TOAST_ANCHORS = [
   "others",
 ] as const satisfies readonly ShareActionToastAnchor[];
 
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.icon.default,
+}));
+
 function isShareableArtefact(a: Artefact): a is PaperArtefact | PrintArtefact {
   return !isUnknownArtefact(a);
 }
@@ -144,6 +149,7 @@ function actionErrorMessage(action: Exclude<BusyAction, null>, error: unknown): 
 }
 
 export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProps) {
+  const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { captureShareImage } = useShareCapture();
@@ -384,7 +390,7 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
       onIndexChange={onIndexChange}
       animateIn
       extendUnderStatusBar
-      scrimColor="rgba(0,0,0,0.35)"
+      scrimColor={theme.colors.overlay.scrim}
       surface={<View style={[StyleSheet.absoluteFill, styles.surface]} />}
     >
       <View
@@ -400,15 +406,12 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
           ref={scrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ backgroundColor: "transparent" }}
+          style={styles.transparent}
           decelerationRate="fast"
           snapToOffsets={snapOffsets}
           snapToAlignment="start"
           disableIntervalMomentum
-          contentContainerStyle={{
-            paddingHorizontal: sidePad,
-            backgroundColor: "transparent",
-          }}
+          contentContainerStyle={styles.carouselContent(sidePad)}
           onMomentumScrollEnd={onScrollEnd}
           onScrollEndDrag={(event) => {
             onScrollEnd(event, event.nativeEvent.targetContentOffset?.x);
@@ -417,14 +420,11 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
           {artefacts.map(({ artefact, sourceIndex }, index) => (
             <View
               key={sourceIndex}
-              style={{
-                width: pageWidth,
-                height: previewHeight,
-                marginRight: index < artefacts.length - 1 ? pageGap : 0,
-                borderRadius: 16,
-                borderCurve: "continuous",
-                overflow: "hidden",
-              }}
+              style={styles.previewPage(
+                pageWidth,
+                previewHeight,
+                index < artefacts.length - 1 ? pageGap : 0,
+              )}
             >
               <ShareComposition
                 artefact={artefact}
@@ -447,7 +447,7 @@ export function ShareSheet({ entry, initialPage, open, onClose }: ShareSheetProp
             ))}
           </View>
         ) : (
-          <View style={{ height: 16 }} />
+          <View style={styles.dotsSpacer} />
         )}
 
         <View style={styles.swatches}>
@@ -566,11 +566,11 @@ function ActionButton({
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={label}
-        style={{ opacity: disabled ? 0.5 : 1 }}
+        style={styles.actionPress(disabled)}
       >
         {busy ? (
           <View style={styles.busyCircle}>
-            <ActivityIndicator color="#57534E" />
+            <ThemedActivityIndicator />
           </View>
         ) : (
           children
@@ -581,23 +581,26 @@ function ActionButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
+  actionPress: (disabled: boolean) => ({
+    opacity: disabled ? 0.5 : 1,
+  }),
   surface: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.surface.sheet,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
   content: {
     paddingTop: 8,
     gap: 16,
-    backgroundColor: "transparent",
+    backgroundColor: fixedTokens.common.transparent,
   },
   handle: {
     alignSelf: "center",
     width: 36,
     height: 5,
     borderRadius: 3,
-    backgroundColor: "#D6D3D1",
+    backgroundColor: theme.colors.surface.disabled,
     marginBottom: 8,
   },
   dots: {
@@ -612,10 +615,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   dotActive: {
-    backgroundColor: "#57534E",
+    backgroundColor: theme.colors.content.secondary,
   },
   dotIdle: {
-    backgroundColor: "#D6D3D1",
+    backgroundColor: theme.colors.surface.disabled,
   },
   swatches: {
     flexDirection: "row",
@@ -628,14 +631,14 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     borderWidth: 2,
-    borderColor: "transparent",
+    borderColor: fixedTokens.common.transparent,
   },
   swatchSelected: {
-    borderColor: "#1C1917",
+    borderColor: fixedTokens.share.swatchBorder.light,
     borderWidth: 3,
   },
   swatchSelectedOnDark: {
-    borderColor: "#FAFAF9",
+    borderColor: fixedTokens.share.swatchBorder.dark,
   },
   actionsBlock: {
     position: "relative",
@@ -662,16 +665,33 @@ const styles = StyleSheet.create({
     minWidth: 64,
   },
   actionLabel: {
-    fontFamily: "Geist-Regular",
-    fontSize: 12,
-    color: "#57534E",
+    ...theme.typography.ui.caption,
+    color: theme.colors.content.secondary,
   },
   busyCircle: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#E7E5E4",
+    backgroundColor: theme.colors.surface.disabled,
     alignItems: "center",
     justifyContent: "center",
   },
-});
+  carouselContent: (paddingHorizontal: number) => ({
+    backgroundColor: fixedTokens.common.transparent,
+    paddingHorizontal,
+  }),
+  dotsSpacer: {
+    height: 16,
+  },
+  previewPage: (width: number, height: number, marginRight: number) => ({
+    borderCurve: "continuous",
+    borderRadius: 16,
+    height,
+    marginRight,
+    overflow: "hidden",
+    width,
+  }),
+  transparent: {
+    backgroundColor: fixedTokens.common.transparent,
+  },
+}));

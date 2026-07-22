@@ -11,7 +11,7 @@
 | Framework | Expo 57, React Native 0.86, React 19 |
 | Compiler | [React Compiler](https://docs.expo.dev/guides/react-compiler) (`experiments.reactCompiler` in `app.json`; `babel.config.js` with `panicThreshold: 'all_errors'` — diagnostics are **hard build failures**). Validation: `pnpm lint` (Oxlint including native `react/react-compiler`), `pnpm lint:rc`, `pnpm healthcheck:rc`, `pnpm check`. Do not reintroduce manual `useMemo` / `useCallback` / `memo` as a render optimization without a measured re-render problem (`memo(CalendarMonthWithDots)` is the intentional exception for uncompiled flash-calendar). `useCallback` is also permitted when stable identity is an explicit correctness contract with native or third-party APIs; document that contract at the call site. |
 | Routing | [Expo Router](https://docs.expo.dev/router/introduction/) (file-based root Stack) |
-| Styling | [Uniwind](https://docs.uniwind.dev/) + Tailwind CSS v4 (`className` on native views) |
+| Styling | [Unistyles 3](https://www.unistyl.es/v3/start/introduction/) with semantic light/dark themes and fixed Artefact tokens; React Native Boost conservatively optimizes eligible native hosts |
 | Animation | `react-native-ease` for discrete state transitions; Reanimated 4 + Worklets for gesture-, scroll-, keyboard-, layout-, and measurement-driven motion. Shared values use `.get()` / `.set()` for React Compiler compatibility. See [ADR 0014](./adr/0014-ease-reanimated-animation-boundary.md) and the phase-synchronization refinement in [ADR 0015](./adr/0015-phase-synchronized-ease-expansion.md). |
 | Overlays | `react-native-teleport` (portal hosts at the root) + `@swmansion/react-native-bottom-sheet` |
 | Lists / paging | `ScrollView` + Reanimated (day/artefact pagers); FlashList 2 (calendar browse lists) |
@@ -37,7 +37,8 @@ callbacks with an immediate Ease transition. Compound Stack, Create-authoring,
 and Focus transitions synchronize semantic reducer phases and retained
 lifetimes instead of sharing a per-frame progress scalar.
 
-**Exception:** [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) still uses an unsafe `scheduleOnRN(finishClose, onClose)` bridge but has **no callsite** under `src/`. Do not wire it without applying the BloomPanel pattern first. Physical-device stress matrix: [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md).
+The unused `MorphOverlay` and former fullscreen `CalendarOverlay` were removed.
+Physical-device stress matrix: [`docs/qa/react-compiler-closure.md`](./qa/react-compiler-closure.md).
 
 ---
 
@@ -64,18 +65,17 @@ flowchart TD
 
 | File | Role |
 |------|------|
-| [`package.json`](../package.json) | Dependencies, scripts (`start`, `ios`, `android`, `lint`, `lint:rc`, `healthcheck:rc`, `check`, `typecheck`, `fmt`). Entry point: **`expo-router/entry`** (canonical; custom `index.js` and `.pnpm` `watchFolders` were removed after the Metro matrix proved them unnecessary). `expo.autolinking.ios.buildFromSource` forces Reanimated + Worklets to compile from source on iOS. `reanimated.staticFeatureFlags` enables synchronous non-layout UI-prop updates on both native platforms; changing these compile-time flags requires rebuilding the native app. Animated transforms can make visual and touch geometry diverge, so complete the [synchronous UI-prop regression matrix](./qa/reanimated-synchronous-ui-props.md) before committing a flag change. `pnpm.patchedDependencies` pins Worklets' temporary Metro 0.84.4 generated-module SHA-1 fix and Metro Runtime 0.84.4 Fast Refresh forwarding fix; re-evaluate and regenerate or remove both patches whenever Metro or Worklets changes. |
+| [`package.json`](../package.json) | Dependencies, scripts (`start`, `ios`, `android`, `lint`, `lint:rc`, `healthcheck:rc`, `check`, `typecheck`, `fmt`). Entry point: **`index.ts`**, which configures Unistyles before Expo Router. Reanimated is pinned to 4.5.2 and excluded from Expo's version correction because 4.5.1+ contains the Unistyles empty-style fix. `expo.autolinking.ios.buildFromSource` forces Reanimated + Worklets to compile from source on iOS. `reanimated.staticFeatureFlags` enables synchronous non-layout UI-prop updates on both native platforms; changing these compile-time flags requires rebuilding the native app. Animated transforms can make visual and touch geometry diverge, so complete the [synchronous UI-prop regression matrix](./qa/reanimated-synchronous-ui-props.md) before committing a flag change. `pnpm.patchedDependencies` pins Worklets' temporary Metro 0.84.4 generated-module SHA-1 fix and Metro Runtime 0.84.4 Fast Refresh forwarding fix; re-evaluate and regenerate or remove both patches whenever Metro or Worklets changes. |
 | [`app.json`](../app.json) | Expo app config: `soies` URL scheme, iOS 17 deployment target, one five-choice `systemLarge` widget, bundle IDs, plugins, EAS project ID, and **`experiments.reactCompiler`**. Android widget generation is explicitly disabled. Image selection uses the system picker without photo-library read permission; camera and save-only Photos access are configured separately. |
-| [`babel.config.js`](../babel.config.js) | `babel-preset-expo` + React Compiler options (`panicThreshold: "all_errors"` → hard build failures). Expo's automatic Reanimated/Worklets plugin paths are disabled so one explicit Worklets plugin enables `bundleMode: true` and the recommended `strictGlobal: true`. `@babel/preset-typescript` remains a top-level dev dependency because Worklets 0.10 resolves it from the app root while generating Bundle Mode modules under pnpm; remove that workaround once upstream resolves the preset from its own package. |
+| [`babel.config.js`](../babel.config.js) | `babel-preset-expo` + React Compiler options (`panicThreshold: "all_errors"` → hard build failures), then Unistyles, Boost with explicit `unistyles: true`, and Worklets last. Boost keeps dangerous unknown-ancestor optimization disabled. Expo's automatic Reanimated/Worklets paths are disabled so the one explicit Worklets plugin enables `bundleMode: true` and `strictGlobal: true`. `@babel/preset-typescript` remains a top-level dev dependency because Worklets 0.10 resolves it from the app root while generating Bundle Mode modules under pnpm. |
 | [`eas.json`](../eas.json) | EAS Build profiles: `development`, `preview`, `production`, `ios-simulator`, `development-simulator`. |
-| [`metro.config.js`](../metro.config.js) | Metro + Uniwind (`cssEntryFile`, `dtsFile`), followed by the local Worklets Bundle Mode composition helper. No `unstable_enableSymlinks` (Metro 0.84 always-on; Expo Doctor rejects the override). No extra `watchFolders`. |
-| [`metro.bundle-mode.js`](../metro.bundle-mode.js) | Applies Worklets' `getBundleModeMetroConfig` after Uniwind while bridging their nested `react-native` facades. Only bare imports originating inside Uniwind bypass the outer Worklets resolver, allowing Uniwind's fallback getters to reach the real React Native entry without the `Worklets shim → Uniwind facade → Worklets shim` startup recursion. Application imports still pass through Bundle Mode's shim. |
+| [`metro.config.js`](../metro.config.js) | Expo's default Metro config wrapped directly by Worklets' `getBundleModeMetroConfig`. The former Uniwind facade bridge is gone. No `unstable_enableSymlinks` or extra `watchFolders`. |
 | [`tsconfig.json`](../tsconfig.json) | TypeScript (extends Expo base, `strict: true`). |
 | [`.oxlintrc.json`](../.oxlintrc.json) / [`.oxfmtrc.json`](../.oxfmtrc.json) | Lint and format (oxlint with native React Compiler rules, oxfmt). |
 | [`.github/workflows/quality.yml`](../.github/workflows/quality.yml) | CI: `pnpm check` + production iOS `expo export`. |
 | [`CONTEXT.md`](../CONTEXT.md) | Ubiquitous language: Entry, Artefact, Featured Artefact, Widget Slot, Widget, Frame, Tombstone, Undo. |
 | [`AGENTS.md`](../AGENTS.md) / [`CLAUDE.md`](../CLAUDE.md) | Pointers for AI assistants (Expo **v57** docs). |
-| [`README.md`](../README.md) | Minimal Expo Router + Uniwind starter notes. |
+| [`README.md`](../README.md) | Project setup plus the styling/theme boundary and native-client requirement. |
 
 ---
 
@@ -118,10 +118,8 @@ diagnostics contain structural component context, never journal content.
 | [`CalendarRecentTab.tsx`](../src/components/CalendarRecentTab.tsx) / [`CalendarEntryPreview.tsx`](../src/components/CalendarEntryPreview.tsx) | Keyset-paged FlashList rows with inline Day labels, visible canonical first-Artefact previews, count silhouettes, and exact Entry selection. |
 | [`CalendarMonthlyTab.tsx`](../src/components/CalendarMonthlyTab.tsx) | Chronological virtualized month grids from User Creation Day through today, Day-1-aligned month indicators, Focused Month background, Selected Day underline, disabled bounds, type-presence markers, and a viewport-derived final scroll bound. |
 | [`BloomButton.tsx`](../src/components/BloomButton.tsx) / [`BloomPanel.tsx`](../src/components/BloomPanel.tsx) | **Measure-and-morph bloom** still used by Create's compact menu. Origin stays inline; panel portals into the `bloom` host. Close completion and content crossfade use stable dispatcher + primitive Worklets bridges. |
-| [`CalendarOverlay.tsx`](../src/components/CalendarOverlay.tsx) | Dormant former fullscreen calendar with no callsite. Deletion is deferred with the broader legacy overlay cleanup. |
 | [`FocusOverlay.tsx`](../src/components/FocusOverlay.tsx) | Long-press / ellipsis focus: Reanimated measures and positions the frozen subject/menu; Ease owns retained backdrop/clone opacity and staggered rows through request-scoped open/close phases. On iOS, **Feature in Widget** appears immediately before Share and opens the picker for that Entry. |
 | [`ArtefactFrame.tsx`](../src/components/ArtefactFrame.tsx) / [`artefactFrameGeometry.ts`](../src/components/artefactFrameGeometry.ts) | Shared portrait frame renderer plus pure board/shadow invariants for live capture, cached Featured Artefact previews, and branded empty/unavailable prompts. |
-| [`MorphOverlay.tsx`](../src/components/MorphOverlay.tsx) | **Unused** legacy morph overlay (no callsite). Kept for reference; unsafe Worklets `onClose` bridge — do not reintroduce without hardening. |
 
 ### Shared UI & context
 
@@ -191,9 +189,10 @@ Selection captures first, commits the lowest genuinely empty slot in one databas
 
 | File | Role |
 |------|------|
-| [`global.css`](../src/global.css) | Tailwind/Uniwind theme: aspect ratios (`aspect-a4`, `aspect-print`), font families, light/dark color tokens (`background`, `paper`, `primary`, etc.). |
+| [`styles/themes.ts`](../src/styles/themes.ts) | One semantic typography interface and matching light/dark Adaptive Chrome themes. |
+| [`styles/tokens.ts`](../src/styles/tokens.ts) | Fixed font aliases plus Artefact, export, Frame, Ink, Share, Widget, effect, and bootstrap tokens. |
+| [`styles/unistyles.ts`](../src/styles/unistyles.ts) | Typed Unistyles registration with adaptive device themes enabled and no initial override. |
 | [`global.d.ts`](../src/global.d.ts) | Ambient TypeScript declarations. |
-| [`uniwind-types.d.ts`](../src/uniwind-types.d.ts) | Generated Uniwind className typings (referenced from Metro config). |
 
 ---
 

@@ -1,13 +1,16 @@
-import type { EaseViewProps } from "react-native-ease/uniwind";
+import type { EaseViewProps } from "react-native-ease";
 
 import { useLayoutEffect, useState } from "react";
-import { EaseView } from "react-native-ease/uniwind";
+import { EaseView } from "react-native-ease";
+import { withUnistyles } from "react-native-unistyles";
 
 import type { EntryMotionCompletion } from "./entryTransition";
 
 import { ENTRY_TRANSITION_DURATION_MS } from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
+
+const StyledEaseView = withUnistyles(EaseView);
 
 type MotionViewProps = Omit<
   EaseViewProps,
@@ -49,7 +52,7 @@ export function EntrySurfaceMotion({
   }, [completion, completionQueue, viewportHeight, visible]);
 
   return (
-    <EaseView
+    <StyledEaseView
       {...props}
       initialAnimate={values}
       animate={values}
@@ -82,7 +85,7 @@ export function EntryChromeMotion({ visible, ...props }: EntryChromeMotionProps)
   const values = { opacity: visible ? 1 : 0 };
 
   return (
-    <EaseView
+    <StyledEaseView
       {...props}
       initialAnimate={values}
       animate={values}

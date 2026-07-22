@@ -31,13 +31,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { PixelRatio, StyleSheet, View } from "react-native";
+import { PixelRatio, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 import { captureRef, releaseCapture } from "react-native-view-shot";
 
 import type { Artefact } from "../data/entries";
 
 import ArtefactFrame from "../components/ArtefactFrame";
 import { FRAME_BOARD_SCALE } from "../components/artefactFrameGeometry";
+import { fixedTokens } from "../styles/tokens";
 import { CaptureGate } from "./CaptureGate";
 import { withReleasedCapture } from "./captureTemporaryFile";
 import {
@@ -258,7 +260,7 @@ const styles = StyleSheet.create({
   // surfaces, so the live shadow and cached shadow terminate identically.
   captureCanvas: {
     overflow: "hidden",
-    backgroundColor: "transparent",
+    backgroundColor: fixedTokens.common.transparent,
   },
   captureFrame: {
     position: "absolute",

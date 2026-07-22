@@ -26,13 +26,13 @@ import {
   type NativeSyntheticEvent,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
 import { EaseView, type Transition } from "react-native-ease";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 
 import type { Artefact, Entry } from "../data/entries";
 import type {
@@ -50,6 +50,7 @@ import { isPrintArtefact } from "../data/entries";
 import { createPaperDocument } from "../data/paperDocument";
 import { getFeaturedWidgetPickerState } from "../db/repositories/featuredWidgetSlots";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { fixedTokens } from "../styles/tokens";
 import { cachedWidgetFrameUri } from "./widgetFrameCache";
 import { type WidgetFrameGeometry, widgetFrameGeometryFittingBoard } from "./widgetFrameGeometry";
 import {
@@ -78,18 +79,29 @@ type FeaturedWidgetsSheetProps = {
   onClosed: () => void;
 };
 
-/** Matches the reference sheet while remaining distinct from framed paper. */
-const SHEET_SURFACE = "#F5F5F4";
 /** Shared physical gap makes snap offsets equal measured page width plus spacing. */
 const CAROUSEL_GAP = 20;
 /** Fixed label box keeps every slot title on one baseline across frame states. */
-const FEATURED_SLOT_LABEL_HEIGHT = 18;
+const FEATURED_SLOT_LABEL_HEIGHT = fixedTokens.widget.typography.slotLabelHeight;
 /** Separates the fixed label box from the shared padded frame canvas. */
 const FEATURED_SLOT_LABEL_GAP = 8;
 /** Retains the reference board scale while its soft shadow may cross the page gutter. */
 const FEATURED_FRAME_BOARD_WIDTH_FRACTION = 0.75;
 /** Stable fallback avoids allocating a new empty array during picker fade-out. */
 const EMPTY_ARTEFACTS: Artefact[] = [];
+
+const StyledArtefactFrame = withUnistyles(ArtefactFrame);
+const StyledEaseView = withUnistyles(EaseView);
+const StyledExpoImage = withUnistyles(ExpoImage);
+const OnActionActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.content.onAction,
+}));
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
+const ThemedMutedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.muted,
+}));
 
 /** Scale raw Home content as one unit; no frame chrome belongs in picker phase. */
 function RawArtefactPreview({
@@ -261,7 +273,7 @@ function PickerPhase({
 
   return (
     <View style={styles.phaseContent}>
-      <Text className="text-center font-sans-medium text-lg text-primary">Choose an artefact</Text>
+      <Text style={styles.phaseTitle}>Choose an artefact</Text>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -307,14 +319,14 @@ function PickerPhase({
         ))}
       </View>
 
-      <View className="min-h-6 items-center justify-center px-5">
+      <View style={styles.pickerStatus}>
         {errorMessage ? (
-          <Text className="text-center text-sm text-red-600">{errorMessage}</Text>
+          <Text style={styles.errorText}>{errorMessage}</Text>
         ) : loading ? (
-          <Text className="text-sm text-stone-500">Checking widget slots…</Text>
+          <Text style={styles.statusText}>Checking widget slots…</Text>
         ) : loadError ? (
-          <View className="flex-row items-center gap-2">
-            <Text className="text-sm text-red-600">Couldn&apos;t check widget slots.</Text>
+          <View style={styles.retryRow}>
+            <Text style={styles.errorText}>Couldn&apos;t check widget slots.</Text>
             <Pressable
               onPress={() => {
                 setLoading(true);
@@ -324,13 +336,13 @@ function PickerPhase({
               accessibilityRole="button"
               accessibilityLabel="Retry checking widget slots"
             >
-              <Text className="font-sans-medium text-sm text-red-700">Try again</Text>
+              <Text style={styles.retryText}>Try again</Text>
             </Pressable>
           </View>
         ) : alreadyFeatured ? (
-          <Text className="text-sm text-stone-500">Already featured</Text>
+          <Text style={styles.statusText}>Already featured</Text>
         ) : isFull ? (
-          <Text className="text-sm text-stone-500">All five widget slots are occupied</Text>
+          <Text style={styles.statusText}>All five widget slots are occupied</Text>
         ) : null}
       </View>
 
@@ -340,14 +352,17 @@ function PickerPhase({
         accessibilityRole="button"
         accessibilityLabel="Select Artefact"
         accessibilityState={{ disabled: selectDisabled, busy }}
-        className={`mx-5 mt-3 items-center rounded-2xl py-4 ${selectDisabled ? "bg-stone-300" : "bg-primary"}`}
-        style={{ borderCurve: "continuous", opacity: selectDisabled ? 0.58 : 1 }}
+        style={[
+          styles.primaryButton,
+          selectDisabled ? styles.primaryButtonDisabled : styles.primaryButtonEnabled,
+          { opacity: selectDisabled ? 0.58 : 1 },
+        ]}
       >
         {busy ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <OnActionActivityIndicator />
         ) : (
           <Text
-            className={`font-sans-medium text-base ${selectDisabled ? "text-stone-500" : "text-white"}`}
+            style={[styles.primaryButtonLabel, selectDisabled && styles.primaryButtonLabelDisabled]}
           >
             Select Artefact
           </Text>
@@ -380,17 +395,17 @@ function FramedPlaceholder({
   };
 
   return (
-    <ArtefactFrame
+    <StyledArtefactFrame
       artefact={placeholderArtefact}
       wellWidth={geometry.boardWidth / FRAME_BOARD_SCALE}
       viewportWidth={viewportWidth}
       style={[styles.liveFrame, { left: geometry.boardLeft, top: geometry.boardTop }]}
     >
-      <View className="flex-1 items-center justify-center bg-stone-50 px-8">
-        <Icon name="photo" size={40} color="#A8A29E" />
-        <Text className="mt-4 text-center font-sans-medium text-lg text-stone-600">{prompt}</Text>
+      <View style={styles.placeholder}>
+        <ThemedMutedIcon name="photo" size={40} />
+        <Text style={styles.placeholderText}>{prompt}</Text>
       </View>
-    </ArtefactFrame>
+    </StyledArtefactFrame>
   );
 }
 
@@ -472,7 +487,7 @@ function FeaturedPhase({
 
   return (
     <View style={styles.phaseContent}>
-      <Text className="text-center font-sans-medium text-lg text-primary">Featured Artefacts</Text>
+      <Text style={styles.phaseTitle}>Featured Artefacts</Text>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -503,12 +518,7 @@ function FeaturedPhase({
                 justifyContent: "center",
               }}
             >
-              <Text
-                className="font-sans-medium text-xs tracking-widest text-stone-500"
-                style={styles.slotLabel}
-              >
-                SLOT {slot.slotIndex}
-              </Text>
+              <Text style={styles.slotLabel}>SLOT {slot.slotIndex}</Text>
               <View
                 style={[
                   styles.frameCanvas,
@@ -520,7 +530,7 @@ function FeaturedPhase({
                 ]}
               >
                 {showImage ? (
-                  <ExpoImage
+                  <StyledExpoImage
                     source={{ uri: frameUri }}
                     contentFit="contain"
                     style={StyleSheet.absoluteFill}
@@ -559,26 +569,26 @@ function FeaturedPhase({
       </View>
 
       {publicationWarning ? (
-        <Text className="mt-1 text-center text-xs text-amber-700">
+        <Text style={styles.publicationWarning}>
           Widget refresh is pending. Soies will retry automatically.
         </Text>
       ) : (
-        <View className="h-5" />
+        <View style={styles.warningSpacer} />
       )}
 
-      <View className="mt-1 flex-row items-start justify-center gap-6">
+      <View style={styles.actions}>
         {controls.map((action) => (
           <Pressable
             key={action.label}
             onPress={noOp}
             accessibilityRole="button"
             accessibilityLabel={action.label}
-            className="w-16 items-center"
+            style={styles.action}
           >
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm">
-              <Icon name={action.icon} size={22} color="#79716B" />
+            <View style={styles.actionIcon}>
+              <ThemedIcon name={action.icon} size={22} />
             </View>
-            <Text className="mt-1.5 text-center text-xs text-stone-600">{action.label}</Text>
+            <Text style={styles.actionLabel}>{action.label}</Text>
           </Pressable>
         ))}
       </View>
@@ -587,10 +597,9 @@ function FeaturedPhase({
         onPress={noOp}
         accessibilityRole="button"
         accessibilityLabel="How to add a widget"
-        className="mx-5 mt-4 items-center rounded-2xl bg-primary py-4"
-        style={{ borderCurve: "continuous" }}
+        style={[styles.primaryButton, styles.primaryButtonEnabled]}
       >
-        <Text className="font-sans-medium text-base text-white">How to add a widget</Text>
+        <Text style={styles.primaryButtonLabel}>How to add a widget</Text>
       </Pressable>
     </View>
   );
@@ -605,6 +614,7 @@ export function FeaturedWidgetsSheet({
   onRefreshSlots,
   onClosed,
 }: FeaturedWidgetsSheetProps) {
+  const { theme } = useUnistyles();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotionEnabled = useReducedMotionPreference();
@@ -652,10 +662,10 @@ export function FeaturedWidgetsSheet({
       }}
       animateIn
       extendUnderStatusBar
-      scrimColor="rgba(0,0,0,0.35)"
+      scrimColor={theme.colors.overlay.scrim}
       surface={<View style={[StyleSheet.absoluteFill, styles.surface]} />}
     >
-      <View style={{ height: sheetHeight, paddingBottom: Math.max(insets.bottom, 12) }}>
+      <View style={styles.sheetBody(sheetHeight, Math.max(insets.bottom, 12))}>
         <View style={styles.handle} />
         <Pressable
           onPress={requestClose}
@@ -663,14 +673,13 @@ export function FeaturedWidgetsSheet({
           accessibilityRole="button"
           accessibilityLabel="Close Featured Artefacts"
           accessibilityState={{ disabled: busy }}
-          className="absolute top-5 right-5 z-20 h-10 w-10 items-center justify-center rounded-full bg-white shadow-md"
-          style={{ opacity: busy ? 0.5 : 1 }}
+          style={[styles.closeButton, { opacity: busy ? 0.5 : 1 }]}
         >
-          <Icon name="x-mark" size={20} color="#79716B" />
+          <ThemedIcon name="x-mark" size={20} />
         </Pressable>
 
-        <View style={{ height: bodyHeight, overflow: "hidden" }}>
-          <EaseView
+        <View style={styles.phaseViewport(bodyHeight)}>
+          <StyledEaseView
             pointerEvents={session.phase === "picker" ? "auto" : "none"}
             accessibilityElementsHidden={session.phase !== "picker"}
             importantForAccessibility={session.phase === "picker" ? "auto" : "no-hide-descendants"}
@@ -688,8 +697,8 @@ export function FeaturedWidgetsSheet({
               onFeatureArtefact={onFeatureArtefact}
               onBusyChange={setBusy}
             />
-          </EaseView>
-          <EaseView
+          </StyledEaseView>
+          <StyledEaseView
             pointerEvents={session.phase === "featured" ? "auto" : "none"}
             accessibilityElementsHidden={session.phase !== "featured"}
             importantForAccessibility={
@@ -709,55 +718,105 @@ export function FeaturedWidgetsSheet({
               publicationWarning={publicationWarning}
               onRefreshSlots={onRefreshSlots}
             />
-          </EaseView>
+          </StyledEaseView>
         </View>
       </View>
     </ModalBottomSheet>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
+  action: {
+    alignItems: "center",
+    width: 64,
+  },
+  actionIcon: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface.elevated,
+    borderRadius: 999,
+    boxShadow: fixedTokens.effects.previewShadow,
+    height: 48,
+    justifyContent: "center",
+    width: 48,
+  },
+  actionLabel: {
+    ...theme.typography.ui.caption,
+    color: theme.colors.content.secondary,
+    marginTop: 6,
+    textAlign: "center",
+  },
+  actions: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 24,
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  closeButton: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface.elevated,
+    borderRadius: 999,
+    boxShadow: fixedTokens.effects.closeButtonShadow,
+    height: 40,
+    justifyContent: "center",
+    position: "absolute",
+    right: 20,
+    top: 20,
+    width: 40,
+    zIndex: 20,
+  },
   /** Native sheet surface supplied separately from the fixed-height body. */
   surface: {
-    backgroundColor: SHEET_SURFACE,
+    backgroundColor: theme.colors.surface.sheet,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
   handle: {
     alignSelf: "center",
-    width: 36,
-    height: 4,
+    backgroundColor: theme.colors.surface.disabled,
     borderRadius: 2,
-    backgroundColor: "#D6D3D1",
-    marginTop: 10,
+    height: 4,
     marginBottom: 14,
+    marginTop: 10,
+    width: 36,
   },
   phaseContent: {
     flex: 1,
     paddingTop: 8,
   },
+  phaseTitle: {
+    ...theme.typography.ui.titleMedium,
+    color: theme.colors.content.primary,
+    textAlign: "center",
+  },
   dots: {
-    minHeight: 16,
-    flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
+    flexDirection: "row",
     gap: 7,
+    justifyContent: "center",
+    minHeight: 16,
   },
   dot: {
-    width: 6,
-    height: 6,
     borderRadius: 3,
+    height: 6,
+    width: 6,
   },
   dotActive: {
-    backgroundColor: "#57534E",
+    backgroundColor: theme.colors.content.secondary,
   },
   dotIdle: {
-    backgroundColor: "#D6D3D1",
+    backgroundColor: theme.colors.surface.disabled,
+  },
+  errorText: {
+    ...theme.typography.ui.label,
+    color: theme.colors.status.danger,
+    textAlign: "center",
   },
   // A fixed line box means conditional frame content cannot move the slot label.
   slotLabel: {
+    ...theme.typography.ui.metadataCapsMedium,
+    color: theme.colors.content.muted,
     height: FEATURED_SLOT_LABEL_HEIGHT,
-    lineHeight: FEATURED_SLOT_LABEL_HEIGHT,
     textAlign: "center",
   },
   // Cached PNGs fill this canvas; live placeholders use the captured board origin.
@@ -771,4 +830,74 @@ const styles = StyleSheet.create({
   liveFrame: {
     position: "absolute",
   },
-});
+  phaseViewport: (height: number) => ({
+    height,
+    overflow: "hidden",
+  }),
+  pickerStatus: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 24,
+    paddingHorizontal: 20,
+  },
+  placeholder: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface.subtle,
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  placeholderText: {
+    ...theme.typography.ui.titleMedium,
+    color: theme.colors.content.secondary,
+    marginTop: 16,
+    textAlign: "center",
+  },
+  primaryButton: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 16,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: theme.colors.action.disabled,
+  },
+  primaryButtonEnabled: {
+    backgroundColor: theme.colors.action.primary,
+  },
+  primaryButtonLabel: {
+    ...theme.typography.ui.bodyMedium,
+    color: theme.colors.content.onAction,
+  },
+  primaryButtonLabelDisabled: {
+    color: theme.colors.content.onDisabledAction,
+  },
+  publicationWarning: {
+    ...theme.typography.ui.caption,
+    color: theme.colors.status.warning,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  retryRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  retryText: {
+    ...theme.typography.ui.labelMedium,
+    color: theme.colors.status.dangerStrong,
+  },
+  sheetBody: (height: number, paddingBottom: number) => ({
+    height,
+    paddingBottom,
+  }),
+  statusText: {
+    ...theme.typography.ui.label,
+    color: theme.colors.content.muted,
+  },
+  warningSpacer: {
+    height: 20,
+  },
+}));

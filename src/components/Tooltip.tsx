@@ -6,14 +6,17 @@
  * First consumer: max-artefacts hint on create document-plus.
  */
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Pressable, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { EaseView } from "react-native-ease";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { EASE_DEFAULT_TIMING } from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 
 const FADE_MS = 150;
 const DEFAULT_DURATION_MS = 2000;
+
+const StyledEaseView = withUnistyles(EaseView);
 
 export type TooltipProps = {
   visible: boolean;
@@ -58,7 +61,7 @@ const Tooltip = ({
   }
 
   return (
-    <EaseView
+    <StyledEaseView
       pointerEvents="box-none"
       style={[styles.wrap, style]}
       initialAnimate={{ opacity: 0 }}
@@ -85,17 +88,17 @@ const Tooltip = ({
           <Text style={styles.text}>{message}</Text>
         </View>
       </Pressable>
-    </EaseView>
+    </StyledEaseView>
   );
 };
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   wrap: {
     position: "absolute",
     zIndex: 300,
   },
   bubble: {
-    backgroundColor: "#1C1917",
+    backgroundColor: theme.colors.action.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -103,11 +106,9 @@ const styles = StyleSheet.create({
     maxWidth: 220,
   },
   text: {
-    color: "#FAFAF9",
-    fontFamily: "Geist-Medium",
-    fontSize: 13,
-    lineHeight: 18,
+    ...theme.typography.feedback.compact,
+    color: theme.colors.content.onAction,
   },
-});
+}));
 
 export default Tooltip;

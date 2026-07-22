@@ -26,8 +26,10 @@ shared surface primitive fades and travels one viewport, while the shared
 chrome primitive changes opacity only. Reduce Motion swaps the native
 transition for `{ type: "none" }`, retaining the same completion-event order.
 
-Bloom and the dormant `MorphOverlay` remain in the inventory but are excluded
-from this migration. Reanimated therefore remains a production dependency.
+Bloom remains in the inventory and is excluded from this migration. Reanimated
+therefore remains a production dependency. The dormant `MorphOverlay` was
+removed when [ADR 0016](./0016-unistyles-styling-boundary.md) retired dead
+styling paths; that cleanup does not change the animation ownership boundary.
 
 [ADR 0015](./0015-phase-synchronized-ease-expansion.md) refines this boundary:
 compound interactions may coordinate independent Ease endpoints with a

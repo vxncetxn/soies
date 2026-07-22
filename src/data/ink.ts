@@ -8,6 +8,8 @@
  * one-way (storage does not import this module).
  */
 
+import { fixedTokens } from "../styles/tokens";
+
 export type InkPoint = {
   x: number;
   y: number;
@@ -211,7 +213,9 @@ export function inkStrokesFromStrokeData(data: unknown): InkStroke[] {
   let totalPoints = 0;
   for (const entry of data) {
     const stroke = parseInkStroke(
-      Array.isArray(entry) ? { color: "#111111", minWidth: 1, maxWidth: 3, points: entry } : entry,
+      Array.isArray(entry)
+        ? { color: fixedTokens.ink.legacyFallback, minWidth: 1, maxWidth: 3, points: entry }
+        : entry,
     );
     if (!stroke) {
       throw new Error("Ink snapshot contains an invalid stroke.");

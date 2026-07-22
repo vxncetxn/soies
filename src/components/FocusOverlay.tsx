@@ -7,7 +7,7 @@
  */
 import { BlurView } from "expo-blur";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from "react";
-import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import { BackHandler, Pressable, Text, View } from "react-native";
 import { EaseView } from "react-native-ease";
 import Animated, {
   type AnimatedRef,
@@ -18,6 +18,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Portal } from "react-native-teleport";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 
 import {
@@ -35,6 +36,11 @@ import {
   focusOverlayTransitionState,
 } from "./focusOverlayTransition";
 import { Icon } from "./Icon";
+
+const StyledEaseView = withUnistyles(EaseView);
+const ThemedMenuIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.content.onAction,
+}));
 
 const MENU_BASE_DELAY_MS = 120;
 const MENU_STAGGER_MS = 70;
@@ -86,7 +92,7 @@ const FocusMenuItemRow = ({
   onPress,
 }: FocusMenuItemRowProps) => {
   return (
-    <EaseView
+    <StyledEaseView
       initialAnimate={{ opacity: 0, translateY: MENU_TRANSLATE_Y }}
       animate={{ opacity: open ? 1 : 0, translateY: open ? 0 : MENU_TRANSLATE_Y }}
       transition={
@@ -103,12 +109,12 @@ const FocusMenuItemRow = ({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={label}
-        className="flex-row items-center gap-3 py-1.5"
+        style={styles.menuItem}
       >
-        <Text className="font-sans-medium text-base text-white">{label}</Text>
-        <Icon name={icon} size={22} color="#FFFFFF" />
+        <Text style={styles.menuItemLabel}>{label}</Text>
+        <ThemedMenuIcon name={icon} size={22} />
       </Pressable>
-    </EaseView>
+    </StyledEaseView>
   );
 };
 
@@ -292,7 +298,7 @@ const FocusOverlay = ({
           accessibilityRole="button"
           accessibilityLabel={accessibilityDismissLabel}
         >
-          <EaseView
+          <StyledEaseView
             style={StyleSheet.absoluteFill}
             initialAnimate={{ opacity: 0 }}
             animate={{ opacity: targetVisible ? 1 : 0 }}
@@ -304,11 +310,11 @@ const FocusOverlay = ({
               intensity={BLUR_INTENSITY}
               style={StyleSheet.absoluteFill}
             />
-          </EaseView>
+          </StyledEaseView>
         </Pressable>
 
         <Animated.View style={[styles.clone, cloneGeometryStyle]} pointerEvents="none">
-          <EaseView
+          <StyledEaseView
             style={styles.cloneFade}
             initialAnimate={{ opacity: 0 }}
             animate={{ opacity: targetVisible ? 1 : 0 }}
@@ -316,7 +322,7 @@ const FocusOverlay = ({
             onTransitionEnd={(event) => handleShellMotionEnd(event.finished)}
           >
             {subject}
-          </EaseView>
+          </StyledEaseView>
         </Animated.View>
 
         <Animated.View style={[styles.menu, menuStyle, { top: menuTop }]} pointerEvents="box-none">
@@ -337,7 +343,7 @@ const FocusOverlay = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   root: {
     ...StyleSheet.absoluteFill,
   },
@@ -354,6 +360,16 @@ const styles = StyleSheet.create({
     position: "absolute",
     alignItems: "flex-end",
   },
-});
+  menuItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    paddingVertical: 6,
+  },
+  menuItemLabel: {
+    ...theme.typography.ui.bodyMedium,
+    color: theme.colors.content.onAction,
+  },
+}));
 
 export default FocusOverlay;

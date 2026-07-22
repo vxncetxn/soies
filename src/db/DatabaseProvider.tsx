@@ -1,7 +1,12 @@
 import { PropsWithChildren, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { initDatabase } from "./init";
+
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 /**
  * Gates the app behind database initialisation (open + migrate + seed).
@@ -51,15 +56,15 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
 
   if (error) {
     return (
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-6">
-        <Text className="text-center text-primary">Couldn&apos;t load your journal.</Text>
+      <View style={styles.stateContainer}>
+        <Text style={styles.stateText}>Couldn&apos;t load your journal.</Text>
         <Pressable
           onPress={retry}
           accessibilityRole="button"
           accessibilityLabel="Retry loading database"
-          className="rounded-full border border-controls-border bg-controls-background px-5 py-2"
+          style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
         >
-          <Text className="text-primary">Try again</Text>
+          <Text style={styles.retryLabel}>Try again</Text>
         </Pressable>
       </View>
     );
@@ -67,11 +72,48 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
 
   if (!ready) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
+      <View style={styles.loadingContainer}>
+        <ThemedActivityIndicator />
       </View>
     );
   }
 
   return children;
 }
+
+const styles = StyleSheet.create((theme) => ({
+  loadingContainer: {
+    alignItems: "center",
+    backgroundColor: theme.colors.canvas.app,
+    flex: 1,
+    justifyContent: "center",
+  },
+  pressed: {
+    opacity: 0.75,
+  },
+  retryButton: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  retryLabel: {
+    ...theme.typography.feedback.action,
+    color: theme.colors.content.primary,
+  },
+  stateContainer: {
+    alignItems: "center",
+    backgroundColor: theme.colors.canvas.app,
+    flex: 1,
+    gap: 16,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  stateText: {
+    ...theme.typography.feedback.body,
+    color: theme.colors.content.primary,
+    textAlign: "center",
+  },
+}));

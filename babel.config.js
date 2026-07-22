@@ -4,6 +4,24 @@ const workletsPluginOptions = {
   strictGlobal: true,
 };
 
+/** @type {import("react-native-boost/plugin").PluginOptions} */
+const boostPluginOptions = {
+  // Boost must preserve Unistyles' native-state registration when it swaps a
+  // React Native wrapper for a lean host. Keep this explicit even though Boost
+  // can auto-detect the dependency so upgrades cannot silently change mode.
+  unistyles: true,
+  // Unknown ancestors may resolve to Text-like hosts. A conservative bailout
+  // is safer than changing native nesting semantics for marginal coverage.
+  dangerouslyOptimizeTextWithUnknownAncestors: false,
+  dangerouslyOptimizeViewWithUnknownAncestors: false,
+  optimizations: {
+    image: false,
+    text: true,
+    view: true,
+  },
+  silent: true,
+};
+
 module.exports = function (api) {
   api.cache(true);
 
@@ -29,6 +47,11 @@ module.exports = function (api) {
         },
       ],
     ],
-    plugins: [["react-native-worklets/plugin", workletsPluginOptions]],
+    plugins: [
+      ["react-native-unistyles/plugin", { root: "src" }],
+      ["react-native-boost/plugin", boostPluginOptions],
+      // Worklets' plugin must stay last, including after Unistyles and Boost.
+      ["react-native-worklets/plugin", workletsPluginOptions],
+    ],
   };
 };

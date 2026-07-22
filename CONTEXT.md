@@ -83,3 +83,14 @@ _Avoid_: Posting, publishing, sharing an entry
 **Share image**:
 The raster produced for a share target (full canvas or transparent sticker).
 _Avoid_: Screenshot
+
+**Adaptive Chrome**:
+The controls, labels, sheets, and surrounding surfaces that follow the User's
+device appearance. It frames journal content but is not part of an Artefact.
+_Avoid_: Artefact theme, authored appearance
+
+**Artefact Presentation**:
+The stable visual treatment of authored Artefact content across Home, Create,
+captures, Share images, Frames, and Widgets. It does not change when Adaptive
+Chrome switches between light and dark.
+_Avoid_: App theme, chrome styling

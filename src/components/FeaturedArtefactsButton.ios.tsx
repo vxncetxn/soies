@@ -6,6 +6,7 @@
  * launchers from the interaction layer together.
  */
 import { Pressable, View } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { entryChromeVisible } from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
@@ -13,6 +14,10 @@ import { EntryChromeMotion } from "../entry-transition/EntryTransitionMotion";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import { Icon } from "./Icon";
 import { StackChromeMotion } from "./StackChromeMotion";
+
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 const FeaturedArtefactsButton = () => {
   const { openFeatured } = useFeaturedWidgets();
@@ -23,7 +28,7 @@ const FeaturedArtefactsButton = () => {
     <EntryChromeMotion
       visible={entryChromeIsVisible}
       pointerEvents="box-none"
-      className="absolute bottom-5 left-5 z-50"
+      style={styles.position}
     >
       <StackChromeMotion pointerEvents="box-none">
         <Pressable
@@ -31,8 +36,8 @@ const FeaturedArtefactsButton = () => {
           accessibilityRole="button"
           accessibilityLabel="Open Featured Artefacts"
         >
-          <View className="items-center justify-center rounded-full border border-controls-border bg-controls-background p-2">
-            <Icon name="photo" size={24} color="#79716B" />
+          <View style={styles.button}>
+            <ThemedIcon name="photo" size={24} />
           </View>
         </Pressable>
       </StackChromeMotion>
@@ -41,3 +46,21 @@ const FeaturedArtefactsButton = () => {
 };
 
 export default FeaturedArtefactsButton;
+
+const styles = StyleSheet.create((theme) => ({
+  button: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: "center",
+    padding: 8,
+  },
+  position: {
+    bottom: 20,
+    left: 20,
+    position: "absolute",
+    zIndex: 50,
+  },
+}));

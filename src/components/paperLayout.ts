@@ -16,6 +16,7 @@
 import type { PaperParagraphPreset } from "../data/paperDocument";
 import type { ArtefactTextMetrics } from "./artefactTextStyle";
 
+import { fixedTokens } from "../styles/tokens";
 import {
   ARTEFACT_TEXT_COLOR,
   ARTEFACT_TEXT_FONT_FAMILY,
@@ -52,9 +53,9 @@ export type PaperPresetMetrics = ArtefactTextMetrics;
  * 1.4 line-height ratio. These are product tokens, not Dynamic Type categories.
  */
 export const PAPER_PRESET_METRICS: Record<PaperParagraphPreset, PaperPresetMetrics> = {
-  default: { fontSize: 16, lineHeight: 22.4 },
-  large: { fontSize: 20, lineHeight: 28 },
-  "x-large": { fontSize: 24, lineHeight: 33.6 },
+  default: fixedTokens.artefact.typography.default,
+  large: fixedTokens.artefact.typography.large,
+  "x-large": fixedTokens.artefact.typography.xLarge,
 };
 
 /** Compatibility aliases for Default-only fallback call sites. */

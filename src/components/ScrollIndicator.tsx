@@ -22,16 +22,16 @@ import type { Transition } from "react-native-ease";
  */
 import { Image } from "expo-image";
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { GestureResponderEvent, Text, View } from "react-native";
-import { EaseView } from "react-native-ease/uniwind";
+import { GestureResponderEvent, StyleProp, Text, View, ViewStyle } from "react-native";
+import { EaseView } from "react-native-ease";
 import Animated, {
   interpolate,
   SharedValue,
   useAnimatedReaction,
   useAnimatedStyle,
 } from "react-native-reanimated";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { scheduleOnRN } from "react-native-worklets";
-import { withUniwind } from "uniwind";
 
 import type { Entry } from "../data/entries";
 
@@ -42,9 +42,11 @@ import {
 } from "../constants/interaction";
 import { isPrintArtefact, isUnknownArtefact } from "../data/entries";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { fixedTokens } from "../styles/tokens";
 import { triggerLongPressHaptic } from "../utils/haptics";
 
-const StyledImage = withUniwind(Image);
+const StyledEaseView = withUnistyles(EaseView);
+const StyledImage = withUnistyles(Image);
 
 type ScrollIndicatorOrientation = "vertical" | "horizontal";
 
@@ -57,8 +59,8 @@ type ScrollIndicatorProps = {
   currentPage: SharedValue<number>;
   /** Maximum dots/previews rendered around the active page; defaults to five. */
   maxVisible?: number;
-  /** Host positioning classes; the indicator owns only its internal layout. */
-  className?: string;
+  /** Host positioning style; the indicator owns only its internal layout. */
+  style?: StyleProp<ViewStyle>;
   /** Host-owned thumbnail renderer for one visible page index. */
   renderPreview: (index: number) => ReactNode;
   /** RN-thread imperative jump owned by DayPager or an expanded Stack. */
@@ -95,20 +97,10 @@ const IndicatorItem = ({ orientation, index, currentPage }: IndicatorItemProps) 
   });
 
   return (
-    <View
-      className={
-        orientation === "vertical"
-          ? "h-5 w-4 items-center justify-center"
-          : "h-4 w-5 items-center justify-center"
-      }
-    >
-      <Animated.View style={inactiveStyle} className="h-1.5 w-1.5 rounded-full bg-icon" />
-      <Animated.View
-        style={activeStyle}
-        className="absolute rounded-full bg-secondary"
-        pointerEvents="none"
-      >
-        <View className={orientation === "vertical" ? "h-4 w-1.5" : "h-1.5 w-4"} />
+    <View style={orientation === "vertical" ? styles.verticalDotSlot : styles.horizontalDotSlot}>
+      <Animated.View style={[styles.inactiveDot, inactiveStyle]} />
+      <Animated.View style={[styles.activeDot, activeStyle]} pointerEvents="none">
+        <View style={orientation === "vertical" ? styles.verticalPill : styles.horizontalPill} />
       </Animated.View>
     </View>
   );
@@ -167,7 +159,7 @@ export const ScrollIndicator = ({
   count,
   currentPage,
   maxVisible = 5,
-  className,
+  style,
   renderPreview,
   onJumpToIndex,
 }: ScrollIndicatorProps) => {
@@ -310,11 +302,7 @@ export const ScrollIndicator = ({
 
   const rail = (
     <View
-      className={
-        orientation === "vertical"
-          ? "items-center gap-1 px-1.5 py-2"
-          : "flex-row items-center gap-1 px-2 py-1.5"
-      }
+      style={orientation === "vertical" ? styles.verticalRail : styles.horizontalRail}
       onLayout={handleRailLayout}
     >
       {visibleIndices.map((index) => (
@@ -329,7 +317,7 @@ export const ScrollIndicator = ({
   );
 
   const previews = (
-    <View className={orientation === "vertical" ? "gap-2" : "flex-row gap-2"}>
+    <View style={orientation === "vertical" ? styles.verticalPreviews : styles.horizontalPreviews}>
       {visibleIndices.map((index) => (
         <PreviewSlot key={index} index={index} currentPage={currentPage}>
           {renderPreview(index)}
@@ -340,7 +328,7 @@ export const ScrollIndicator = ({
 
   return (
     <View
-      className={className}
+      style={style}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       // Use React state (not sessionRef) so RC does not see a render-time ref read
@@ -355,7 +343,7 @@ export const ScrollIndicator = ({
       accessibilityHint="Long press and drag to scrub pages"
     >
       {scrubberMounted ? (
-        <EaseView
+        <StyledEaseView
           initialAnimate={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: expanded ? 1 : 0, scale: expanded ? 1 : 0.96 }}
           transition={scrubberTransition}
@@ -365,19 +353,16 @@ export const ScrollIndicator = ({
             }
           }}
           pointerEvents={expanded ? "auto" : "none"}
-          className={
-            orientation === "vertical"
-              ? "flex-row items-center gap-3 rounded-4xl border border-controls-border bg-controls-background p-3"
-              : "items-center gap-2 rounded-4xl border border-controls-border bg-controls-background p-3"
-          }
+          style={[
+            styles.scrubber,
+            orientation === "vertical" ? styles.verticalScrubber : styles.horizontalScrubber,
+          ]}
         >
           {previews}
           {rail}
-        </EaseView>
+        </StyledEaseView>
       ) : (
-        <View className="rounded-4xl border border-controls-border bg-controls-background">
-          {rail}
-        </View>
+        <View style={styles.collapsedRail}>{rail}</View>
       )}
     </View>
   );
@@ -392,17 +377,19 @@ export const EntryPreview = ({ entry }: EntryPreviewProps) => {
 
   return (
     <View
-      className={entry.type === "paper" ? "aspect-a4 h-20" : "aspect-print h-20"}
+      style={entry.type === "paper" ? styles.paperPreviewStack : styles.printPreviewStack}
       pointerEvents="none"
     >
       {visibleArtefacts.map((_, index) => (
         <View
           key={index}
-          className="absolute inset-0"
-          style={{
-            transform: [{ translateX: index * 3 }, { translateY: index * 2 }],
-            zIndex: visibleArtefacts.length - index,
-          }}
+          style={[
+            styles.absoluteFill,
+            {
+              transform: [{ translateX: index * 3 }, { translateY: index * 2 }],
+              zIndex: visibleArtefacts.length - index,
+            },
+          ]}
         >
           <ArtefactPreview entry={entry} index={index} />
         </View>
@@ -425,17 +412,17 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
   if (isPrintArtefact(artefact)) {
     return (
       <View
-        className="aspect-print h-20 items-center gap-0.5 overflow-hidden border border-controls-border bg-paper pt-1.5 shadow-sm"
+        style={[styles.previewCard, styles.printPreviewCard, styles.printContentCard]}
         pointerEvents="none"
       >
         <StyledImage
-          className="aspect-print-image w-[80%]"
+          style={styles.printImage}
           source={artefact.imagePath}
           contentFit="cover"
           cachePolicy="memory-disk"
           transition={0}
         />
-        <Text className="font-paper text-primary" numberOfLines={1} style={{ fontSize: 6 }}>
+        <Text style={styles.thumbnailText} numberOfLines={1}>
           {artefact.text}
         </Text>
       </View>
@@ -445,10 +432,10 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
   if (isUnknownArtefact(artefact)) {
     return (
       <View
-        className="aspect-print h-20 items-center justify-center overflow-hidden border border-controls-border bg-paper p-1.5 shadow-sm"
+        style={[styles.previewCard, styles.printPreviewCard, styles.unknownPreviewCard]}
         pointerEvents="none"
       >
-        <Text className="font-paper text-primary" numberOfLines={3} style={{ fontSize: 6 }}>
+        <Text style={styles.thumbnailText} numberOfLines={3}>
           Unsupported artefact
         </Text>
       </View>
@@ -456,17 +443,130 @@ export const ArtefactPreview = ({ entry, index }: ArtefactPreviewProps) => {
   }
 
   return (
-    <View
-      className="aspect-a4 h-20 overflow-hidden border border-controls-border bg-paper p-1.5 shadow-sm"
-      pointerEvents="none"
-    >
-      <Text
-        className="font-paper text-primary"
-        numberOfLines={9}
-        style={{ fontSize: 6, lineHeight: 8 }}
-      >
+    <View style={[styles.previewCard, styles.paperPreviewCard]} pointerEvents="none">
+      <Text style={styles.thumbnailText} numberOfLines={9}>
         {artefact.text}
       </Text>
     </View>
   );
 };
+
+const styles = StyleSheet.create((theme) => ({
+  absoluteFill: StyleSheet.absoluteFill,
+  activeDot: {
+    backgroundColor: theme.colors.content.secondary,
+    borderRadius: 999,
+    position: "absolute",
+  },
+  collapsedRail: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderCurve: "continuous",
+    borderRadius: 32,
+    borderWidth: 1,
+  },
+  horizontalDotSlot: {
+    alignItems: "center",
+    height: 16,
+    justifyContent: "center",
+    width: 20,
+  },
+  horizontalPill: {
+    height: 6,
+    width: 16,
+  },
+  horizontalPreviews: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  horizontalRail: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  horizontalScrubber: {
+    alignItems: "center",
+    gap: 8,
+  },
+  inactiveDot: {
+    backgroundColor: theme.colors.icon.default,
+    borderRadius: 999,
+    height: 6,
+    width: 6,
+  },
+  paperPreviewCard: {
+    aspectRatio: 210 / 297,
+    padding: 6,
+  },
+  paperPreviewStack: {
+    aspectRatio: 210 / 297,
+    height: 80,
+  },
+  previewCard: {
+    backgroundColor: fixedTokens.artefact.paperSurface,
+    borderColor: theme.colors.border.control,
+    borderWidth: 1,
+    boxShadow: fixedTokens.effects.previewShadow,
+    height: 80,
+    overflow: "hidden",
+  },
+  printContentCard: {
+    alignItems: "center",
+    gap: 2,
+    paddingTop: 6,
+  },
+  printImage: {
+    aspectRatio: 244 / 367,
+    width: "80%",
+  },
+  printPreviewCard: {
+    aspectRatio: 53 / 86,
+  },
+  printPreviewStack: {
+    aspectRatio: 53 / 86,
+    height: 80,
+  },
+  scrubber: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderCurve: "continuous",
+    borderRadius: 32,
+    borderWidth: 1,
+    padding: 12,
+  },
+  thumbnailText: {
+    ...fixedTokens.artefact.typography.thumbnail,
+    color: fixedTokens.artefact.text.color,
+  },
+  unknownPreviewCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 6,
+  },
+  verticalDotSlot: {
+    alignItems: "center",
+    height: 20,
+    justifyContent: "center",
+    width: 16,
+  },
+  verticalPill: {
+    height: 16,
+    width: 6,
+  },
+  verticalPreviews: {
+    gap: 8,
+  },
+  verticalRail: {
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  verticalScrubber: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+}));

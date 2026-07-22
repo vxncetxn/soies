@@ -9,7 +9,7 @@
  * IME path.
  */
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type {
   PaperDocumentChangeEvent,

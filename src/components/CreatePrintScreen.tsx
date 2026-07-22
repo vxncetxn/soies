@@ -12,7 +12,7 @@ import { Image } from "expo-image";
 import { useEffect, useRef, useState } from "react";
 import { View, useWindowDimensions } from "react-native";
 import Animated from "react-native-reanimated";
-import { withUniwind } from "uniwind";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import type { DraftInk } from "../data/ink";
 
@@ -25,6 +25,7 @@ import { useCreateScreenDismissal } from "../hooks/useCreateScreenDismissal";
 import { useHardwareBackDismiss } from "../hooks/useHardwareBackDismiss";
 import { usePrintImagePickFlow } from "../hooks/usePrintImagePickFlow";
 import { useScribbleSession } from "../hooks/useScribbleSession";
+import { fixedTokens } from "../styles/tokens";
 import ArtefactInkCanvas, { type ArtefactInkCanvasHandle } from "./ArtefactInkCanvas";
 import CreateArtefactPager from "./CreateArtefactPager";
 import { useCreateContext } from "./CreateContext";
@@ -34,7 +35,7 @@ import FeatureErrorBoundary from "./feature-error-boundary";
 import { PRINT_CANVAS_HEIGHT, printCanvasScaleForDisplayWidth } from "./printLayout";
 import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
 
-const StyledImage = withUniwind(Image);
+const StyledImage = withUnistyles(Image);
 
 type DraftPrint = {
   /** Stable page identity for pager refs and Ink ownership. */
@@ -272,7 +273,7 @@ const CreatePrintScreen = ({
           renderPreview={(index) => {
             const draft = artefacts[index];
             return (
-              <View className="h-14 w-10 overflow-hidden rounded-sm bg-paper">
+              <View style={styles.preview}>
                 {draft ? (
                   <StyledImage
                     source={draft.imageUri}
@@ -300,13 +301,7 @@ const CreatePrintScreen = ({
                 keyboardShouldPersistTaps="handled"
                 scrollEnabled={false}
               >
-                <View
-                  style={{
-                    width: printExpandedWidth,
-                    height: printExpandedHeight,
-                  }}
-                  className="items-center justify-start"
-                >
+                <View style={styles.artefactSlot(printExpandedWidth, printExpandedHeight)}>
                   <EditablePrint
                     imageUri={draft.imageUri}
                     value={draft.text}
@@ -351,3 +346,19 @@ const CreatePrintScreen = ({
 };
 
 export default CreatePrintScreen;
+
+const styles = StyleSheet.create({
+  artefactSlot: (width: number, height: number) => ({
+    alignItems: "center",
+    height,
+    justifyContent: "flex-start",
+    width,
+  }),
+  preview: {
+    backgroundColor: fixedTokens.artefact.paperSurface,
+    borderRadius: 2,
+    height: 56,
+    overflow: "hidden",
+    width: 40,
+  },
+});

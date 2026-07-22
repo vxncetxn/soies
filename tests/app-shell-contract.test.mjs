@@ -94,7 +94,7 @@ test("Focus stages blur at native foreground scale and releases it after closing
   assert.doesNotMatch(cloneGeometryStyle, /\bscale:|\bopacity:/);
   assert.match(
     focusOverlay,
-    /<Animated\.View style=\{\[styles\.clone, cloneGeometryStyle\]\}[\s\S]{0,160}<EaseView/,
+    /<Animated\.View style=\{\[styles\.clone, cloneGeometryStyle\]\} pointerEvents="none">[\s\S]{0,160}<StyledEaseView/,
   );
   assert.match(stack, /const finishFocusClose = \(\) => \{[\s\S]*?setFocusMounted\(false\)/);
   assert.match(stack, /\{focusMounted \? \([\s\S]*?<FocusOverlay/);

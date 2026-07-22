@@ -23,14 +23,14 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
-import { EaseView } from "react-native-ease/uniwind";
+import { EaseView } from "react-native-ease";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import type { CreateAuthoringState } from "../hooks/createAuthoringTransition";
 
@@ -48,20 +48,30 @@ import {
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
 import { EntryChromeMotion, EntrySurfaceMotion } from "../entry-transition/EntryTransitionMotion";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { fixedTokens } from "../styles/tokens";
 import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import BloomBar from "./BloomBar";
 import { Icon } from "./Icon";
 import Tooltip from "./Tooltip";
 
-const CONTROL_ICON_COLOR = "#79716B";
 const CONTROL_ICON_SIZE = 24;
 const TITLE_FOCUS_BLUR_INTENSITY = 30;
 const TITLE_FOCUS_FADE_MS = 180;
 const CREATE_HEADER_HEIGHT = 84;
 const EXPANDED_HEADER_HEIGHT = 44;
 const AUTHORING_BODY_TRAVEL = CREATE_HEADER_HEIGHT - EXPANDED_HEADER_HEIGHT;
-const TITLE_FONT_SIZE = 30;
-const TITLE_LINE_HEIGHT = 36;
+
+const StyledBlurTargetView = withUnistyles(BlurTargetView);
+const StyledEaseView = withUnistyles(EaseView);
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.icon.default,
+}));
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
+const ThemedTextInput = withUnistyles(TextInput, (theme) => ({
+  placeholderTextColor: theme.colors.content.muted,
+}));
 
 /** Paper: append immediately. Print: open bloom media panel. */
 export type CreateAddConfig =
@@ -142,17 +152,17 @@ const CreateTitleField = ({
   typeLabel,
 }: CreateTitleFieldProps) => (
   <View
-    className="px-5"
+    style={styles.titleField}
     pointerEvents={defaultInteractive ? "auto" : "none"}
     accessibilityElementsHidden={!defaultInteractive}
     importantForAccessibility={defaultInteractive ? "auto" : "no-hide-descendants"}
   >
-    <View className="mb-3 flex-row items-center gap-2">
-      <View className="h-2.5 w-2.5 rounded-full bg-[#E879F9]" />
-      <Text className="font-mono text-xs tracking-widest text-secondary">{typeLabel}</Text>
+    <View style={styles.typeRow}>
+      <View style={styles.typeMarker} />
+      <Text style={styles.typeLabel}>{typeLabel}</Text>
     </View>
     <View>
-      <TextInput
+      <ThemedTextInput
         ref={inputRef}
         value={title}
         onChangeText={onChangeTitle}
@@ -160,15 +170,16 @@ const CreateTitleField = ({
         onBlur={onBlur}
         editable={!saving}
         placeholder="Title of entry"
-        placeholderTextColor="#79716B"
         multiline
         scrollEnabled={false}
         style={[
           styles.titleInput,
           !isTitleFocused ? styles.titleInputIdle : null,
-          {
-            color: isTitleFocused ? "#FFFFFF" : title.length > 0 ? "transparent" : "#79716B",
-          },
+          isTitleFocused
+            ? styles.titleInputFocused
+            : title.length > 0
+              ? styles.titleInputHidden
+              : styles.titleInputPlaceholder,
         ]}
       />
       {!isTitleFocused && title.length > 0 ? (
@@ -183,10 +194,9 @@ const CreateTitleField = ({
       ) : null}
     </View>
 
-    <EaseView
+    <StyledEaseView
       pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-      className="bg-background"
+      style={styles.backgroundMask}
       initialAnimate={{ opacity: authoringExpanded ? 1 : 0 }}
       animate={{ opacity: authoringExpanded ? 1 : 0 }}
       transition={transition}
@@ -308,8 +318,8 @@ const CreateScreenChrome = ({
   };
 
   const barMenuNode = (
-    <View className="py-2">
-      <Text className="px-4 py-3 text-base text-secondary">More options coming soon</Text>
+    <View style={styles.menuPanel}>
+      <Text style={[styles.menuRow, styles.menuText]}>More options coming soon</Text>
     </View>
   );
 
@@ -317,11 +327,11 @@ const CreateScreenChrome = ({
   const contentKey = showAddBloomPanel && bloomConfig ? bloomConfig.contentKey : barScreen;
 
   return (
-    <View style={{ flex: 1 }}>
-      <BlurTargetView ref={createBlurTargetRef} style={styles.blurTarget}>
-        <View className="flex-1" pointerEvents={saving ? "none" : "auto"}>
+    <View style={styles.flex}>
+      <StyledBlurTargetView ref={createBlurTargetRef} style={styles.blurTarget}>
+        <View style={styles.flex} pointerEvents={saving ? "none" : "auto"}>
           <EntrySurfaceMotion
-            className="flex-1 overflow-hidden bg-background"
+            style={styles.entrySurface}
             visible={createBodyMotion.visible}
             instant={createBodyMotion.instant}
             completion={createBodyMotion.completion}
@@ -332,7 +342,7 @@ const CreateScreenChrome = ({
             {/* The body keeps expanded layout height so Ease can translate it.
                 Default reserves the former 40-point header delta at the bottom,
                 preserving pager/indicator geometry at both settled endpoints. */}
-            <EaseView
+            <StyledEaseView
               style={[
                 styles.authoringBody,
                 { paddingBottom: authoringExpanded ? 0 : AUTHORING_BODY_TRAVEL },
@@ -348,7 +358,7 @@ const CreateScreenChrome = ({
               }}
             >
               {children}
-            </EaseView>
+            </StyledEaseView>
           </EntrySurfaceMotion>
         </View>
 
@@ -357,7 +367,7 @@ const CreateScreenChrome = ({
           pointerEvents="box-none"
           style={StyleSheet.absoluteFill}
         >
-          <EaseView
+          <StyledEaseView
             style={[styles.bottomControls, { bottom: insets.bottom + 20 }]}
             initialAnimate={{ opacity: authoringExpanded ? 0 : 1 }}
             animate={{ opacity: authoringExpanded ? 0 : 1 }}
@@ -372,45 +382,27 @@ const CreateScreenChrome = ({
               accessibilityRole="button"
               accessibilityLabel="Cancel create entry"
               accessibilityState={{ disabled: saving }}
-              className="rounded-full border border-controls-border bg-controls-background p-3"
+              style={styles.controlButton}
             >
-              <Icon name="x-mark" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+              <ThemedIcon name="x-mark" size={CONTROL_ICON_SIZE} />
             </Pressable>
 
-            <View className="relative">
+            <View style={styles.relative}>
               <BloomBar
                 slots={[
                   {
-                    node: (
-                      <Icon
-                        name="line-squiggle"
-                        size={CONTROL_ICON_SIZE}
-                        color={CONTROL_ICON_COLOR}
-                      />
-                    ),
+                    node: <ThemedIcon name="line-squiggle" size={CONTROL_ICON_SIZE} />,
                     onPress: onEnterScribble,
                     accessibilityLabel: "Scribble",
                   },
                   {
-                    node: (
-                      <Icon
-                        name="document-plus"
-                        size={CONTROL_ICON_SIZE}
-                        color={CONTROL_ICON_COLOR}
-                      />
-                    ),
+                    node: <ThemedIcon name="document-plus" size={CONTROL_ICON_SIZE} />,
                     onPress: handleDocumentPlus,
                     opensPanel: addConfig.kind === "bloom" && !atMax && !saving,
                     accessibilityLabel: "Add page",
                   },
                   {
-                    node: (
-                      <Icon
-                        name="ellipsis-horizontal-circle"
-                        size={CONTROL_ICON_SIZE}
-                        color={CONTROL_ICON_COLOR}
-                      />
-                    ),
+                    node: <ThemedIcon name="ellipsis-horizontal-circle" size={CONTROL_ICON_SIZE} />,
                     onPress: () => setBarScreen("menu"),
                     accessibilityLabel: "More options",
                   },
@@ -443,17 +435,17 @@ const CreateScreenChrome = ({
               disabled={saving}
               accessibilityRole="button"
               accessibilityLabel="Save entry"
-              className="rounded-full border border-controls-border bg-controls-background p-3"
+              style={styles.controlButton}
             >
               {saving ? (
-                <ActivityIndicator size="small" color={CONTROL_ICON_COLOR} />
+                <ThemedActivityIndicator size="small" />
               ) : (
-                <Icon name="arrow-right" size={CONTROL_ICON_SIZE} color={CONTROL_ICON_COLOR} />
+                <ThemedIcon name="arrow-right" size={CONTROL_ICON_SIZE} />
               )}
             </Pressable>
-          </EaseView>
+          </StyledEaseView>
         </EntryChromeMotion>
-      </BlurTargetView>
+      </StyledBlurTargetView>
 
       <EntryChromeMotion
         visible={createChromeIsVisible}
@@ -461,23 +453,18 @@ const CreateScreenChrome = ({
         style={StyleSheet.absoluteFill}
       >
         {scribbleActive && scribbleTools ? (
-          <EaseView
+          <StyledEaseView
             initialAnimate={{ opacity: 0 }}
             animate={{ opacity: authoringExpanded ? 1 : 0 }}
             transition={chromeTransition}
             pointerEvents={expandedInteractive ? "box-none" : "none"}
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: insets.bottom + 20,
-            }}
+            style={[styles.scribbleTools, { bottom: insets.bottom + 20 }]}
           >
             {scribbleTools}
-          </EaseView>
+          </StyledEaseView>
         ) : null}
 
-        <EaseView
+        <StyledEaseView
           style={StyleSheet.absoluteFill}
           initialAnimate={{ opacity: 0 }}
           animate={{ opacity: isTitleFocused ? 1 : 0 }}
@@ -506,7 +493,7 @@ const CreateScreenChrome = ({
               style={StyleSheet.absoluteFill}
             />
           </Pressable>
-        </EaseView>
+        </StyledEaseView>
 
         {/* Focus removes this header's clipping. Preserve its native identity
           so Fabric cannot flatten/reparent the focused TextInput. */}
@@ -522,10 +509,9 @@ const CreateScreenChrome = ({
           pointerEvents={saving ? "none" : "box-none"}
         >
           {/* Plate fades in only for Type/expanded — not default, not title-focus. */}
-          <EaseView
+          <StyledEaseView
             pointerEvents="none"
             style={[styles.expandedHeaderPlate, { height: topPad + EXPANDED_HEADER_HEIGHT }]}
-            className="bg-background"
             initialAnimate={{ opacity: authoringExpanded ? 1 : 0 }}
             animate={{ opacity: authoringExpanded ? 1 : 0 }}
             transition={chromeTransition}
@@ -544,7 +530,7 @@ const CreateScreenChrome = ({
             typeLabel={typeLabel}
           />
 
-          <EaseView
+          <StyledEaseView
             style={[styles.expandedHeader, { top: topPad, height: EXPANDED_HEADER_HEIGHT }]}
             initialAnimate={{ opacity: authoringExpanded ? 1 : 0 }}
             animate={{ opacity: authoringExpanded ? 1 : 0 }}
@@ -553,10 +539,7 @@ const CreateScreenChrome = ({
             accessibilityElementsHidden={!expandedInteractive}
             importantForAccessibility={expandedInteractive ? "auto" : "no-hide-descendants"}
           >
-            <View
-              className="flex-1 flex-row items-center justify-between"
-              style={{ paddingHorizontal: 10 }}
-            >
+            <View style={styles.expandedHeaderContent}>
               <Pressable
                 onPress={onBack}
                 accessibilityRole="button"
@@ -564,15 +547,11 @@ const CreateScreenChrome = ({
                 hitSlop={8}
               >
                 <View style={styles.backIconFlip}>
-                  <Icon name="arrow-right" size={24} color={CONTROL_ICON_COLOR} />
+                  <ThemedIcon name="arrow-right" size={24} />
                 </View>
               </Pressable>
-              <View
-                style={StyleSheet.absoluteFill}
-                className="items-center justify-center"
-                pointerEvents="none"
-              >
-                <Text className="font-mono text-sm text-secondary">
+              <View style={styles.headerCounter} pointerEvents="none">
+                <Text style={styles.headerCounterText}>
                   {scribbleActive ? "Scribble" : counterLabel}
                 </Text>
               </View>
@@ -583,10 +562,10 @@ const CreateScreenChrome = ({
                   accessibilityLabel="Save ink"
                   hitSlop={8}
                 >
-                  <Text className="font-sans-medium text-base text-primary">Save</Text>
+                  <Text style={styles.headerActionPrimary}>Save</Text>
                 </Pressable>
               ) : (
-                <View className="flex-row items-center" style={{ gap: 24 }}>
+                <View style={styles.pagerActions}>
                   <Pressable
                     onPress={onPrevArtefact}
                     disabled={!canPrev}
@@ -595,9 +574,7 @@ const CreateScreenChrome = ({
                     accessibilityState={{ disabled: !canPrev }}
                     hitSlop={8}
                   >
-                    <Text
-                      className={`font-sans-medium text-base ${canPrev ? "text-secondary" : "text-controls-border"}`}
-                    >
+                    <Text style={[styles.headerActionSecondary, !canPrev && styles.disabledText]}>
                       Prev
                     </Text>
                   </Pressable>
@@ -609,16 +586,14 @@ const CreateScreenChrome = ({
                     accessibilityState={{ disabled: !canNext }}
                     hitSlop={8}
                   >
-                    <Text
-                      className={`font-sans-medium text-base ${canNext ? "text-primary" : "text-controls-border"}`}
-                    >
+                    <Text style={[styles.headerActionPrimary, !canNext && styles.disabledText]}>
                       Next
                     </Text>
                   </Pressable>
                 </View>
               )}
             </View>
-          </EaseView>
+          </StyledEaseView>
         </View>
 
         {/* Rendered after every chrome layer so a keyboard-following accessory
@@ -633,63 +608,159 @@ const CreateScreenChrome = ({
   );
 };
 
-const styles = StyleSheet.create({
-  backIconFlip: { transform: [{ scaleX: -1 }] },
-  blurTarget: {
-    flex: 1,
-  },
-  headerOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  expandedHeader: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-  },
-  expandedHeaderPlate: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-  },
+const styles = StyleSheet.create((theme) => ({
   authoringBody: {
     flex: 1,
   },
+  backgroundMask: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: theme.colors.canvas.app,
+  },
+  backIconFlip: { transform: [{ scaleX: -1 }] },
   bottomControls: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    flexDirection: "row",
     alignItems: "center",
+    flexDirection: "row",
     justifyContent: "space-between",
+    left: 20,
+    position: "absolute",
+    right: 20,
+  },
+  blurTarget: {
+    flex: 1,
+  },
+  controlButton: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderRadius: 999,
+    borderWidth: 1,
+    padding: 12,
+  },
+  disabledText: {
+    color: theme.colors.content.disabled,
+  },
+  entrySurface: {
+    backgroundColor: theme.colors.canvas.app,
+    flex: 1,
+    overflow: "hidden",
+  },
+  expandedHeader: {
+    left: 0,
+    position: "absolute",
+    right: 0,
+  },
+  expandedHeaderContent: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+  },
+  expandedHeaderPlate: {
+    backgroundColor: theme.colors.canvas.app,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  flex: {
+    flex: 1,
+  },
+  headerActionPrimary: {
+    ...theme.typography.ui.bodyMedium,
+    color: theme.colors.content.primary,
+  },
+  headerActionSecondary: {
+    ...theme.typography.ui.bodyMedium,
+    color: theme.colors.content.secondary,
+  },
+  headerCounter: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerCounterText: {
+    ...theme.typography.ui.label,
+    color: theme.colors.content.secondary,
+    fontFamily: theme.typography.calendar.year.fontFamily,
+  },
+  headerOverlay: {
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   maxTooltip: {
-    bottom: "100%",
     alignSelf: "center",
+    bottom: "100%",
     marginBottom: 8,
   },
+  menuPanel: {
+    paddingVertical: 8,
+  },
+  menuRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  menuText: {
+    ...theme.typography.ui.body,
+    color: theme.colors.content.secondary,
+  },
+  pagerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 24,
+  },
+  relative: {
+    position: "relative",
+  },
+  scribbleTools: {
+    left: 0,
+    position: "absolute",
+    right: 0,
+  },
+  titleField: {
+    paddingHorizontal: 20,
+  },
   titleInput: {
-    padding: 0,
+    ...theme.typography.authoring.title,
     margin: 0,
-    fontFamily: "Geist-Medium",
-    fontSize: TITLE_FONT_SIZE,
-    lineHeight: TITLE_LINE_HEIGHT,
+    padding: 0,
     textAlignVertical: "center",
   },
+  titleInputFocused: {
+    color: theme.colors.content.onAction,
+  },
+  titleInputHidden: {
+    color: fixedTokens.common.transparent,
+  },
   titleInputIdle: {
-    maxHeight: TITLE_LINE_HEIGHT,
+    maxHeight: theme.typography.authoring.title.lineHeight,
     overflow: "hidden",
+  },
+  titleInputPlaceholder: {
+    color: theme.colors.content.muted,
   },
   titleIdleOverlay: {
     ...StyleSheet.absoluteFill,
-    fontFamily: "Geist-Medium",
-    fontSize: TITLE_FONT_SIZE,
-    lineHeight: TITLE_LINE_HEIGHT,
-    color: "oklch(14.69% 0.004 49.25)",
+    ...theme.typography.authoring.title,
+    color: theme.colors.content.primary,
   },
-});
+  typeLabel: {
+    ...theme.typography.ui.metadataCaps,
+    color: theme.colors.content.secondary,
+  },
+  typeMarker: {
+    backgroundColor: fixedTokens.artefactType.printCreate,
+    borderRadius: 999,
+    height: 10,
+    width: 10,
+  },
+  typeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+}));
 
 export default CreateScreenChrome;

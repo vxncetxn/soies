@@ -5,21 +5,26 @@
  * prebuild. Brand glyphs use a one-item color array so their source SVG's
  * hardcoded black fill is intentionally overridden with white.
  */
-import { type ColorValue, View, StyleSheet } from "react-native";
+import { type ColorValue, View } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { Icon } from "../components/Icon";
+import { fixedTokens } from "../styles/tokens";
 
 const CIRCLE = 56;
-const BRAND_GLYPH_COLOR: ColorValue[] = ["#FFFFFF"];
+const BRAND_GLYPH_COLOR: ColorValue[] = [fixedTokens.share.glyphOnBrand];
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 type GlyphProps = { size?: number };
 
 export function CopyGlyph({ size = 22 }: GlyphProps) {
-  return <Icon name="clipboard" size={size} color="#57534E" />;
+  return <ThemedIcon name="clipboard" size={size} />;
 }
 
 export function DownloadGlyph({ size = 22 }: GlyphProps) {
-  return <Icon name="folder-arrow-down" size={size} color="#57534E" />;
+  return <ThemedIcon name="folder-arrow-down" size={size} />;
 }
 
 export function InstagramGlyph({ size = 25 }: GlyphProps) {
@@ -31,7 +36,7 @@ export function FacebookGlyph({ size = 27 }: GlyphProps) {
 }
 
 export function OthersGlyph({ size = 22 }: GlyphProps) {
-  return <Icon name="ellipsis-horizontal" size={size} color="#57534E" />;
+  return <ThemedIcon name="ellipsis-horizontal" size={size} />;
 }
 
 export function ActionCircle({
@@ -54,21 +59,20 @@ export function ActionCircle({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   actionCircle: {
     width: CIRCLE,
     height: CIRCLE,
     borderRadius: CIRCLE / 2,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: theme.colors.surface.subtle,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
   instagramCircle: {
-    experimental_backgroundImage:
-      "linear-gradient(145deg, #833AB4 0%, #C13584 38%, #FD1D1D 68%, #FCAF45 100%)",
+    experimental_backgroundImage: fixedTokens.share.instagramGradient,
   },
   facebookCircle: {
-    backgroundColor: "#1877F2",
+    backgroundColor: fixedTokens.share.facebook,
   },
-});
+}));

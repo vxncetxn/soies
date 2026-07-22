@@ -38,6 +38,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { entryChromeVisible } from "../entry-transition/entryTransition";
 import { useEntryTransition } from "../entry-transition/EntryTransitionContext";
@@ -51,7 +52,9 @@ import { PrintMediaBloomPanel } from "./PrintMediaBloomPanel";
 import { StackChromeMotion } from "./StackChromeMotion";
 
 const TRIGGER_ICON_SIZE = 24;
-const TRIGGER_ICON_COLOR = "#79716B";
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 const CreateEntryButton = () => {
   const { date } = useLocalSearchParams<{ date?: string }>();
@@ -88,7 +91,7 @@ const CreateEntryButton = () => {
   const contentKey = onMainMenu ? "main" : mediaScreen;
 
   const mainNode = (
-    <View className="py-2">
+    <View style={styles.panel}>
       <Pressable
         onPress={() => {
           setOpen(false);
@@ -96,9 +99,9 @@ const CreateEntryButton = () => {
         }}
         accessibilityRole="button"
         accessibilityLabel="Choose Paper"
-        className="px-4 py-3"
+        style={styles.row}
       >
-        <Text className="text-base text-primary">Paper</Text>
+        <Text style={styles.rowText}>Paper</Text>
       </Pressable>
       <Pressable
         onPress={() => {
@@ -107,9 +110,9 @@ const CreateEntryButton = () => {
         }}
         accessibilityRole="button"
         accessibilityLabel="Choose Print"
-        className="px-4 py-3"
+        style={styles.row}
       >
-        <Text className="text-base text-primary">Print</Text>
+        <Text style={styles.rowText}>Print</Text>
       </Pressable>
     </View>
   );
@@ -144,7 +147,7 @@ const CreateEntryButton = () => {
     <EntryChromeMotion
       visible={entryChromeIsVisible}
       pointerEvents="box-none"
-      className="absolute right-5 bottom-5 z-50"
+      style={styles.position}
     >
       <StackChromeMotion pointerEvents="box-none">
         <BloomButton
@@ -160,8 +163,8 @@ const CreateEntryButton = () => {
           accessibilityRole="button"
           accessibilityLabel="Create entry"
         >
-          <View className="flex items-center justify-center p-2">
-            <Icon name="plus" size={TRIGGER_ICON_SIZE} color={TRIGGER_ICON_COLOR} />
+          <View style={styles.triggerContent}>
+            <ThemedIcon name="plus" size={TRIGGER_ICON_SIZE} />
           </View>
         </BloomButton>
       </StackChromeMotion>
@@ -170,3 +173,28 @@ const CreateEntryButton = () => {
 };
 
 export default CreateEntryButton;
+
+const styles = StyleSheet.create((theme) => ({
+  panel: {
+    paddingVertical: 8,
+  },
+  position: {
+    bottom: 20,
+    position: "absolute",
+    right: 20,
+    zIndex: 50,
+  },
+  row: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  rowText: {
+    ...theme.typography.ui.body,
+    color: theme.colors.content.primary,
+  },
+  triggerContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
+  },
+}));

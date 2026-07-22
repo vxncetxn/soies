@@ -1,11 +1,14 @@
-import type { EaseViewProps } from "react-native-ease/uniwind";
+import type { EaseViewProps } from "react-native-ease";
 
-import { EaseView } from "react-native-ease/uniwind";
+import { EaseView } from "react-native-ease";
+import { withUnistyles } from "react-native-unistyles";
 
 import { EASE_STACK_CHROME_TIMING } from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
 import { useExpandContext } from "./ExpandContext";
 import { stackChromeVisible } from "./stackExpansion";
+
+const StyledEaseView = withUnistyles(EaseView);
 
 type StackChromeMotionProps = Omit<
   EaseViewProps,
@@ -21,7 +24,7 @@ export function StackChromeMotion({ pointerEvents, ...props }: StackChromeMotion
   const values = { opacity: visible ? 1 : 0 };
 
   return (
-    <EaseView
+    <StyledEaseView
       {...props}
       initialAnimate={values}
       animate={values}

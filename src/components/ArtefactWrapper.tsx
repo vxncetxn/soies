@@ -7,13 +7,15 @@
  */
 import type { ReactNode } from "react";
 
-import { StyleSheet, useWindowDimensions } from "react-native";
+import { useWindowDimensions } from "react-native";
 import { EaseView } from "react-native-ease";
 import Animated, { type SharedValue, useAnimatedStyle } from "react-native-reanimated";
+import { StyleSheet } from "react-native-unistyles";
 
 import { EASE_STACK_EXPANSION_SPRING, SHADOW_SM, SHADOW_XL } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { fixedTokens } from "../styles/tokens";
 import { getCollapsedArtefactLayout, getExpandedArtefactLayout } from "./artefactLayout";
 import { ArtefactPresentationScaleProvider } from "./ArtefactPresentationScale";
 
@@ -65,7 +67,7 @@ const ArtefactWrapper = ({
   const correction = { translateX: expanded ? 0 : collapsedCorrectionX };
   const presentation = {
     scale,
-    shadowColor: "#000",
+    shadowColor: fixedTokens.effects.shadowColor,
     shadowOffset: { width: 0, height: expanded ? SHADOW_XL.offsetY : SHADOW_SM.offsetY },
     shadowOpacity: expanded ? SHADOW_XL.opacity : SHADOW_SM.opacity,
     shadowRadius: expanded ? SHADOW_XL.radius : SHADOW_SM.radius,

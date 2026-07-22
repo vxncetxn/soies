@@ -202,9 +202,9 @@ Untrusted Home and Widget values pass through the strict canonical Day
 validator before any query or calendar calculation. Impossible values such as
 `2026-02-30` fall back to today rather than being normalized by JavaScript.
 
-## Dormant legacy path
+## Retired legacy path
 
 `BloomButton`, `BloomPanel`, and the `bloom` portal remain active for other
-features. `CalendarOverlay` and `MorphOverlay` have no calendar callsite after
-this change; their removal is intentionally deferred so this feature does not
-mix behavior work with unrelated cleanup.
+features. The legacy `CalendarOverlay` and `MorphOverlay` paths were left alone
+by the Calendar-sheet change and later removed during the app-wide Unistyles
+migration.

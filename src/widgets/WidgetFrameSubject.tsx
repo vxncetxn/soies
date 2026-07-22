@@ -13,6 +13,7 @@
  */
 import { useRef } from "react";
 import { View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { Artefact } from "../data/entries";
 
@@ -38,7 +39,7 @@ export function WidgetFrameSubject({ artefact, onReady, onError }: WidgetFrameSu
   const barrier = useRef(new CaptureReadinessBarrier(isPrint, hasInk, onReady, onError)).current;
 
   return (
-    <View className="flex-1" onLayout={() => barrier.markLayoutReady()}>
+    <View style={styles.container} onLayout={() => barrier.markLayoutReady()}>
       {isPrint ? (
         <Print
           imagePath={artefact.imagePath}
@@ -63,3 +64,9 @@ export function WidgetFrameSubject({ artefact, onReady, onError }: WidgetFrameSu
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});

@@ -7,15 +7,19 @@
  * `content` subtree previously retargeted the detent while Copy was visible.
  */
 import { useEffect, useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { Text } from "react-native";
 import { EaseView } from "react-native-ease";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { EASE_DEFAULT_TIMING } from "../constants/animation";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { fixedTokens } from "../styles/tokens";
 
 const SHOW_MS = 1600;
 const FADE_MS = 220;
 const RISE_Y = 8;
+
+const StyledEaseView = withUnistyles(EaseView);
 
 type ShareActionToastProps = {
   cycleId: number | null;
@@ -46,7 +50,7 @@ export function ShareActionToast({ cycleId, message, onDone }: ShareActionToastP
   }
 
   return (
-    <EaseView
+    <StyledEaseView
       key={cycleId}
       pointerEvents="none"
       style={styles.toast}
@@ -64,13 +68,13 @@ export function ShareActionToast({ cycleId, message, onDone }: ShareActionToastP
       <Text style={styles.text} numberOfLines={1}>
         {message}
       </Text>
-    </EaseView>
+    </StyledEaseView>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   toast: {
-    backgroundColor: "rgba(28, 25, 23, 0.92)",
+    backgroundColor: fixedTokens.share.toast.background,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -79,8 +83,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   text: {
-    color: "#FAFAF9",
-    fontFamily: "Geist-Medium",
-    fontSize: 13,
+    ...theme.typography.feedback.compact,
+    color: fixedTokens.share.toast.text,
   },
-});
+}));

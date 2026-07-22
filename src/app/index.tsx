@@ -29,6 +29,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useAnimatedScrollHandler, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import type { PreparedHomeHandoff, PreparedHomeTransition } from "../data/preparedHomeHandoff";
 
@@ -78,6 +79,10 @@ type CalendarTransitionState = {
   requestId: number;
   sheetDismissed: boolean;
 };
+
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 function HomeScreen() {
   const searchParams = useLocalSearchParams<WidgetSearchParams>();
@@ -671,7 +676,7 @@ function HomeScreen() {
 
   return (
     <View
-      className="relative flex-1 bg-background"
+      style={styles.root}
       pointerEvents={homeIsInteractive ? "auto" : "none"}
       accessibilityElementsHidden={!homeIsInteractive}
       importantForAccessibility={homeIsInteractive ? "yes" : "no-hide-descendants"}
@@ -689,9 +694,9 @@ function HomeScreen() {
         }}
       />
 
-      <View className="relative flex-1">
+      <View style={styles.body}>
         <EntrySurfaceMotion
-          className="absolute inset-0"
+          style={styles.absoluteFill}
           visible={homeBodyMotion.visible}
           instant={homeBodyMotion.instant}
           completion={homeBodyMotion.completion}
@@ -699,26 +704,24 @@ function HomeScreen() {
           onMotionEnd={handleHomeBodyMotionEnd}
         >
           {error ? (
-            <View className="flex-1 items-center justify-center gap-4 px-5">
-              <Text className="text-center text-primary">
-                Couldn&apos;t load entries for this day.
-              </Text>
+            <View style={styles.stateContainer}>
+              <Text style={styles.stateText}>Couldn&apos;t load entries for this day.</Text>
               <Pressable
                 onPress={retry}
                 accessibilityRole="button"
                 accessibilityLabel="Retry loading entries"
-                className="rounded-full border border-controls-border bg-controls-background px-5 py-2"
+                style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
               >
-                <Text className="text-primary">Try again</Text>
+                <Text style={styles.retryLabel}>Try again</Text>
               </Pressable>
             </View>
           ) : loading ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator />
+            <View style={styles.centeredContainer}>
+              <ThemedActivityIndicator />
             </View>
           ) : entries.length === 0 ? (
-            <View className="flex-1 items-center justify-center px-5">
-              <Text className="text-center text-primary">No entries for this day.</Text>
+            <View style={styles.centeredContainer}>
+              <Text style={styles.stateText}>No entries for this day.</Text>
             </View>
           ) : (
             <DayPager
@@ -749,7 +752,7 @@ function HomeScreen() {
         {calendarPreparedHandoff &&
         calendarPreparedHandoff.requestId === entryTransition.state.requestId ? (
           <EntrySurfaceMotion
-            className="absolute inset-0 bg-background"
+            style={styles.preparedSurface}
             visible={preparedHomeMotion.visible}
             instant={preparedHomeMotion.instant}
             completion={preparedHomeMotion.completion}
@@ -763,20 +766,18 @@ function HomeScreen() {
             importantForAccessibility="no-hide-descendants"
           >
             {calendarPreparedHandoff.error ? (
-              <View className="flex-1 items-center justify-center gap-4 px-5">
-                <Text className="text-center text-primary">
-                  Couldn&apos;t load entries for this day.
-                </Text>
-                <View className="rounded-full border border-controls-border bg-controls-background px-5 py-2">
-                  <Text className="text-primary">Try again</Text>
+              <View style={styles.stateContainer}>
+                <Text style={styles.stateText}>Couldn&apos;t load entries for this day.</Text>
+                <View style={styles.retryButton}>
+                  <Text style={styles.retryLabel}>Try again</Text>
                 </View>
               </View>
             ) : !calendarPreparedEntry ? (
-              <View className="flex-1 items-center justify-center px-5">
-                <Text className="text-center text-primary">No entries for this day.</Text>
+              <View style={styles.centeredContainer}>
+                <Text style={styles.stateText}>No entries for this day.</Text>
               </View>
             ) : (
-              <View className="flex-1 items-center justify-center px-5">
+              <View style={styles.centeredContainer}>
                 <PreparedHomeEntry
                   entry={calendarPreparedEntry}
                   requestId={calendarPreparedHandoff.requestId}
@@ -814,3 +815,53 @@ export default function Index() {
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   return <AppErrorFallback error={error} onRetry={retry} title="Couldn’t load your journal." />;
 }
+
+const styles = StyleSheet.create((theme) => ({
+  absoluteFill: StyleSheet.absoluteFill,
+  body: {
+    flex: 1,
+    position: "relative",
+  },
+  centeredContainer: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  preparedSurface: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: theme.colors.canvas.app,
+  },
+  pressed: {
+    opacity: 0.75,
+  },
+  retryButton: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  retryLabel: {
+    ...theme.typography.feedback.action,
+    color: theme.colors.content.primary,
+  },
+  root: {
+    backgroundColor: theme.colors.canvas.app,
+    flex: 1,
+    position: "relative",
+  },
+  stateContainer: {
+    alignItems: "center",
+    flex: 1,
+    gap: 16,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  stateText: {
+    ...theme.typography.feedback.body,
+    color: theme.colors.content.primary,
+    textAlign: "center",
+  },
+}));

@@ -13,7 +13,7 @@ import {
   type GestureResponderEvent,
   useWindowDimensions,
 } from "react-native";
-import { EaseView } from "react-native-ease/uniwind";
+import { EaseView } from "react-native-ease";
 import Animated, {
   type AnimatedRef,
   measure,
@@ -23,8 +23,8 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 import { Portal } from "react-native-teleport";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
-import { withUniwind } from "uniwind";
 
 import type { Entry } from "../data/entries";
 
@@ -39,7 +39,7 @@ import { useShare } from "../share/ShareContext";
 import { EaseMotionCompletionQueue } from "../utils/easeMotionCompletion";
 import { useFeaturedWidgets } from "../widgets/FeaturedWidgetsContext";
 import { getCollapsedArtefactLayout, getExpandedArtefactLayout } from "./artefactLayout";
-import CollapsedDeck, { deckClassName, useWrappedArtefacts } from "./CollapsedDeck";
+import CollapsedDeck, { deckStyles, useWrappedArtefacts } from "./CollapsedDeck";
 import { useExpandContext } from "./ExpandContext";
 import FocusOverlay, { type FocusMenuItem } from "./FocusOverlay";
 import { Icon } from "./Icon";
@@ -49,7 +49,11 @@ import { StackCollapseReversalTapGesture } from "./stackCollapseReversal";
 import { stackExpandedControlsVisible } from "./stackExpansion";
 import { getCollapseReversalHitFrame, getCollapsedPortalOffset } from "./stackPortalGeometry";
 
-const StyledPortal = withUniwind(Portal);
+const StyledEaseView = withUnistyles(EaseView);
+const StyledPortal = withUnistyles(Portal);
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 const CLOSE_TRAVEL_Y = 40;
 const CLOSE_FADE_MS = 220;
 const CLOSE_FADE_DELAY_MS = 60;
@@ -556,8 +560,7 @@ const Stack = ({
   return (
     <>
       <View
-        className="relative"
-        style={{ opacity: canonicalDeckVisible ? 1 : 0 }}
+        style={[styles.canonicalDeck, { opacity: canonicalDeckVisible ? 1 : 0 }]}
         pointerEvents={ownsExpansion ? "none" : "auto"}
         accessibilityElementsHidden={ownsExpansion}
         importantForAccessibility={ownsExpansion ? "no-hide-descendants" : "auto"}
@@ -577,9 +580,9 @@ const Stack = ({
           onPress={openFocus}
           accessibilityRole="button"
           accessibilityLabel="Entry options"
-          className="absolute -top-12 -right-2 z-[110] rounded-full p-2"
+          style={styles.optionsButton}
         >
-          <Icon name="ellipsis-horizontal" size={20} color="#79716B" />
+          <ThemedIcon name="ellipsis-horizontal" size={20} />
         </Pressable>
       </View>
 
@@ -604,11 +607,10 @@ const Stack = ({
       ) : null}
 
       {portalMounted ? (
-        <StyledPortal hostName="overlay" className="items-center justify-center">
+        <StyledPortal hostName="overlay" style={styles.portal}>
           <Animated.View
             collapsable={false}
-            className="absolute inset-0 items-center justify-center"
-            style={{ opacity: expansion.phase === "preparing" ? 0 : 1 }}
+            style={[styles.portalLayer, { opacity: expansion.phase === "preparing" ? 0 : 1 }]}
             pointerEvents="auto"
             accessibilityElementsHidden={
               expansion.phase === "preparing" || expansion.phase === "collapsing"
@@ -622,9 +624,9 @@ const Stack = ({
               expansion.phase === "expanding" || expansion.phase === "expanded"
             }
           >
-            <Pressable className="absolute inset-0" onPress={collapse} />
-            <EaseView
-              className={deckClassName(entry.type)}
+            <Pressable style={styles.absoluteFill} onPress={collapse} />
+            <StyledEaseView
+              style={deckStyles.deck(entry.type, screenWidth)}
               initialAnimate={portalFrameValues}
               animate={portalFrameValues}
               transition={portalFrameTransition}
@@ -649,7 +651,7 @@ const Stack = ({
                 />
               </Animated.ScrollView>
               {wrappedArtefacts}
-            </EaseView>
+            </StyledEaseView>
 
             {/* Ease animates only presentation layers on iOS, so a transformed
                 responder would jump to the collapsed hit frame immediately. */}
@@ -664,7 +666,7 @@ const Stack = ({
               importantForAccessibility="no-hide-descendants"
             >
               <Pressable
-                className="absolute inset-0"
+                style={styles.absoluteFill}
                 onPressIn={beginCollapseReversalTap}
                 onPressMove={trackCollapseReversalTap}
                 onPress={finishCollapseReversalTap}
@@ -672,15 +674,14 @@ const Stack = ({
             </View>
 
             <View
-              style={{ zIndex: 200 }}
-              className="absolute bottom-24 left-1/2 -translate-x-1/2"
+              style={[styles.indicatorControls, { zIndex: 200 }]}
               pointerEvents={expandedControlsInteractive ? "box-none" : "none"}
               accessibilityElementsHidden={!expandedControlsInteractive}
               importantForAccessibility={
                 expandedControlsInteractive ? "auto" : "no-hide-descendants"
               }
             >
-              <EaseView
+              <StyledEaseView
                 initialAnimate={{ opacity: 0 }}
                 animate={{ opacity: expandedControlsVisible ? 1 : 0 }}
                 transition={expandedControlsTransition}
@@ -693,19 +694,18 @@ const Stack = ({
                   onJumpToIndex={jumpToArtefact}
                   renderPreview={(index) => <ArtefactPreview entry={entry} index={index} />}
                 />
-              </EaseView>
+              </StyledEaseView>
             </View>
 
             <View
-              style={{ zIndex: 210 }}
-              className="absolute bottom-10 left-1/2 -translate-x-1/2"
+              style={[styles.closeControls, { zIndex: 210 }]}
               pointerEvents="box-none"
               accessibilityElementsHidden={!expandedControlsInteractive}
               importantForAccessibility={
                 expandedControlsInteractive ? "auto" : "no-hide-descendants"
               }
             >
-              <EaseView
+              <StyledEaseView
                 initialAnimate={{ opacity: 0, translateY: CLOSE_TRAVEL_Y }}
                 animate={closeValues}
                 transition={closeTransition}
@@ -715,11 +715,11 @@ const Stack = ({
                   onPress={collapse}
                   accessibilityRole="button"
                   accessibilityLabel="Close entry"
-                  className="rounded-full border border-controls-border bg-controls-background p-3"
+                  style={styles.closeButton}
                 >
-                  <Icon name="x-mark" size={22} color="#79716B" />
+                  <ThemedIcon name="x-mark" size={22} />
                 </Pressable>
-              </EaseView>
+              </StyledEaseView>
             </View>
           </Animated.View>
         </StyledPortal>
@@ -729,3 +729,46 @@ const Stack = ({
 };
 
 export default Stack;
+
+const styles = StyleSheet.create((theme) => ({
+  absoluteFill: StyleSheet.absoluteFill,
+  canonicalDeck: {
+    position: "relative",
+  },
+  closeButton: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderRadius: 999,
+    borderWidth: 1,
+    padding: 12,
+  },
+  closeControls: {
+    bottom: 40,
+    left: "50%",
+    position: "absolute",
+    transform: [{ translateX: "-50%" }],
+  },
+  indicatorControls: {
+    bottom: 96,
+    left: "50%",
+    position: "absolute",
+    transform: [{ translateX: "-50%" }],
+  },
+  optionsButton: {
+    borderRadius: 999,
+    padding: 8,
+    position: "absolute",
+    right: -8,
+    top: -48,
+    zIndex: 110,
+  },
+  portal: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  portalLayer: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+}));

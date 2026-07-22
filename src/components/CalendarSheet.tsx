@@ -5,7 +5,6 @@ import {
   BackHandler,
   type NativeSyntheticEvent,
   Pressable,
-  StyleSheet,
   Text,
   View,
   useWindowDimensions,
@@ -14,6 +13,7 @@ import { EaseView, type Transition } from "react-native-ease";
 import { AnimatedEdgeFadeView } from "react-native-edge-fade";
 import { Easing, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 
 import { EASE_CALENDAR_CURVE } from "../constants/animation";
 import { LAYOUT } from "../constants/layout";
@@ -24,6 +24,7 @@ import {
 } from "../data/calendarBrowseCache";
 import { getUserCreationDay } from "../db/repositories/users";
 import { useReducedMotionPreference } from "../hooks/useReducedMotionPreference";
+import { fixedTokens } from "../styles/tokens";
 import { todayISO } from "../utils/date";
 import CalendarMonthlyTab from "./CalendarMonthlyTab";
 import CalendarRecentTab from "./CalendarRecentTab";
@@ -33,11 +34,19 @@ import { Icon } from "./Icon";
 type CalendarTab = "recent" | "monthly";
 type PositionChange = { index: number; position: number };
 
-const SHEET_SURFACE = "#FFFFFF";
 const SHEET_RADIUS = 24;
 const TAB_FADE_MS = 160;
 const BOTTOM_FADE_SIZE = 90;
 const { CALENDAR_SHEET } = LAYOUT;
+
+const StyledAnimatedEdgeFadeView = withUnistyles(AnimatedEdgeFadeView);
+const StyledEaseView = withUnistyles(EaseView);
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator, (theme) => ({
+  color: theme.colors.icon.default,
+}));
+const ThemedIcon = withUnistyles(Icon, (theme) => ({
+  color: theme.colors.icon.default,
+}));
 
 type CalendarSheetProps = {
   dataVersion: number;
@@ -66,9 +75,7 @@ function Heading({ heading }: { heading: CalendarHeading }) {
 
 function BodyPlaceholder({ showActivity = true }: { showActivity?: boolean }) {
   return (
-    <View style={styles.placeholderBody}>
-      {showActivity ? <ActivityIndicator color="#79716B" /> : null}
-    </View>
+    <View style={styles.placeholderBody}>{showActivity ? <ThemedActivityIndicator /> : null}</View>
   );
 }
 
@@ -82,6 +89,7 @@ export default function CalendarSheet({
   onSelectDay,
   onSelectEntry,
 }: CalendarSheetProps) {
+  const { theme } = useUnistyles();
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotionEnabled = useReducedMotionPreference();
@@ -298,7 +306,7 @@ export default function CalendarSheet({
       animateIn={false}
       disableScrollableNegotiation
       extendUnderStatusBar
-      scrimColor="rgba(0,0,0,0.35)"
+      scrimColor={theme.colors.overlay.scrim}
       surface={<View style={[StyleSheet.absoluteFill, styles.surface]} />}
       onIndexChange={(index) => {
         if (index === 0 && open) {
@@ -345,9 +353,9 @@ export default function CalendarSheet({
         ]}
       >
         <View style={styles.handle} />
-        <AnimatedEdgeFadeView
+        <StyledAnimatedEdgeFadeView
           mode="overlay"
-          color={SHEET_SURFACE}
+          color={theme.colors.surface.sheet}
           top={0}
           bottom={bottomFade}
           radius={SHEET_RADIUS}
@@ -366,7 +374,7 @@ export default function CalendarSheet({
                     // The native sheet finds scrollables geometrically, even
                     // behind overlays. This real top boundary keeps header
                     // pulls draggable while list pulls remain with the list.
-                    <EaseView
+                    <StyledEaseView
                       key={tab}
                       initialAnimate={{ opacity: isActive ? 1 : 0 }}
                       animate={{ opacity: isActive ? 1 : 0 }}
@@ -386,7 +394,7 @@ export default function CalendarSheet({
                       ]}
                     >
                       {renderTab(tab)}
-                    </EaseView>
+                    </StyledEaseView>
                   );
                 })}
               </View>
@@ -394,13 +402,13 @@ export default function CalendarSheet({
           ) : (
             <BodyPlaceholder showActivity={open} />
           )}
-        </AnimatedEdgeFadeView>
+        </StyledAnimatedEdgeFadeView>
 
         <View pointerEvents="none" style={[styles.headerScrim, { height: headerOpaqueHeight }]} />
-        <AnimatedEdgeFadeView
+        <StyledAnimatedEdgeFadeView
           pointerEvents="none"
           mode="overlay"
-          color={SHEET_SURFACE}
+          color={theme.colors.surface.sheet}
           top={CALENDAR_SHEET.HEADER_FADE_HEIGHT}
           bottom={0}
           style={[
@@ -409,7 +417,7 @@ export default function CalendarSheet({
           ]}
         >
           <View style={StyleSheet.absoluteFill} />
-        </AnimatedEdgeFadeView>
+        </StyledAnimatedEdgeFadeView>
 
         <View pointerEvents="box-none" style={styles.header}>
           <View accessibilityRole="tablist" style={styles.tabs}>
@@ -450,30 +458,30 @@ export default function CalendarSheet({
           onPress={requestClose}
           accessibilityRole="button"
           accessibilityLabel="Close calendar"
-          className="absolute top-5 right-5 z-30 h-10 w-10 items-center justify-center rounded-full bg-white shadow-md"
+          style={styles.closeButton}
         >
-          <Icon name="x-mark" size={20} color="#79716B" />
+          <ThemedIcon name="x-mark" size={20} />
         </Pressable>
       </View>
     </ModalBottomSheet>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   surface: {
-    backgroundColor: SHEET_SURFACE,
+    backgroundColor: theme.colors.surface.sheet,
     borderTopLeftRadius: SHEET_RADIUS,
     borderTopRightRadius: SHEET_RADIUS,
   },
   sheetViewport: {
-    backgroundColor: SHEET_SURFACE,
+    backgroundColor: theme.colors.surface.sheet,
     borderTopLeftRadius: SHEET_RADIUS,
     borderTopRightRadius: SHEET_RADIUS,
     overflow: "hidden",
   },
   handle: {
     alignSelf: "center",
-    backgroundColor: "#D6D3D1",
+    backgroundColor: theme.colors.surface.disabled,
     borderRadius: 2,
     height: 4,
     marginTop: 10,
@@ -485,7 +493,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerScrim: {
-    backgroundColor: SHEET_SURFACE,
+    backgroundColor: theme.colors.surface.sheet,
     left: 0,
     position: "absolute",
     right: 0,
@@ -523,16 +531,12 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   tabActive: {
-    color: "#171717",
-    fontFamily: "Geist-Regular",
-    fontSize: 18,
-    lineHeight: 24,
+    ...theme.typography.calendar.tab,
+    color: theme.colors.content.primary,
   },
   tabIdle: {
-    color: "#A8A29E",
-    fontFamily: "Geist-Regular",
-    fontSize: 18,
-    lineHeight: 24,
+    ...theme.typography.calendar.tab,
+    color: theme.colors.content.disabled,
   },
   headingRow: {
     alignItems: "baseline",
@@ -541,16 +545,12 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   headingText: {
-    color: "#171717",
-    fontFamily: "Geist-Medium",
-    fontSize: 29,
-    lineHeight: 36,
+    ...theme.typography.calendar.hero,
+    color: theme.colors.content.primary,
   },
   headingYear: {
-    color: "#79716B",
-    fontFamily: "GeistMono-Regular",
-    fontSize: 18,
-    lineHeight: 24,
+    ...theme.typography.calendar.year,
+    color: theme.colors.content.muted,
   },
   weekdays: {
     alignSelf: "center",
@@ -560,10 +560,9 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   weekday: {
-    color: "#171717",
+    ...theme.typography.calendar.weekday,
+    color: theme.colors.content.primary,
     flex: 1,
-    fontFamily: "Geist-Medium",
-    fontSize: 17,
     textAlign: "center",
   },
   placeholderBody: {
@@ -579,20 +578,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   creationErrorText: {
-    color: "#252525",
-    fontFamily: "Geist-Regular",
-    fontSize: 16,
+    ...theme.typography.calendar.body,
+    color: theme.colors.content.primary,
   },
   retryButton: {
-    borderColor: "#DEDAD7",
+    borderColor: theme.colors.border.subtle,
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 18,
     paddingVertical: 9,
   },
   retryText: {
-    color: "#252525",
-    fontFamily: "Geist-Medium",
-    fontSize: 14,
+    ...theme.typography.calendar.button,
+    color: theme.colors.content.primary,
   },
-});
+  closeButton: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface.elevated,
+    borderRadius: 999,
+    boxShadow: fixedTokens.effects.closeButtonShadow,
+    height: 40,
+    justifyContent: "center",
+    position: "absolute",
+    right: 20,
+    top: 20,
+    width: 40,
+    zIndex: 30,
+  },
+}));

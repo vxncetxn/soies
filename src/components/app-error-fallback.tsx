@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 type AppErrorFallbackProps = {
   error: Error;
@@ -11,10 +12,9 @@ type AppErrorFallbackProps = {
 /**
  * Dependency-light route fallback so a rendering failure never strands the
  * user on a blank screen. Keep this component independent of app providers:
- * the root route may need to render it when one of those providers failed.
- * StyleSheet and literal accessible colors are intentional here: this
- * emergency surface must still render when theme or Uniwind setup is the part
- * of the tree that failed.
+ * the root route may need to render it when one of those providers failed. The
+ * Unistyles registry is configured by the custom entry point before Expo
+ * Router loads this module, so the fallback can still use the shared tokens.
  */
 export default function AppErrorFallback({
   error,
@@ -50,10 +50,10 @@ export default function AppErrorFallback({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   container: {
     alignItems: "center",
-    backgroundColor: "#F7F4EF",
+    backgroundColor: theme.colors.canvas.app,
     flex: 1,
     gap: 16,
     justifyContent: "center",
@@ -64,24 +64,22 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   title: {
-    color: "#342F2B",
-    fontSize: 20,
-    fontWeight: "600",
+    ...theme.typography.feedback.title,
+    color: theme.colors.content.primary,
     textAlign: "center",
   },
   message: {
-    color: "#5E5751",
-    fontSize: 16,
-    lineHeight: 22,
+    ...theme.typography.feedback.body,
+    color: theme.colors.content.secondary,
     textAlign: "center",
   },
   details: {
-    color: "#79716B",
-    fontSize: 12,
+    ...theme.typography.feedback.detail,
+    color: theme.colors.content.muted,
     textAlign: "center",
   },
   button: {
-    backgroundColor: "#342F2B",
+    backgroundColor: theme.colors.action.primary,
     borderRadius: 999,
     paddingHorizontal: 20,
     paddingVertical: 11,
@@ -90,17 +88,15 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
   buttonLabel: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
+    ...theme.typography.feedback.action,
+    color: theme.colors.content.onAction,
   },
   dismissButton: {
     paddingHorizontal: 20,
     paddingVertical: 8,
   },
   dismissButtonLabel: {
-    color: "#342F2B",
-    fontSize: 15,
-    fontWeight: "600",
+    ...theme.typography.feedback.action,
+    color: theme.colors.content.primary,
   },
-});
+}));

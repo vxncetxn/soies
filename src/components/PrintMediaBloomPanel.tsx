@@ -4,6 +4,7 @@
  * document-plus bloom so both stay one implementation.
  */
 import { Linking, Pressable, Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { PickPrintImageSource } from "../media/pickPrintImage";
 
@@ -38,8 +39,8 @@ export function PrintMediaBloomPanel({
         : "Photo access is needed to choose from Camera roll.";
 
     return (
-      <View className="py-2">
-        <Text className="px-4 py-3 text-base text-primary">{permissionMessage}</Text>
+      <View style={styles.panel}>
+        <Text style={[styles.row, styles.primaryText]}>{permissionMessage}</Text>
         <Pressable
           onPress={() => {
             onDismiss();
@@ -47,17 +48,17 @@ export function PrintMediaBloomPanel({
           }}
           accessibilityRole="button"
           accessibilityLabel="Open Settings"
-          className="px-4 py-3"
+          style={styles.row}
         >
-          <Text className="text-base text-primary">Open Settings</Text>
+          <Text style={styles.primaryText}>Open Settings</Text>
         </Pressable>
         <Pressable
           onPress={onDismiss}
           accessibilityRole="button"
           accessibilityLabel="Dismiss"
-          className="px-4 py-3"
+          style={styles.row}
         >
-          <Text className="text-base text-secondary">OK</Text>
+          <Text style={styles.secondaryText}>OK</Text>
         </Pressable>
       </View>
     );
@@ -65,38 +66,38 @@ export function PrintMediaBloomPanel({
 
   if (screen === "error") {
     return (
-      <View className="py-2">
-        <Text className="px-4 py-3 text-base text-primary">{errorMessage}</Text>
+      <View style={styles.panel}>
+        <Text style={[styles.row, styles.primaryText]}>{errorMessage}</Text>
         <Pressable
           onPress={onBackToMedia}
           accessibilityRole="button"
           accessibilityLabel="Try again"
-          className="px-4 py-3"
+          style={styles.row}
         >
-          <Text className="text-base text-primary">Try again</Text>
+          <Text style={styles.primaryText}>Try again</Text>
         </Pressable>
         <Pressable
           onPress={onDismiss}
           accessibilityRole="button"
           accessibilityLabel="Dismiss"
-          className="px-4 py-3"
+          style={styles.row}
         >
-          <Text className="text-base text-secondary">OK</Text>
+          <Text style={styles.secondaryText}>OK</Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View className="py-2">
+    <View style={styles.panel}>
       {onBackToParent ? (
         <Pressable
           onPress={onBackToParent}
           accessibilityRole="button"
           accessibilityLabel="Back to main menu"
-          className="px-4 py-3"
+          style={styles.row}
         >
-          <Text className="text-base text-primary">‹ Back</Text>
+          <Text style={styles.primaryText}>‹ Back</Text>
         </Pressable>
       ) : null}
       <Pressable
@@ -104,19 +105,37 @@ export function PrintMediaBloomPanel({
         disabled={picking}
         accessibilityRole="button"
         accessibilityLabel="Take picture"
-        className="px-4 py-3"
+        style={styles.row}
       >
-        <Text className="text-base text-primary">Take picture</Text>
+        <Text style={styles.primaryText}>Take picture</Text>
       </Pressable>
       <Pressable
         onPress={() => onPick("library")}
         disabled={picking}
         accessibilityRole="button"
         accessibilityLabel="Camera roll"
-        className="px-4 py-3"
+        style={styles.row}
       >
-        <Text className="text-base text-primary">Camera roll</Text>
+        <Text style={styles.primaryText}>Camera roll</Text>
       </Pressable>
     </View>
   );
 }
+
+const styles = StyleSheet.create((theme) => ({
+  panel: {
+    paddingVertical: 8,
+  },
+  primaryText: {
+    ...theme.typography.ui.body,
+    color: theme.colors.content.primary,
+  },
+  row: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  secondaryText: {
+    ...theme.typography.ui.body,
+    color: theme.colors.content.secondary,
+  },
+}));

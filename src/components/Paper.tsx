@@ -13,10 +13,12 @@
  * the default scale of 1 and continue scaling/capturing the complete canvas.
  */
 import { type PropsWithChildren, useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import { PaperContentReadinessLatch } from "../data/paperContentReadiness";
 import { serializePaperDocument, type PaperDocument } from "../data/paperDocument";
+import { fixedTokens } from "../styles/tokens";
 import { useArtefactPresentationScale } from "./ArtefactPresentationScale";
 import InkOverlay from "./InkOverlay";
 import {
@@ -53,7 +55,6 @@ export function PaperCanvas({ children, presentationScale }: PaperCanvasProps) {
 
   return (
     <View
-      className="bg-paper"
       style={[
         styles.canvas,
         {
@@ -118,6 +119,7 @@ const styles = StyleSheet.create({
   // Every consumer transforms/captures this complete proportional page. Hidden
   // overflow clips text, Ink, and the native surface at the same eventual edge.
   canvas: {
+    backgroundColor: fixedTokens.artefact.paperSurface,
     position: "relative",
     overflow: "hidden",
   },

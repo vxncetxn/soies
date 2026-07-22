@@ -2,6 +2,7 @@
  * ScribbleToolStrip — Undo/Redo · sizes · colors · eraser for Scribble mode.
  */
 import { Pressable, Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import {
   INK_COLORS,
@@ -9,9 +10,6 @@ import {
   type InkStrokeSizeKey,
   type InkTool,
 } from "../constants/ink";
-
-const CONTROL_COLOR = "#79716B";
-const ACTIVE_COLOR = "#1C1917";
 
 type ScribbleToolStripProps = {
   tool: InkTool;
@@ -35,29 +33,29 @@ const ScribbleToolStrip = ({
   onRedo,
 }: ScribbleToolStripProps) => {
   return (
-    <View className="flex-row flex-wrap items-center justify-center gap-3 px-4">
-      <View className="flex-row items-center gap-2">
+    <View style={styles.strip}>
+      <View style={styles.group}>
         <Pressable
           onPress={onUndo}
           accessibilityRole="button"
           accessibilityLabel="Undo stroke"
           hitSlop={8}
-          className="rounded-full border border-controls-border bg-controls-background px-3 py-1.5"
+          style={styles.actionButton}
         >
-          <Text className="font-sans-medium text-sm text-secondary">Undo</Text>
+          <Text style={styles.actionLabel}>Undo</Text>
         </Pressable>
         <Pressable
           onPress={onRedo}
           accessibilityRole="button"
           accessibilityLabel="Redo stroke"
           hitSlop={8}
-          className="rounded-full border border-controls-border bg-controls-background px-3 py-1.5"
+          style={styles.actionButton}
         >
-          <Text className="font-sans-medium text-sm text-secondary">Redo</Text>
+          <Text style={styles.actionLabel}>Redo</Text>
         </Pressable>
       </View>
 
-      <View className="flex-row items-center gap-2">
+      <View style={styles.group}>
         {(Object.keys(INK_STROKE_SIZES) as InkStrokeSizeKey[]).map((key) => {
           const active = sizeKey === key && tool === "pen";
           return (
@@ -71,14 +69,9 @@ const ScribbleToolStrip = ({
               accessibilityLabel={`Stroke size ${key}`}
               accessibilityState={{ selected: active }}
               hitSlop={6}
-              className={`h-8 w-8 items-center justify-center rounded-full border ${
-                active ? "border-primary bg-paper" : "border-controls-border bg-controls-background"
-              }`}
+              style={[styles.sizeButton, active ? styles.selectedButton : styles.actionButton]}
             >
-              <Text
-                className="font-mono text-xs"
-                style={{ color: active ? ACTIVE_COLOR : CONTROL_COLOR }}
-              >
+              <Text style={[styles.sizeLabel, active ? styles.activeLabel : styles.inactiveLabel]}>
                 {key}
               </Text>
             </Pressable>
@@ -86,7 +79,7 @@ const ScribbleToolStrip = ({
         })}
       </View>
 
-      <View className="flex-row items-center gap-2">
+      <View style={styles.group}>
         {INK_COLORS.map((swatch) => {
           const active = color === swatch && tool === "pen";
           return (
@@ -100,15 +93,11 @@ const ScribbleToolStrip = ({
               accessibilityLabel={`Ink color ${swatch}`}
               accessibilityState={{ selected: active }}
               hitSlop={4}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 11,
-                backgroundColor: swatch,
-                borderWidth: active ? 2 : 1,
-                borderColor: active ? "#FFFFFF" : "rgba(0,0,0,0.15)",
-                borderCurve: "continuous",
-              }}
+              style={[
+                styles.swatch,
+                { backgroundColor: swatch, borderWidth: active ? 2 : 1 },
+                active ? styles.activeSwatch : styles.inactiveSwatch,
+              ]}
             />
           );
         })}
@@ -120,21 +109,71 @@ const ScribbleToolStrip = ({
         accessibilityLabel="Stroke eraser"
         accessibilityState={{ selected: tool === "eraser" }}
         hitSlop={8}
-        className={`rounded-full border px-3 py-1.5 ${
-          tool === "eraser"
-            ? "border-primary bg-paper"
-            : "border-controls-border bg-controls-background"
-        }`}
+        style={[styles.actionButton, tool === "eraser" && styles.selectedButton]}
       >
-        <Text
-          className="font-sans-medium text-sm"
-          style={{ color: tool === "eraser" ? ACTIVE_COLOR : CONTROL_COLOR }}
-        >
-          Eraser
-        </Text>
+        <Text style={[styles.actionLabel, tool === "eraser" && styles.activeLabel]}>Eraser</Text>
       </Pressable>
     </View>
   );
 };
 
 export default ScribbleToolStrip;
+
+const styles = StyleSheet.create((theme) => ({
+  actionButton: {
+    backgroundColor: theme.colors.surface.control,
+    borderColor: theme.colors.border.control,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  actionLabel: {
+    ...theme.typography.ui.labelMedium,
+    color: theme.colors.content.secondary,
+  },
+  activeLabel: {
+    color: theme.colors.content.primary,
+  },
+  activeSwatch: {
+    borderColor: theme.colors.icon.inverse,
+  },
+  group: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  inactiveLabel: {
+    color: theme.colors.icon.default,
+  },
+  inactiveSwatch: {
+    borderColor: theme.colors.border.subtle,
+  },
+  selectedButton: {
+    backgroundColor: theme.colors.surface.elevated,
+    borderColor: theme.colors.content.primary,
+  },
+  sizeButton: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "center",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    width: 32,
+  },
+  sizeLabel: theme.typography.ui.captionMedium,
+  strip: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  swatch: {
+    borderCurve: "continuous",
+    borderRadius: 11,
+    height: 22,
+    width: 22,
+  },
+}));

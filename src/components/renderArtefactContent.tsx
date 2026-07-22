@@ -4,6 +4,7 @@
  */
 import { ReactNode } from "react";
 import { Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 import type { Artefact } from "../data/entries";
 
@@ -39,8 +40,8 @@ export function renderArtefactContent(
 
   if (isUnknownArtefact(artefact)) {
     return (
-      <View key={key} className="flex h-full w-full items-center justify-center bg-paper p-4">
-        <Text className="text-center text-primary">Unsupported artefact</Text>
+      <View key={key} style={styles.unsupportedContainer}>
+        <Text style={styles.unsupportedText}>Unsupported artefact</Text>
       </View>
     );
   }
@@ -55,3 +56,20 @@ export function renderArtefactContent(
     />
   );
 }
+
+const styles = StyleSheet.create((theme) => ({
+  unsupportedContainer: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface.elevated,
+    flex: 1,
+    height: "100%",
+    justifyContent: "center",
+    padding: 16,
+    width: "100%",
+  },
+  unsupportedText: {
+    ...theme.typography.ui.body,
+    color: theme.colors.content.primary,
+    textAlign: "center",
+  },
+}));

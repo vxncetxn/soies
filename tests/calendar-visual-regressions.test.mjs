@@ -174,10 +174,8 @@ test("Calendar selection adapts to the shared full-viewport Entry transition", a
   );
   assert.match(home, /calendarPreparedEntry/);
   assert.match(home, /<PreparedHomeEntry/);
-  assert.match(
-    home,
-    /className="(?=[^"]*\babsolute\b)(?=[^"]*\binset-0\b)(?=[^"]*\bbg-background\b)[^"]*"/,
-  );
+  assert.match(home, /style=\{styles\.preparedSurface\}/);
+  assert.match(home, /preparedSurface: \{[\s\S]{0,100}backgroundColor: theme\.colors\.canvas\.app/);
   assert.doesNotMatch(home, /entries=\{\[calendarPreparedEntry\]\}/);
   assert.doesNotMatch(home, /entries=\{calendarPreparedHandoff\.entries\}/);
   assert.match(preparedEntry, /entry\.artefacts\[0\]/);
@@ -223,9 +221,12 @@ test("Recent labels each Day group and uses one fixed card surface without scrol
   assert.match(recent, /formatRecentDayLabel\(item\.day\)/);
   assert.doesNotMatch(recent, /resolveFocusedPeriod|FOCUS_HYSTERESIS|focusedDay/);
   assert.doesNotMatch(preview, /\bfocused\b/);
-  assert.match(preview, /#F8F8F8/);
+  assert.match(preview, /card: \{[\s\S]{0,80}backgroundColor: theme\.colors\.surface\.subtle/);
   assert.match(recent, /styles\.loadingDayLabel/);
-  assert.match(recent, /#F8F8F8/);
+  assert.match(
+    recent,
+    /loadingCard: \{[\s\S]{0,80}backgroundColor: theme\.colors\.surface\.subtle/,
+  );
   assert.doesNotMatch(recent, /Array\.from\(\{ length: \d+ \}/);
 });
 

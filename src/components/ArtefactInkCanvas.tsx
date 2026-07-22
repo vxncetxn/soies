@@ -25,8 +25,9 @@
  */
 import { Image } from "expo-image";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { StyleSheet, View, type GestureResponderEvent, type LayoutChangeEvent } from "react-native";
+import { View, type GestureResponderEvent, type LayoutChangeEvent } from "react-native";
 import { SignatureInk, type SignatureInkHandle, type StrokeData } from "react-native-signature-ink";
+import { StyleSheet } from "react-native-unistyles";
 
 import { INK_ERASER_HIT_RADIUS, type InkTool } from "../constants/ink";
 import {
@@ -36,6 +37,7 @@ import {
   type InkDocument,
 } from "../data/ink";
 import { deleteMediaFile } from "../storage/files";
+import { fixedTokens } from "../styles/tokens";
 
 export type ArtefactInkCanvasHandle = {
   undo: () => void;
@@ -297,7 +299,7 @@ const ArtefactInkCanvas = forwardRef<ArtefactInkCanvasHandle, ArtefactInkCanvasP
           style={[StyleSheet.absoluteFill, enabled ? null : styles.hiddenInk]}
           showToolbar={false}
           showBaseline={false}
-          backgroundColor="transparent"
+          backgroundColor={fixedTokens.common.transparent}
           penColor={penColor}
           penMinWidth={penMinWidth}
           penMaxWidth={penMaxWidth}
