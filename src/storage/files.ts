@@ -1,6 +1,8 @@
 import { randomUUID } from "expo-crypto";
 import { Directory, File, Paths } from "expo-file-system";
 
+import { resolveStoredMediaPath, toStoredMediaPath } from "./mediaPath";
+
 const ARTIFACTS_DIR = "artefacts";
 const INK_OVERLAY_EXT = "ink.png";
 
@@ -41,7 +43,7 @@ export async function saveMediaFile(
   // File.copy is async in Expo SDK 57 — must await or the DB can commit before
   // bytes land (and failures become unhandled rejections).
   await source.copy(destination);
-  return destination.uri;
+  return toStoredMediaPath(destination.uri);
 }
 
 /** Persist (or replace) the Ink overlay PNG for an artefact. */
@@ -104,6 +106,11 @@ export function inkOverlayUriForArtefact(artefactId: string): string {
   return new File(artifactsDirectory(), inkOverlayFileName(artefactId)).uri;
 }
 
+/** Resolve stable and legacy database values against this launch's Documents root. */
+export function mediaUriForStoredPath(path: string): string {
+  return resolveStoredMediaPath(path, Paths.document.uri);
+}
+
 export async function deleteInkOverlayFile(artefactId: string): Promise<void> {
   const file = new File(artifactsDirectory(), inkOverlayFileName(artefactId));
   if (file.exists) {
@@ -112,7 +119,7 @@ export async function deleteInkOverlayFile(artefactId: string): Promise<void> {
 }
 
 export async function deleteMediaFile(path: string): Promise<void> {
-  const file = new File(path);
+  const file = new File(mediaUriForStoredPath(path));
   if (file.exists) {
     file.delete();
   }

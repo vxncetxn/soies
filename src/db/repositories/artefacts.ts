@@ -3,7 +3,7 @@ import type { InkDocument } from "../../data/ink";
 
 import { parseAnnotations } from "../../data/ink";
 import { parsePaperDocument } from "../../data/paperDocument";
-import { inkOverlayUriForArtefact } from "../../storage/files";
+import { inkOverlayUriForArtefact, mediaUriForStoredPath } from "../../storage/files";
 import { getDatabase } from "../client";
 import { type DbExecutor, withTransaction } from "../executor";
 import {
@@ -72,7 +72,7 @@ export function mapArtefactRow(row: ArtefactRow): Artefact {
       return {
         id: row.id,
         text: parsed.text ?? "",
-        imagePath: parsed.imagePath ?? "",
+        imagePath: mediaUriForStoredPath(parsed.imagePath ?? ""),
         ...inkDisplayFields(row.id, row.has_ink),
       };
     } catch {

@@ -108,3 +108,10 @@ test("Paper keyboard toolbar gives its animated sticky layer non-zero native bou
   assert.match(sharedToolbarSource, /const TOOLBAR_HEIGHT = \d+/);
   assert.match(stickyLayerStyle[0], /height: TOOLBAR_HEIGHT/);
 });
+
+test("Paper keyboard toolbar anchors to a full-screen Create accessory host", () => {
+  const accessoryHost = createChromeSource.match(/\{floatingAccessory \? \([\s\S]*?\) : null\}/);
+
+  assert.ok(accessoryHost, "Create chrome must own the floating accessory host");
+  assert.match(accessoryHost[0], /style=\{StyleSheet\.absoluteFill\}/);
+});

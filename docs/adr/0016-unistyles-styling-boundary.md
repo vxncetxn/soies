@@ -39,6 +39,7 @@ React Native Boost cannot safely run while Uniwind rewrites the same hosts.
 | Uniwind's Metro wrappers are incompatible with Boost host replacement | Uniwind, Tailwind, their generated types, CSS entry, and resolver bridge are removed before Boost is enabled. |
 | Boost needs to preserve Unistyles' native style registration | The runtime package is a production dependency and Babel sets `unistyles: true` explicitly. Same-file Unistyles styles route to Unistyles' lean hosts. |
 | Cross-file, conditional, prop-supplied, or otherwise unresolved styles cannot be classified safely | Boost leaves those hosts untouched. Both dangerous unknown-ancestor flags remain `false`; `@boost-force` is forbidden by contract. |
+| Boost preserves an otherwise-empty host around an absolutely positioned keyboard accessory | Create's accessory host explicitly fills the screen so `KeyboardStickyView` anchors to real screen-bottom bounds instead of a zero-height wrapper. A lifecycle contract protects this geometry. |
 | A Unistyles `Text` style is forwarded without wrapper normalization | App styles use tokenized font families and contain no numeric `fontWeight`, `userSelect`, or `verticalAlign`. Future selection and vertical-alignment needs must use `selectable` and `textAlignVertical`. |
 | Worklets' Babel transform has ordering requirements | Unistyles and Boost run before Worklets; Worklets remains the final plugin. |
 

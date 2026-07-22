@@ -601,7 +601,12 @@ const CreateScreenChrome = ({
           only in Type; it no longer needs an opacity-hidden lifetime workaround
           because Create itself is not a native Portal. */}
         {floatingAccessory ? (
-          <View pointerEvents={expandedInteractive ? "box-none" : "none"}>{floatingAccessory}</View>
+          <View
+            pointerEvents={expandedInteractive ? "box-none" : "none"}
+            style={StyleSheet.absoluteFill}
+          >
+            {floatingAccessory}
+          </View>
         ) : null}
       </EntryChromeMotion>
     </View>
